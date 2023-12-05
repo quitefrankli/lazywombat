@@ -1,5 +1,3 @@
-import tkinter
-
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -18,18 +16,12 @@ class Goal:
         
     def __init__(self, name: str, state: bool, metadata: Metadata = None):
         self.name = name
-        self._completed = tkinter.BooleanVar(value=state)
+        self.state = state
         if metadata:
             self.metadata = metadata
         else:
             self.metadata = self.Metadata(datetime.now(), None)
 
-    def get_tkinter_var(self) -> tkinter.BooleanVar:
-        return self._completed
-
-    def completed(self) -> bool:
-        return self._completed.get()
-    
     @staticmethod
     def construct_metadata(data: dict) -> Metadata:
         def foo(key: str):
