@@ -1,15 +1,18 @@
 import yaml
 import datetime
+import os
+import json
 
 from datetime import datetime
 from pathlib import Path
 from typing import *
 from goal import Goal
 
+SAVE_DIRECTORY = Path.home() if os.name == 'nt' else '/tmp'
 
 class Backend:
-    SAVE_FILE = f"{Path.home()}/.todoist2_goals.yaml"
-    BACKUP_PREFIX = f"{Path.home()}/.todoist2_backup"
+    SAVE_FILE = f"{SAVE_DIRECTORY}/.todoist2_goals.yaml"
+    BACKUP_PREFIX = f"{SAVE_DIRECTORY}/.todoist2_backup"
 
     def __init__(self) -> None:
         self.goals: List[Goal] = self.load_goals()
@@ -22,8 +25,7 @@ class Backend:
         self.goals.pop(idx)
         self.save_goals()
 
-    def save_goals(self, file_path: str = SAVE_FILE) -> None:
-        Path(file_path).parent.mkdir(exist_ok=True, parents=True)
+    def _goals_to_obj(self):
         goals = [{
             'name': goal.name,
             'state': goal.state,
@@ -33,8 +35,12 @@ class Backend:
             'goals': goals,
             'edited': int(self.get_datetime_str())
         }
+        return data
+
+    def save_goals(self, file_path: str = SAVE_FILE) -> None:
+        Path(file_path).parent.mkdir(exist_ok=True, parents=True)
         with open(file_path, 'w') as file:
-            yaml.dump(data, file)
+            yaml.dump(self._goals_to_obj(), file)
 
     def load_goals(self) -> List[Goal]:
         try:
@@ -47,7 +53,7 @@ class Backend:
                          Goal.construct_metadata(goal['metadata'])) for goal in goals]
         except FileNotFoundError:
             return []
-
+        
     def backup_goals(self) -> None:
         self.save_goals(f"{self.BACKUP_PREFIX}/{self.get_datetime_str()}.yaml")
 
@@ -65,6 +71,9 @@ class Backend:
     
     def get_goals(self) -> List[Goal]:
         return self.goals
+    
+    def get_goals_json(self) -> str:
+        return json.dumps(self._goals_to_obj())
 
 class Server:
     def __init__(self) -> None:
