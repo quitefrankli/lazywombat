@@ -20,20 +20,28 @@ class Goal:
                 'completion_date': int(self.completion_date.timestamp()) if self.completion_date else 0
             }
 
-    def __init__(self, name: str, state: bool, metadata: Metadata = None):
+    def __init__(self, 
+                 id: int,
+                 name: str, 
+                 state: bool, 
+                 metadata: Metadata = None, 
+                 backlogged: bool = False):
+        self.id = id
         self.name = name
         self.state = state
-        if metadata:
-            self.metadata = metadata
-        else:
-            self.metadata = self.Metadata(datetime.now(), None)
+        self.metadata = metadata if metadata else self.Metadata(datetime.now(), None)
+        self.backlogged = backlogged
     
     @classmethod
     def from_dict(cls, data: dict):
-        return cls(data['name'], data['state'], cls.Metadata.from_dict(data['metadata']))
+        return cls(data['id'],
+                   data['name'], 
+                   data['state'], 
+                   cls.Metadata.from_dict(data['metadata']))
 
     def to_dict(self) -> dict:
         return {
+            'id': self.id,
             'name': self.name,
             'state': self.state,
             'metadata': self.metadata.to_dict()

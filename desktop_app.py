@@ -76,8 +76,8 @@ class DesktopApp(Frame):
     def refresh_goals_canvas(self) -> None:
         # first cleanup the canvas if there are existing goal windows
         self.canvas.delete(tkinter.ALL)
-
         goals = self.client.fetch_goals()
+        goals.sort(key=lambda goal: goal.metadata.creation_date.timestamp())
         offset = 0
         x_padding = 2
         y_padding = 2
@@ -116,13 +116,13 @@ class DesktopApp(Frame):
                                                          variable=goal._tkinter_state,
                                                          onvalue=True,
                                                          offvalue=False,
-                                                         command=lambda idx=i: self.client.toggle_goal_state(idx)))
+                                                         command=lambda goal_id=goal.id: self.client.toggle_goal_state(goal_id)))
             self.canvas.create_window(self.GOALS_CANVAS_WIDTH-DELETE_BUTTON_OFFSET-y_padding,
                                       get_y_val(),
                                       anchor=tkinter.NW,
                                       window=Button(self.canvas,
                                                     text='delete',
-                                                    command=lambda idx=i: self.delete_goal(idx)))
+                                                    command=lambda goal_id=goal.id: self.delete_goal(goal_id)))
 
     def delete_goal(self, idx: int) -> None:
         self.client.delete_goal(idx)
@@ -140,7 +140,7 @@ class DesktopApp(Frame):
 
         def close_window():
             if goal_name.get():
-                self.client.add_goal(Goal(goal_name.get(), False))
+                self.client.add_goal(Goal(-1, goal_name.get(), False))
                 self.refresh_goals_canvas()
             top.destroy()
         top.bind('<Return>', lambda _: close_window())

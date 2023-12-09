@@ -15,19 +15,26 @@ class Backend:
     BACKUP_DIR = f"{SAVE_DIRECTORY}/.todoist2_backup"
 
     def __init__(self) -> None:
-        self.goals: List[Goal] = self.load_goals()
+        self.goals: Dict[int, Goal] = self.load_goals()
+        self._global_goal_id = max(self.goals.values(), key=lambda goal: goal.id).id
+
+    def generate_next_goal_id(self) -> int:
+        self._global_goal_id += 1
+        return self._global_goal_id
 
     def add_goal(self, goal: Goal) -> None:
-        self.goals.append(goal)
+        assert(goal.id == -1)
+        goal.id = self.generate_next_goal_id()
+        self.goals[goal.id] = goal
         self.save_goals()
 
-    def delete_goal(self, idx: int) -> None:
-        self.goals.pop(idx)
+    def delete_goal(self, goal_id: int) -> None:
+        del self.goals[goal_id]
         self.save_goals()
 
     def _goals_to_obj(self):
         data = {
-            'goals': [goal.to_dict() for goal in self.goals],
+            'goals': [goal.to_dict() for goal in self.goals.values()],
             'edited': int(self.get_datetime_str())
         }
         return data
@@ -37,11 +44,11 @@ class Backend:
         with open(file_path, 'w') as file:
             yaml.dump(self._goals_to_obj(), file)
 
-    def load_goals(self) -> List[Goal]:
+    def load_goals(self) -> Dict[int, Goal]:
         try:
             with open(self.SAVE_FILE, 'r') as file:
                 data = yaml.safe_load(file)
-                return [Goal.from_dict(goal) for goal in data['goals']]
+                return { goal['id']: Goal.from_dict(goal) for goal in data['goals'] }
         except FileNotFoundError:
             return []
         
@@ -53,8 +60,8 @@ class Backend:
     def get_datetime_str(self) -> str:
         return datetime.now().strftime("%Y%m%d%H%M%S")
 
-    def toggle_goal_state(self, idx: int) -> None:
-        goal = self.goals[idx]
+    def toggle_goal_state(self, goal_id: int) -> None:
+        goal = self.goals[goal_id]
         goal.state = not goal.state
         if goal.state:
             goal.metadata.completion_date = datetime.now()
@@ -63,15 +70,7 @@ class Backend:
         self.save_goals()
     
     def get_goals(self) -> List[Goal]:
-        return self.goals
+        return list(self.goals.values())
     
     def get_goals_json(self) -> str:
         return json.dumps(self._goals_to_obj())
-
-class Server:
-    def __init__(self) -> None:
-        self.backend = Backend()
-
-    # add the usual server-client API like 'process request'
-
-
