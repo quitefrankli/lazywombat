@@ -1,13 +1,14 @@
 import tkinter
 import yaml
 import datetime
+import boto3
 
 from pathlib import Path
 from datetime import datetime, timedelta
-from tkinter import ttk, Frame, Label, Button, Entry, Scrollbar, Canvas, Checkbutton
+from tkinter import ttk, Frame, Label, Button, Entry, Scrollbar, Canvas, Checkbutton, messagebox
 from typing import *
 from goal import Goal
-from client import Client
+from client import ClientV2
 
 
 class DesktopApp(Frame):
@@ -22,7 +23,8 @@ class DesktopApp(Frame):
 
     def __init__(self):
         super().__init__(None)
-        self.client = Client()
+        self.client = ClientV2()
+        self._show_completed = False
 
         self.master.title("Todoist2")
         X = int((self.master.winfo_screenwidth() - self.WIDTH)/2)
@@ -55,9 +57,18 @@ class DesktopApp(Frame):
         Button(self,
                text="New Goal",
                command=self.spawn_new_goal_creation_window).pack(side=tkinter.LEFT)
+        # Button(self,
+        #        text='Save Goals',
+        #        command=self.client.save_goals).pack(side=tkinter.LEFT)
         Button(self,
                text='Backup Goals',
-               command=self.client.backup_goals).pack(side=tkinter.LEFT)
+               command=self.backup_goals).pack(side=tkinter.LEFT)
+        def toggle_completed():
+            self._show_completed = not self._show_completed
+            self.refresh_goals_canvas()
+        Button(self,
+               text='Toggle Completed',
+               command=toggle_completed).pack(side=tkinter.LEFT)
 
         self.master.bind('<Escape>', lambda _: self.quit())
         self.master.bind('n', lambda _: self.spawn_new_goal_creation_window())
@@ -71,10 +82,16 @@ class DesktopApp(Frame):
         x_padding = 2
         y_padding = 2
         last_date_label = datetime(year=2000, month=1, day=1).date()
+        now = datetime.now()
         for i in range(len(goals)):
             def get_y_val() -> int:
                 return (i + offset) * self.GOAL_ENTRY_HEIGHT
             goal = goals[i]
+            days_since_completion = 0 if not goal.state else (now - goal.metadata.completion_date).days
+            if (self._show_completed and not goal.state) or (not self._show_completed and days_since_completion > 3):
+                offset -= 1
+                continue
+
             goal_date = goal.metadata.creation_date.date()
             if last_date_label != goal_date:
                 last_date_label = goal_date
@@ -130,8 +147,13 @@ class DesktopApp(Frame):
         top.bind('<Escape>', lambda _: top.destroy())
         Button(top, text="Ok", command=close_window).pack()
         
+    def backup_goals(self) -> None:
+        backup = self.client.backup_goals()
+        messagebox.showinfo(message=f'Created backup: {backup}')
+
     def run(self) -> None:
         self.mainloop()
+        self.client.save_goals()
 
 def main() -> None:
     app = DesktopApp()

@@ -45,8 +45,10 @@ class Backend:
         except FileNotFoundError:
             return []
         
-    def backup_goals(self) -> None:
-        self.save_goals(f"{self.BACKUP_DIR}/{self.get_datetime_str()}.yaml")
+    def backup_goals(self) -> str:
+        backup = f"{self.BACKUP_DIR}/{self.get_datetime_str()}.yaml"
+        self.save_goals(backup)
+        return backup
 
     def get_datetime_str(self) -> str:
         return datetime.now().strftime("%Y%m%d%H%M%S")
