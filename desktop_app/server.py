@@ -6,7 +6,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import *
-from goal import Goal
+
+from desktop_app.goal import Goal
+
 
 SAVE_DIRECTORY = Path.home() if os.name == 'nt' else '/tmp'
 

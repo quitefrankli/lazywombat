@@ -1,4 +1,3 @@
-import constants
 import tkinter
 import datetime
 
@@ -6,9 +5,10 @@ from datetime import datetime
 from tkinter import ttk, Frame, Label, Button, Entry, Scrollbar, Canvas, Checkbutton, messagebox
 from tkinter.scrolledtext import ScrolledText
 from typing import *
-from goal import Goal
-from client import ClientV2
 from playsound import playsound
+
+from desktop_app.goal import Goal
+from desktop_app.client import ClientV2
 
 
 class DailyGoals(Frame):

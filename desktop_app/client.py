@@ -6,8 +6,10 @@ import datetime
 
 from datetime import datetime
 from typing import *
-from goal import Goal
-from server import Backend
+
+from desktop_app.goal import Goal
+from desktop_app.server import Backend
+
 
 class Client:
     URL = 'https://bavdvowkx7.execute-api.ap-southeast-2.amazonaws.com/prod/todoist2'

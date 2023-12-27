@@ -1,8 +1,9 @@
-from goal import Goal
 from typing import *
 from plotly import express, graph_objects
 from plotly.subplots import make_subplots
 from pandas import DataFrame
+
+from desktop_app.goal import Goal
 
 
 def plot_velocity(goals: List[Goal]) -> None:
@@ -22,8 +23,8 @@ def plot_velocity(goals: List[Goal]) -> None:
 		velocity.append(i/days_between)
 
 	df = DataFrame(data={'completion_date': completion_dates, 'completions': range(len(completion_dates))})
-	trace1 = graph_objects.Line(x=completion_dates, y=df['completions'], name='cumulative completions')
-	trace2 = graph_objects.Line(x=completion_dates, y=velocity, name='completion velocity')
+	trace1 = graph_objects.Scatter(x=completion_dates, y=df['completions'], name='cumulative completions')
+	trace2 = graph_objects.Scatter(x=completion_dates, y=velocity, name='completion velocity')
 	# fig = px.line(data_frame=df,
 	# 		      x='completion_date', 
 	# 		      y='completions',

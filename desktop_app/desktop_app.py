@@ -1,18 +1,14 @@
 import tkinter
-import yaml
-import datetime
-import boto3
-import graphics
 
-from pathlib import Path
-from datetime import datetime, timedelta
 from tkinter import ttk, Frame, Label, Button, Entry, Scrollbar, Canvas, Checkbutton, messagebox
 from typing import *
-from goal import Goal
-from client import ClientV2
 from playsound import playsound
-from normal_goals import NormalGoals
-from daily_goals import DailyGoals
+
+from desktop_app import graphics
+from desktop_app.goal import Goal
+from desktop_app.client import ClientV2
+from desktop_app.app_windows.normal_goals import NormalGoals
+from desktop_app.app_windows.daily_goals import DailyGoals
 
 
 class DesktopApp(Frame):
