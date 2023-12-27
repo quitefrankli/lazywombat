@@ -75,6 +75,7 @@ class DesktopApp(Frame):
         def close_window():
             if goal_name.get():
                 self.client.add_goal(Goal(id=-1, name=goal_name.get(), state=False))
+                playsound('data/fx2.wav', block=False)
                 self.refresh_goals_canvas()
             top.destroy()
         top.bind('<Return>', lambda _: close_window())

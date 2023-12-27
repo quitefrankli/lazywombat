@@ -57,7 +57,8 @@ class GoalWidget(Frame):
         CHECK_BOX_RIGHT_OFFSET = DELETE_BUTTON_OFFSET + self.GOAL_ENTRY_HEIGHT
         self._tkinter_state = tkinter.BooleanVar(value=self.goal.state)
         def toggle_goal_state(goal_id: int):
-            playsound('data/fx1.wav', False)
+            if self._tkinter_state.get():
+                playsound('data/fx1.wav', block=False)
             self.client.toggle_goal_state(goal_id)
             self.goals_window.refresh_all_goal_windows()
         Button(self,
