@@ -2,3 +2,6 @@ __pycache__
 *.lnk
 *.zip
 .vscode
+.DS_store
+*.xcodeproj/
+Contents.json
