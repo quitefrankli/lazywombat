@@ -43,8 +43,21 @@ class GoalWidget(Frame):
         label_frame = Frame(self, width=self.GOALS_CANVAS_WIDTH-80, height=self.GOAL_ENTRY_HEIGHT)
         label_frame.pack(side=tkinter.LEFT)
         label_frame.pack_propagate(False) # Stops child widgets of label_frame from resizing it
+        
+        def toggle_collapse():
+            if not self.goal.children:
+                return
+            self.goal.collapsed = not self.goal.collapsed
+            self.goals_window.refresh_goals_canvas()
+        
+        collapse_button = Button(label_frame, 
+                                 text='>' if self.goal.children else '', 
+                                 command=toggle_collapse,
+                                 width=1)
+        collapse_button.pack(side=tkinter.LEFT, padx=(x_padding+self.x_val, 0))
+
         label_window = Label(label_frame, text=self.goal.name, font=self.GOAL_ENTRY_FONT, anchor='w', name=str(self.goal.id))
-        label_window.pack(side=tkinter.LEFT, padx=x_padding+self.x_val, pady=y_padding)
+        label_window.pack(side=tkinter.LEFT)
 
         if self.disable_dragging:
             # double click doesn't work due to single click being mapped already
@@ -61,15 +74,16 @@ class GoalWidget(Frame):
                 playsound('data/fx1.wav', block=False)
             self.client.toggle_goal_state(goal_id)
             self.goals_window.refresh_all_goal_windows()
-        Button(self,
-               text='delete',
-               command=lambda goal_id=self.goal.id: self.goals_window.delete_goal(goal_id)).pack(side=tkinter.LEFT)
-        self.check_button = Checkbutton(self,
-                                        variable=self._tkinter_state,
-                                        onvalue=True,
-                                        offvalue=False,
-                                        command=lambda goal_id=self.goal.id: toggle_goal_state(goal_id))
-        self.check_button.pack(side=tkinter.LEFT)
+        delete_button = Button(self,
+                               text='delete',
+                               command=lambda goal_id=self.goal.id: self.goals_window.delete_goal(goal_id))
+        delete_button.pack(side=tkinter.RIGHT)
+        check_button = Checkbutton(self,
+                                   variable=self._tkinter_state,
+                                   onvalue=True,
+                                   offvalue=False,
+                                   command=lambda goal_id=self.goal.id: toggle_goal_state(goal_id))
+        check_button.pack(side=tkinter.RIGHT)
     
     def is_double_click(self) -> bool:
         return datetime.now() - self._drag_start < timedelta(milliseconds=200)

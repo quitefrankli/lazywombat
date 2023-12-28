@@ -42,6 +42,7 @@ class Goal:
         self.metadata = metadata if metadata else self.Metadata(datetime.now(), None)
     
         self.children: List[int] = []
+        self.collapsed = False
 
     @classmethod
     def from_dict(cls, data: dict):

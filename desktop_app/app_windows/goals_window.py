@@ -79,7 +79,7 @@ class GoalsWindow(Frame):
             return self.render_children(goal) + 1
 
         def render_children(self, parent: Goal) -> int:
-            if self.ignore_children:
+            if self.ignore_children or parent.collapsed:
                 return 0
             self.x_offset += 20
             num_goals_processed = 0
