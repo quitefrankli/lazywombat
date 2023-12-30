@@ -1,123 +1,118 @@
 import SwiftUI
-import AWSS3
-import Yams
 import Foundation
 
 
-struct ResponseJSON : Codable
-{
-    let goals: Array<Goal>
-    let edited: Int
-}
-
-struct Goal : Codable
-{
-    let name: String
-    let daily: Int
-    init(name: String, daily: Int)
-    {
-        self.name = name
-        self.daily = daily
-    }
-    
-    private enum CodingKeys: String, CodingKey {
-        case name = "name"
-        case daily = "daily"
-    }
-}
-
-class GoalsFetcher
-{
-    private var goals: Array<Goal> = []
-    private var semaphore: DispatchSemaphore = DispatchSemaphore(value: 0)
-    private var data: Data?
-    
-    func async_loader() async throws
-    {
-        let client = try S3Client(region: "ap-southeast-2")
-        let input = GetObjectInput(
-            bucket: "todoist2",
-            key: ".todoist2_goals.yaml"
-        )
-        let output = try await client.getObject(input: input)
-        guard let body = output.body,
-              let data2 = try await body.readData() else
-        {
-            throw fatalError("couldn't read data in body")
-        }
-        self.data = data2
-        semaphore.signal()
-    }
-    
-    func sync_loader() throws
-    {
-        semaphore = DispatchSemaphore(value: 0)
-        Task {
-            do {
-                try await async_loader()
-            } catch {
-                print("Error info: \(error)")
-            }
-        }
-        semaphore.wait()
-        
-        let str = String(decoding: data!, as: UTF8.self)
-        let decoder = YAMLDecoder()
-        let loadedDictionary = try Yams.load(yaml: str)
-        let decoded: ResponseJSON = try decoder.decode(ResponseJSON.self, from: str)
-        
-        
-        self.goals = []
-        let today = Date()
-        let date_formatter = DateFormatter()
-        date_formatter.dateFormat = "dd.MM.yyyy"
-        let today_date = date_formatter.string(from: today)
-        for goal in decoded.goals
-        {
-            let daily = Date(timeIntervalSince1970: Double(goal.daily))
-            let daily_date = date_formatter.string(from: daily)
-            
-            if (today_date == daily_date)
-            {
-                self.goals.append(goal)
-            }
-        }
-    }
-    
-    func fetch_goals() -> Array<Goal>
-    {
-        do {
-            try sync_loader()
-        } catch {
-            print("Error info: \(error)")
-        }
-        return self.goals
-    }
-}
-
-class GoalsViewModel : ObservableObject
-{
-    @Published var goals: Array<Goal> = []
-    
-    func initialise_goals()
-    {
-        let fetcher = GoalsFetcher()
-        self.goals = fetcher.fetch_goals()
-    }
-}
-
 struct ContentView: View {
-    @StateObject private var goals_view_model = GoalsViewModel()
+    @StateObject private var goals_fetcher = GoalsFetcher()
+    @State var curr_goal: Goal?
     
     var body: some View {
-        VStack {
-            Text("Todoist2")
-            ForEach(goals_view_model.goals.indices, id: \.self) { index in
-                Text(goals_view_model.goals[index].name).padding(.bottom, 10) // Adjust spacing between buttons
+        // I have absolutely no idea why this HStack is necessary
+        // without it the content view doesn't get updated immediately
+        // on curr_goal change
+        HStack {
+            if curr_goal == nil {
+                daily_view()
+            } else {
+                description_view()
             }
         }
-        .onAppear {
-            goals_view_model.initialise_goals()
+    }
+    
+    func daily_view() -> some View {
+        VStack(alignment: .leading) {
+            HStack {
+                Spacer()
+                Text("Todoist2")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundColor(.blue)
+                    .padding(.vertical, 10)
+                Spacer()
+                Button(action: {
+                    goals_fetcher.fetch_goals()
+                }) {
+                    Text("Refresh Goals")
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(8)
+                }
+                Spacer()
+            }.padding()
+            Spacer()
+            HStack() {
+                VStack(alignment: .leading) {
+                    ForEach(goals_fetcher.goals.indices, id: \.self) { index in
+                        HStack() {
+                            let goal = goals_fetcher.goals[index]
+                            Button(action: {
+                                curr_goal = goal
+                            })
+                            {
+                                Text(goal.name)                        .foregroundColor(.white)
+                                    .padding()
+                                    .background(Color.blue)
+                                    .cornerRadius(8)
+                                    .multilineTextAlignment(.leading)
+                            }.padding(0.4)
+                             .padding([.leading], 10)
+                        }
+                    }
+                }.frame(
+                    minWidth: 0,
+                    maxWidth: .infinity,
+                    minHeight: 0,
+                    maxHeight: .infinity,
+                    alignment: .topLeading)
+            }
+            Spacer()
+        }
+    }
+    
+    func description_view() -> some View {
+        VStack(alignment: .leading) {
+            HStack {
+                Spacer()
+                Text("Todoist2")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundColor(.blue)
+                    .padding(.vertical, 10)
+                Spacer()
+                Button(action: {
+                    curr_goal = nil
+                }) {
+                    Text("Return")
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(8)
+                }
+                Spacer()
+            }.padding()
+            Spacer()
+            HStack() {
+                VStack(alignment: .leading) {
+                    Text(curr_goal?.name ?? "")
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .foregroundColor(.blue)
+                        .padding()
+
+                    Text(curr_goal?.description ?? "")
+                        .foregroundColor(.gray).padding()
+                    Image("Image").resizable().scaledToFill()
+                        .edgesIgnoringSafeArea(.all)
+                }
+                .frame(
+                    minWidth: 0,
+                    maxWidth: .infinity,
+                    minHeight: 0,
+                    maxHeight: .infinity,
+                    alignment: .topLeading)
+            }
+            Spacer()
         }
     }
 }
