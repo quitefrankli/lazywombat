@@ -8,48 +8,37 @@ from playsound import playsound
 
 from desktop_app.goal import Goal
 from desktop_app.client import ClientV2
-from .goal_widget import GoalWidget
+from .goal_widget import GoalWidget, GoalDetailsWindow
 from .goals_window import GoalsWindow
 
 
-class GoalsSummary(GoalsWindow):
+class CompletedGoals(GoalsWindow):
     def __init__(self, master: Any, client: ClientV2, refresh_all: Callable):
-        super().__init__(master, 'Goals Summary', client, refresh_all)
+        super().__init__(master, 'Completed Goals', client, refresh_all)
 
-        self._show_completed = False
-        def toggle_completed():
-            self._show_completed = not self._show_completed
-            self.refresh_goals_canvas()
-        Button(self,
-               text='Toggle Completed',
-               command=toggle_completed).pack(side=tkinter.BOTTOM)
-        
+    class DetailsWindow(GoalDetailsWindow):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.make_daily_button.pack_forget()
+            self.backglog_button.pack_forget()
+            self.unparent_button.pack_forget()
+            self.remove_from_daily_button.pack_forget()
+            self.remove_from_backlog_button.pack_forget()
+
     def refresh_goals_canvas(self) -> None:
         # first cleanup the canvas if there are existing goal windows
         self.canvas.delete(tkinter.ALL)
-        
         goals = self.client.fetch_goals()
-        goals.sort(key=lambda goal: goal.metadata.creation_date.timestamp())
-        idx_offset: int = 0
+        goals = list(filter(lambda goal: goal.state, goals))
+        goals.sort(key=lambda goal: goal.metadata.completion_date.timestamp())
         last_date_label = Goal.NULL_DATE.date()
-        now = datetime.now()
+        idx_offset = 0
 
         def get_y_val() -> int:
             return idx_offset * self.GOAL_ENTRY_HEIGHT
         
         for goal in goals:
-            has_children = goal.children
-            if not has_children and self._show_completed and not goal.state:
-                continue
-            days_since_completion = 0 if not goal.state else (now - goal.metadata.completion_date).days
-            if not has_children and not self._show_completed and days_since_completion > 3:
-                continue
-
-            # reserve rendering of children to later
-            if goal.parent != -1:
-                continue
-
-            goal_date = goal.metadata.creation_date.date()
+            goal_date = goal.metadata.completion_date.date()
             if last_date_label != goal_date:
                 last_date_label = goal_date
                 self.canvas.create_window(self.GOALS_CANVAS_WIDTH/2,
@@ -61,11 +50,18 @@ class GoalsSummary(GoalsWindow):
                 idx_offset += 1
 
             def goal_constructor(goal: Goal, x: int, y: int) -> GoalWidget:
-                goal_widget = GoalWidget(self.canvas, self, goal, self.client, x, y)
+                goal_widget = GoalWidget(self.canvas, 
+                                         self, 
+                                         goal, 
+                                         self.client, 
+                                         x, 
+                                         y, 
+                                         details_window_cls=self.DetailsWindow,
+                                         disable_dragging=True)
                 self.canvas.create_window(0, y, anchor=tkinter.NW, window=goal_widget)
                 return goal_widget
             renderer = self.GoalRenderer(goal_constructor, 
                                          self.client.fetch_goal, 
                                          idx_offset,
-                                         ignore_children=False)
+                                         ignore_children=True)
             idx_offset += renderer.render_goal(goal)

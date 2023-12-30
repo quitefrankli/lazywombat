@@ -41,6 +41,11 @@ class GoalsWindow(Frame):
         self.scrollbar.pack(side=tkinter.LEFT, fill=tkinter.Y)
         self.canvas.config(width=self.GOALS_CANVAS_WIDTH, height=self.GOALS_CANVAS_HEIGHT)
         self.canvas_frame.pack(side=tkinter.TOP)
+        self.hidden = False
+        
+    def toggle_hidden(self):
+        self.hidden = not self.hidden
+        self.refresh_all_goal_windows()
 
     def setup_parent(self, child_id: int, parent_id: int) -> None:
         self.client.setup_parent(child_id, parent_id)
