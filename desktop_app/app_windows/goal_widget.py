@@ -1,6 +1,6 @@
 import tkinter
 
-from tkinter import Frame, Label, Button, Checkbutton
+from tkinter import Frame, Label, Button, Checkbutton, Message
 from tkinter.scrolledtext import ScrolledText
 from typing import *
 from datetime import datetime, timedelta
@@ -56,12 +56,20 @@ class GoalWidget(Frame):
                                  width=1)
         collapse_button.pack(side=tkinter.LEFT, padx=(x_padding+self.x_val, 0))
 
-        label_window = Label(label_frame, text=self.goal.name, font=self.GOAL_ENTRY_FONT, anchor='w', name=str(self.goal.id))
+        label_window = Label(label_frame, 
+                             text=self.goal.name, 
+                             font=self.GOAL_ENTRY_FONT, 
+                             anchor='w', 
+                             name=str(self.goal.id))
         label_window.pack(side=tkinter.LEFT)
 
         if self.disable_dragging:
             # double click doesn't work due to single click being mapped already
-            label_window.bind('<Double-Button-1>', lambda _, goal_id=self.goal.id: self.spawn_goal_details_window(goal_id))
+            label_window.bind('<Double-Button-1>', 
+                              lambda _, goal_id=self.goal.id: GoalDetailsWindow(self, 
+                                                                                self.client, 
+                                                                                self.goal.id, 
+                                                                                self.goals_window.refresh_all_goal_windows))
         else:
             label_window.bind('<Button-1>', self.on_lclick)
             label_window.bind('<B1-Motion>', self.on_drag_motion)
@@ -90,7 +98,7 @@ class GoalWidget(Frame):
 
     def on_lclick(self, event: tkinter.Event):
         if self.is_double_click():
-            self.spawn_goal_details_window(self.goal.id)
+            GoalDetailsWindow(self, self.client, self.goal.id, self.goals_window.refresh_all_goal_windows)
         else:
             self.lift()
             self._drag_start_x, self._drag_start_y = event.x, event.y
@@ -117,35 +125,91 @@ class GoalWidget(Frame):
         
         self.goals_window.setup_parent(self.goal.id, goal_id)
 
-    def spawn_goal_details_window(self, goal_id: int) -> None:
-        top = tkinter.Toplevel(self)
-        top.geometry(f"400x200+{self.master.winfo_rootx()}+{self.master.winfo_rooty()}")
-        top.title("Goal Details")
-        goal = self.client.fetch_goal(goal_id)
-        Label(top, text=f"Goal Name: {goal.name}").pack()
-        description = ScrolledText(top, wrap=tkinter.WORD, width=40, height=6)
-        description.pack()
-        description.insert(tkinter.INSERT, goal.description)
-        description.focus()
-        def close_window():
-            new_description = description.get("1.0", tkinter.END)
-            if goal.description != new_description:
-                self.client.need_saving = True
-                goal.description = new_description
-            top.destroy()
-        top.bind('<Escape>', lambda _: top.destroy())
-        Button(top, text="Ok", command=close_window).pack()
-        is_daily = goal.daily.date() == datetime.now().date()
-        def toggle_daily():
-            self.client.toggle_goal_daily(goal_id)
-            self.goals_window.refresh_all_goal_windows()
-            close_window()
-        Button(top, 
-               text="Remove from Daily" if is_daily else "Make Daily", 
-               command=toggle_daily).pack(side=tkinter.LEFT)
-        def unparent():
-            self.client.unparent_goal(goal_id)
-            self.goals_window.refresh_all_goal_windows()
-            close_window()
-        Button(top, text="Unparent", command=unparent).pack(side=tkinter.LEFT)
+class GoalDetailsWindow(tkinter.Toplevel):
+    WINDOW_WIDTH = 400
+    WINDOW_HEIGHT = 300
+    GOAL_NAME_FONT = 'Helvetica 12 bold'
+    GOAL_NAME_CHAR_ACROSS = 350
+    GOAL_DESCRIPTION_FONT = 'Helvetica 10'
+
+    def toggle_backlog(self) -> None:
+        self.goal.backlogged = not self.goal.backlogged
+        self.need_saving = True
+        self.need_refresh = True
+        self.close_window()
+
+    def toggle_daily(self) -> None:
+        self.goal.daily = Goal.NULL_DATE if self.is_daily else datetime.now()
+        self.need_saving = True
+        self.need_refresh = True
+        self.close_window()
+
+    def unparent(self) -> None:
+        self.client.unparent_goal(self.goal.id)
+        self.need_refresh = True
+        self.close_window()
+
+    def close_window(self) -> None:
+        new_description = self.description.get("1.0", tkinter.END)
+        self.need_saving = self.need_saving or self.goal.description != new_description
+        self.goal.description = new_description
+        if self.need_saving:
+            self.client.need_saving = True
+        if self.need_refresh:
+            self.refresh_all()    
+        self.destroy()
+
+    def __init__(self, master: tkinter.Misc, client: ClientV2, goal_id: int, refresh_all: Callable) -> None:
+        super().__init__(master)
+        self.need_refresh = False
+        self.need_saving = False
+        self.client = client
+        self.goal = self.client.fetch_goal(goal_id)
+        self.is_daily = self.goal.daily.date() == datetime.now().date()
+        self.is_backlogged = self.goal.backlogged
+        self.refresh_all = refresh_all
+
+        self.geometry(
+            f"{self.WINDOW_WIDTH}x{self.WINDOW_HEIGHT}+{self.master.winfo_rootx()}+{self.master.winfo_rooty()}")
+        self.title("Goal Details")
+
+        Message(self, 
+                text=self.goal.name, 
+                font=self.GOAL_NAME_FONT,
+                anchor='w',
+                justify=tkinter.LEFT,
+                width=self.GOAL_NAME_CHAR_ACROSS).pack(padx=3, pady=3)
+        self.description = ScrolledText(self, wrap=tkinter.WORD, width=40, height=6)
+        self.description.pack()
+        self.description.insert(tkinter.INSERT, self.goal.description)
+        self.description.focus()
+
+        if not self.is_daily and not self.is_backlogged:
+            button = Button(self, 
+                            text="Make Daily", 
+                            command=self.toggle_daily)
+            button.pack(padx=(10, 0), side=tkinter.LEFT)
+            button = Button(self,
+                            text="Backlog",
+                            command=self.toggle_backlog)
+            button.pack(padx=1, side=tkinter.LEFT)
+            button = Button(self, 
+                            text="Unparent", 
+                            command=self.unparent)
+            button.pack(padx=1, side=tkinter.LEFT)
+        if self.is_daily:
+            button = Button(self,
+                            text="Remove from Daily",
+                            command=self.toggle_daily)
+            button.pack(padx=(10, 0), side=tkinter.LEFT)
+        elif self.is_backlogged:
+            button = Button(self,
+                            text="Remove from Backlog",
+                            command=self.toggle_backlog)
+            button.pack(padx=(10, 0), side=tkinter.LEFT)
         
+        self.bind('<Escape>', lambda _: self.destroy())
+        button = Button(self, 
+                        text="Ok", 
+                        command=self.close_window)
+        button.pack(padx=(0, 10), side=tkinter.RIGHT)
