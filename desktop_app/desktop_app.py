@@ -65,6 +65,15 @@ class DesktopApp(Frame):
         self.toggle_completed_button = Button(self,
                text="Toggle Completed",
                command=self.toggle_completed)
+        self.is_abort = False
+        def abort():
+            self.is_abort = True
+            self.quit()
+        # exit without saving
+        self.abort_button = Button(self,
+                                   text="Abort",
+                                   command=abort)
+        self.abort_button.pack(side=tkinter.RIGHT)
 
         self.refresh_all_goals_windows()
         self.refresh_all_buttons()
@@ -149,4 +158,5 @@ class DesktopApp(Frame):
 
     def run(self) -> None:
         self.mainloop()
-        self.client.save_goals()
+        if not self.is_abort:
+            self.client.save_goals()
