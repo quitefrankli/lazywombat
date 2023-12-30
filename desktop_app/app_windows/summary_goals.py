@@ -39,9 +39,6 @@ class SummaryGoals(GoalsWindow):
             if goal.backlogged:
                 continue
             has_children = goal.children
-            if not has_children and not goal.state:
-                continue
-            
 			# shows goals that are recently completed
             days_since_completion = 0 if not goal.state else (now - goal.metadata.completion_date).days
             if not has_children and days_since_completion > 3:
