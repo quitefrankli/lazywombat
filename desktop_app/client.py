@@ -70,6 +70,9 @@ class ClientV2:
         if not self.debug:
              self.s3_client.upload_file(backup, self.BUCKET_NAME, s3_obj_name)
         return s3_obj_name
+    
+    def get_failed_goals(self) -> List[Goal]:
+        return self.backend.get_failed_goals()
 
     def save_goals(self) -> None:
         if self.need_saving:

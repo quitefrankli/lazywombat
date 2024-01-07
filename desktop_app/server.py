@@ -66,6 +66,14 @@ class Backend:
         self.save_goals(backup)
         return backup
 
+    def get_failed_goals(self) -> List[Goal]:
+        today = datetime.now().date()
+        failed_goals: List[Goal] = []
+        for goal in self.goals.values():
+            if goal.daily != Goal.NULL_DATE and goal.daily.date() < today and not goal.state:
+                failed_goals.append(goal)
+        return failed_goals
+
     def get_datetime_str(self) -> str:
         return datetime.now().strftime("%Y%m%d%H%M%S")
 

@@ -1,5 +1,7 @@
 import tkinter
+import time
 
+from threading import Thread
 from tkinter import ttk, Frame, Label, Button, Entry, Scrollbar, Canvas, Checkbutton, messagebox
 from typing import *
 from playsound import playsound
@@ -11,6 +13,7 @@ from desktop_app.app_windows.summary_goals import SummaryGoals
 from desktop_app.app_windows.daily_goals import DailyGoals
 from desktop_app.app_windows.backlogged_goals import BackloggedGoals
 from desktop_app.app_windows.completed_goals import CompletedGoals
+from desktop_app.app_windows.failed_goals import FailedGoals
 
 
 class DesktopApp(Frame):
@@ -151,12 +154,36 @@ class DesktopApp(Frame):
         top.bind('<Return>', lambda _: close_window())
         top.bind('<Escape>', lambda _: top.destroy())
         Button(top, text="Ok", command=close_window).pack()
+
+    def spawn_failed_goals_window(self) -> None:
+        if not self.client.get_failed_goals():
+            return
+
+        time.sleep(1.5) # wait for mainloop to start
+        top = tkinter.Toplevel(self)
+        top.title("Failed Goals")
+        top.focus()
+
+        failed_goals_window = FailedGoals(top, self.client, self.refresh_all_goals_windows)
+        failed_goals_window.pack()
+        failed_goals_window.refresh_goals_canvas()
+
+        curr_geometry = top.geometry().split('+')[0]
+        width = int(curr_geometry.split('x')[0])
+        height = int(curr_geometry.split('x')[1])
+        top.geometry(f"{width}x{height+40}+{self.master.winfo_x()}+{self.master.winfo_y()}")
+
+        Button(top, text="Ok", command=top.destroy).pack()
+        top.bind('<Escape>', lambda _: top.destroy())
         
     def backup_goals(self) -> None:
         backup = self.client.backup_goals()
         messagebox.showinfo(message=f'Created backup: {backup}')
 
     def run(self) -> None:
+        failed_goals_thread = Thread(target=self.spawn_failed_goals_window)
+        failed_goals_thread.start()
         self.mainloop()
+        failed_goals_thread.join()
         if not self.is_abort:
             self.client.save_goals()

@@ -37,6 +37,7 @@ class GoalDetailsWindow(tkinter.Toplevel):
 
     def close_window(self) -> None:
         new_description = self.description.get("1.0", tkinter.END)
+        new_description = new_description.rstrip()
         self.need_saving = self.need_saving or self.goal.description != new_description
         self.goal.description = new_description
         if self.need_saving:
@@ -105,7 +106,7 @@ class GoalDetailsWindow(tkinter.Toplevel):
             command=self.toggle_backlog)
         self.remove_from_backlog_button.pack(padx=1, side=tkinter.LEFT)
         
-        self.bind('<Escape>', lambda _: self.destroy())
+        self.bind('<Escape>', lambda _: self.close_window())
         button = Button(self, 
                         text="Ok", 
                         command=self.close_window)
