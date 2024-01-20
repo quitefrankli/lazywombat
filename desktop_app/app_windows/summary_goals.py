@@ -52,23 +52,31 @@ class SummaryGoals(GoalsWindow):
         self.canvas.delete(tkinter.ALL)
         
         goals = self.client.fetch_goals()
-        # reserve rendering of children to later
-        goals = [goal for goal in goals if goal.parent == -1 and not goal.backlogged]
+        now = datetime.now()
+        def should_render(goal: Goal) -> bool:
+            # reserve rendering of children to later
+            if goal.parent != -1:
+                return False
+            if goal.backlogged:
+                return False
+            if goal.repeat:
+                return False
+            # hides goals that have been completed for a while
+            days_since_completion = 0 if not goal.state else (now - goal.metadata.completion_date).days
+            if days_since_completion > 2:
+                return False
+            
+            return True
+        
+        goals = [goal for goal in goals if should_render(goal)]
         goals.sort(key=lambda goal: goal.metadata.creation_date.timestamp())
         idx_offset: int = 0
         last_date_label = Goal.NULL_DATE.date()
-        now = datetime.now()
 
         def get_y_val() -> int:
             return idx_offset * self.GOAL_ENTRY_HEIGHT
         
         for goal in goals:
-            has_children = goal.children
-            # shows goals that are recently completed
-            days_since_completion = 0 if not goal.state else (now - goal.metadata.completion_date).days
-            if not has_children and days_since_completion > 2:
-                continue
-
             goal_date = goal.metadata.creation_date.date()
             if last_date_label != goal_date:
                 last_date_label = goal_date
