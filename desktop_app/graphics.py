@@ -21,7 +21,7 @@ def get_completions_per_week(completions: List[datetime]) -> Tuple[List[int], Li
     weeks = []
     completions_per_week = []
 
-    num_days_in_week = 3
+    num_days_in_week = 7
 
     curr_monday = first_monday
     completion_idx = 0
@@ -52,6 +52,16 @@ def apply_smoothening(completions_per_week: List[int]) -> List[float]:
     filtered = savgol_filter(completions_per_week, window_size, polynomial_order)
     return filtered
 
+def calculate_simple_rate(completions: List[datetime]) -> List[float]:
+    rate = []
+    for i, completion_date in enumerate(completions):
+        if i == 0:
+            rate.append(1)
+            continue
+        period = completion_date - completions[0]
+        rate.append(len(rate) / period.days if period.days > 0 else 1)
+    return rate
+
 def plot_velocity(goals: List[Goal]) -> None:
     goals = [goal for goal in goals if goal.state]
     goals.sort(key=lambda goal: goal.metadata.completion_date.timestamp())
@@ -77,11 +87,16 @@ def plot_velocity(goals: List[Goal]) -> None:
                                    line=dict(color='blue', 
                                              shape='spline',
                                              smoothing=1.3))
+    trace5 = graph_objects.Scatter(x=completion_dates,
+                                   y=calculate_simple_rate(completion_dates),
+                                   name='simple avg completions/day',
+                                   line=dict(color='red'))
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(trace1)
-    fig.add_trace(trace2, secondary_y=True)
+    # fig.add_trace(trace2, secondary_y=True)
     # fig.add_trace(trace3, secondary_y=True)
     fig.add_trace(trace4, secondary_y=True)
+    fig.add_trace(trace5, secondary_y=True)
     fig['layout'].update(title='Goal Completion Velocity')
     fig.update_xaxes(title_text='date')
     fig.update_yaxes(title_text='cumulative completions', secondary_y=False)
