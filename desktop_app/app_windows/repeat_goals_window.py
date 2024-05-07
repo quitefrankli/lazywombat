@@ -161,9 +161,17 @@ class RepeatGoalsWindow(GoalsWindow):
             if self.goal.parent != -1:
                 self.delete_button.pack_forget()
 
-            # remove checkbox if parent
+            # # remove checkbox if parent
+            # if self.goal.parent == -1:
+            #     self.check_button.pack_forget()
+
+        def toggle_goal_state(self, goal_id: int):
             if self.goal.parent == -1:
-                self.check_button.pack_forget()
+                for child_id in self.goal.children:
+                    if not self.client.fetch_goal(child_id).state:
+                        self.client.toggle_goal_state(child_id)
+            
+            super().toggle_goal_state(goal_id)
 
     def refresh_goals_canvas(self) -> None:
         # first cleanup the canvas if there are existing goal windows

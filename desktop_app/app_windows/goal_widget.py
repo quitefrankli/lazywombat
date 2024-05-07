@@ -185,11 +185,7 @@ class GoalWidget(Frame):
         DELETE_BUTTON_OFFSET = 40
         CHECK_BOX_RIGHT_OFFSET = DELETE_BUTTON_OFFSET + self.GOAL_ENTRY_HEIGHT
         self._tkinter_state = tkinter.BooleanVar(value=self.goal.state)
-        def toggle_goal_state(goal_id: int):
-            if self._tkinter_state.get():
-                playsound('data/fx1.wav', block=False)
-            self.client.toggle_goal_state(goal_id)
-            self.goals_window.refresh_all_goal_windows()
+
         self.delete_button = Button(self,
                                text='delete',
                                command=lambda goal_id=self.goal.id: self.goals_window.delete_goal(goal_id))
@@ -198,9 +194,15 @@ class GoalWidget(Frame):
                                    variable=self._tkinter_state,
                                    onvalue=True,
                                    offvalue=False,
-                                   command=lambda goal_id=self.goal.id: toggle_goal_state(goal_id))
+                                   command=lambda goal_id=self.goal.id: self.toggle_goal_state(goal_id))
         self.check_button.pack(side=tkinter.RIGHT)
     
+    def toggle_goal_state(self, goal_id: int):
+        if self._tkinter_state.get():
+            playsound('data/fx1.wav', block=False)
+        self.client.toggle_goal_state(goal_id)
+        self.goals_window.refresh_all_goal_windows()
+
     def is_double_click(self) -> bool:
         return datetime.now() - self._drag_start < timedelta(milliseconds=200)
 
