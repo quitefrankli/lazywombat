@@ -146,7 +146,8 @@ class RepeatGoalsWindow(GoalsWindow):
             self.refresh_all()
 
         def set_end_date(self):
-            selected_date = select_date(self)
+            reference_date = self.goal.repeat_end_date if self.goal.repeat_end_date != Goal.NULL_DATE else datetime.now()
+            selected_date = select_date(self, reference_date)
             if selected_date == Goal.NULL_DATE:
                 return
             

@@ -8,7 +8,7 @@ from datetime import datetime
 from desktop_app.goal import Goal
 
 
-def select_date(frame: tkinter.Frame):
+def select_date(frame: tkinter.Frame, current_date: datetime = datetime.now()) -> datetime:
     top = tkinter.Toplevel(frame)
     cal = Calendar(
         top, 
@@ -16,9 +16,9 @@ def select_date(frame: tkinter.Frame):
         selectmode='day', 
         locale='en_AU',
         cursor="hand1",
-        year=datetime.now().year,
-        month=datetime.now().month,
-        day=datetime.now().day)
+        year=current_date.year,
+        month=current_date.month,
+        day=current_date.day)
     cal.pack(fill="both", expand=True)
 
     selected_date = Goal.NULL_DATE
