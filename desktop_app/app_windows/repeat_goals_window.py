@@ -5,6 +5,7 @@ from tkinter import ttk, Frame, Label, Button, Entry
 from typing import *
 from playsound import playsound
 
+from desktop_app.helpers import select_date
 from desktop_app.goal import Goal
 from desktop_app.client import ClientV2
 from .goal_widget import GoalWidget, GoalDetailsWindow
@@ -51,6 +52,8 @@ class RepeatGoalsWindow(GoalsWindow):
         if use_today_as_last_date:
             child_goal_date = max(datetime.now(), child_goal_date)
         limit_date = datetime.now() + timedelta(weeks=2)
+        if goal.repeat_end_date != Goal.NULL_DATE:
+            limit_date = min(limit_date, goal.repeat_end_date)
 
         while child_goal_date < limit_date:
             child_goal = Goal(id=-1, 
@@ -91,12 +94,22 @@ class RepeatGoalsWindow(GoalsWindow):
         period_entry = Entry(period_frame, textvariable=period)
         period_entry.pack(side=tkinter.LEFT)
 
+        selected_date: Goal.NULL_DATE
+        def set_end_date():
+            nonlocal selected_date
+            selected_date = select_date(self)
+            selected_date = selected_date if selected_date is not None else Goal.NULL_DATE
+
+        set_end_date_button = Button(top, text='Set End Date', command=set_end_date)
+        set_end_date_button.pack()
+
         def close_window():
             if goal_name.get():
                 goal_id = self.client.add_goal(Goal(id=-1, name=goal_name.get(), state=False))
                 goal = self.client.fetch_goal(goal_id)
                 goal.repeat = period.get()
                 goal.description = description.get()
+                goal.repeat_end_date = selected_date
                 # create future repeat child goals
                 self.spawn_repeat_child_goals(goal)
                 playsound('data/fx2.wav', block=False)
@@ -117,16 +130,29 @@ class RepeatGoalsWindow(GoalsWindow):
 
             if self.goal.parent == -1:
                 self.pause_button = Button(self.custom_buttons_frame,
-                                        text='unpause' if self.goal.paused else 'pause',
-                                        command=self.toggle_pause)
+                                           text='unpause' if self.goal.paused else 'pause',
+                                           command=self.toggle_pause)
                 self.pause_button.pack(side=tkinter.LEFT)
-            
+                self.set_end_date_button = Button(self.custom_buttons_frame,
+                                                  text='Set End Date',
+                                                  command=self.set_end_date)
+                self.set_end_date_button.pack(side=tkinter.LEFT)
+
         def toggle_pause(self):
             self.goal.paused = not self.goal.paused
             if not self.goal.paused:
                 self.goals_window.spawn_repeat_child_goals(self.goal, use_today_as_last_date=True)
             self.client.need_saving = True
             self.refresh_all()
+
+        def set_end_date(self):
+            selected_date = select_date(self)
+            if selected_date == Goal.NULL_DATE:
+                return
+            
+            self.goal.repeat_end_date = selected_date
+            self.need_saving = True
+            self.need_refresh = True
 
     class RepeatGoalWidget(GoalWidget):
         def __init__(self, *args, **kwargs):

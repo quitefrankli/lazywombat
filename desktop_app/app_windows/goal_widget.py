@@ -9,7 +9,8 @@ from tkcalendar import Calendar
 from playsound import playsound
 from desktop_app.client import ClientV2
 from desktop_app.goal import Goal
-from .goals_window import GoalsWindow
+from desktop_app.helpers import select_date
+from desktop_app.app_windows.goals_window import GoalsWindow
 
 
 class GoalDetailsWindow(tkinter.Toplevel):
@@ -32,32 +33,13 @@ class GoalDetailsWindow(tkinter.Toplevel):
             self.need_refresh = True
             self.close_window()
             return
-
-        top = tkinter.Toplevel(self)
-        cal = Calendar(
-            top, 
-            font="Arial 14", 
-            selectmode='day', 
-            locale='en_AU',
-            cursor="hand1",
-            year=datetime.now().year,
-            month=datetime.now().month,
-            day=datetime.now().day)
-        cal.pack(fill="both", expand=True)
-        def set_date():
-            date = cal.selection_get()
-            self.goal.daily = datetime(date.year, date.month, date.day, hour=9)
-            self.need_saving = True
-            self.need_refresh = True
-            self.close_window()
-        Button(top, text="OK", command=set_date).pack()
-        top.bind('<Escape>', lambda _: top.destroy())
-        # geometry = top.winfo_geometry().split('+')[0]
-        # width = int(geometry.split('x')[0])
-        # height = int(geometry.split('x')[1])
-        width = 300
-        height = 300
-        top.geometry(f"{width}x{height}+{self.master.winfo_rootx()}+{self.master.winfo_rooty()}")
+        
+        selected_date = select_date(self)
+        if selected_date is None:
+            return
+        self.goal.daily = datetime(selected_date.year, selected_date.month, selected_date.day, hour=9)
+        self.need_saving = True
+        self.need_refresh = True
 
     def unparent(self) -> None:
         self.client.unparent_goal(self.goal.id)

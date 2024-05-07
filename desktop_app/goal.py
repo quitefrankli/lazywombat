@@ -46,6 +46,7 @@ class Goal:
         self.children: List[int] = []
         self.repeat: int = 0 # in days
         self.paused = False # only for repeat parent goals
+        self.repeat_end_date = self.NULL_DATE
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -63,6 +64,7 @@ class Goal:
                    cls.Metadata.from_dict(data['metadata']))
         goal.repeat = safe_get('repeat', 0)
         goal.paused = safe_get('paused', False)
+        goal.repeat_end_date = datetime.fromtimestamp(data['repeat_end_date']) if 'repeat_end_date' in data else cls.NULL_DATE
 
         return goal
 
@@ -80,6 +82,7 @@ class Goal:
             'repeat': self.repeat,
             'metadata': self.metadata.to_dict(),
             'paused': self.paused,
+            'repeat_end_date': int(self.repeat_end_date.timestamp())
         }
     
     def toggle_daily(self) -> None:
