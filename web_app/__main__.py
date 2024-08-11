@@ -8,6 +8,7 @@ from pathlib import Path
 from flask import Flask, render_template, send_from_directory, request
 from flask_bootstrap import Bootstrap5
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 
 from desktop_app.client import ClientV2
 from desktop_app.goal import Goal
@@ -17,7 +18,8 @@ app = Flask(__name__)
 bootstrap = Bootstrap5(app)
 
 def get_random_image() -> Path:
-    BASE_DIR = Path(os.environ["RANDOM_IMAGES_DIR"])
+    BASE_DIR = Path(os.environ["RANDOM_IMAGES_DIR"] if "RANDOM_IMAGES_DIR" in os.environ else "resources")
+    print(BASE_DIR.absolute())
     images = list(BASE_DIR.glob("*.jpeg"))
 
     return random.choice(images).absolute()
@@ -64,6 +66,10 @@ def index():
     dated_goal_blocks.reverse()
     return render_template('index.html', dated_goal_blocks=dated_goal_blocks)
 
+@app.route('/debug')
+def debug():
+    return render_template('debug.html')
+
 @app.route('/resources/<path:filename>')
 def static_file(filename):
     image = get_random_image()
@@ -91,11 +97,13 @@ def before_request():
 @click.option('--debug', is_flag=True, help='Run the server in debug mode', default=False)
 def main(debug: bool):
     ClientV2.create_instance(debug)
-    rotating_log_handler = logging.handlers.RotatingFileHandler("logs/web_app.log",
-                                                                maxBytes=1000,
-                                                                backupCount=10)
+    log_path = Path("logs/web_app.log")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    rotating_log_handler = RotatingFileHandler(str(log_path),
+                                               maxBytes=int(1e6),
+                                               backupCount=10)
     logging.basicConfig(level=logging.DEBUG if debug else logging.INFO, 
-                        handlers=[rotating_log_handler])
+                        handlers=[] if debug else [rotating_log_handler])
     app.run(host='0.0.0.0', port=80, debug=debug)
 
 if __name__ == '__main__':
