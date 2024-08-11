@@ -75,9 +75,9 @@ class ClientV2:
 
     def backup_goals(self) -> str:
         backup = self.backend.backup_goals()
-        s3_obj_name = f".todoist2_backup/{os.path.basename(backup)}"
+        s3_obj_name = f"backups/{backup}"
         if not self.debug:
-             self.s3_client.upload_file(backup, self.BUCKET_NAME, s3_obj_name)
+             self.s3_client.upload_file(f"{Backend.BACKUP_DIR}/{backup}", self.BUCKET_NAME, s3_obj_name)
         return s3_obj_name
     
     def get_failed_goals(self) -> List[Goal]:

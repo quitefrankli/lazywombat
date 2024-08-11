@@ -60,8 +60,8 @@ class Backend:
             return []
         
     def backup_goals(self) -> str:
-        backup = f"{self.BACKUP_DIR}/{self.get_datetime_str()}.yaml"
-        self.save_goals(backup)
+        backup = f"{self.get_datetime_str()}.yaml"
+        self.save_goals(f"{self.BACKUP_DIR}/{backup}")
         return backup
 
     def get_failed_goals(self) -> List[Goal]:
