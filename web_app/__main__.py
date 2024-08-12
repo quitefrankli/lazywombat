@@ -19,7 +19,6 @@ bootstrap = Bootstrap5(app)
 
 def get_random_image() -> Path:
     BASE_DIR = Path(os.environ["RANDOM_IMAGES_DIR"] if "RANDOM_IMAGES_DIR" in os.environ else "resources")
-    print(BASE_DIR.absolute())
     images = list(BASE_DIR.glob("*.jpeg"))
 
     return random.choice(images).absolute()

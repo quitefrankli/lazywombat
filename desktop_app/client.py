@@ -13,10 +13,15 @@ class ClientV2:
 
     @staticmethod
     def instance() -> 'ClientV2':
+        # todo: when we have migrated to ec2 completely, we can remove this
+        return ClientV2(ClientV2._debug)
         return ClientV2._instance
     
     @staticmethod
     def create_instance(debug: bool) -> None:
+        # todo: when we have migrated to ec2 completely, we can remove this
+        ClientV2._debug = debug
+        return 
         ClientV2._instance = ClientV2(debug)
 
     def __init__(self, debug: bool) -> None:
