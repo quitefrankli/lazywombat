@@ -1,5 +1,6 @@
 import boto3
 import os
+import logging
 
 from botocore.exceptions import ClientError
 from typing import *
@@ -34,7 +35,11 @@ class ClientV2:
                                         aws_secret_access_key=SECRET_ACCESS_KEY)
             try:
                 save_file_name = os.path.basename(Backend.SAVE_FILE)
+                logging.info(f"Downloading {save_file_name} from s3")
                 self.s3_client.download_file(self.BUCKET_NAME, save_file_name, Backend.SAVE_FILE)
+                save_file_name = os.path.basename(Backend.USERS_FILE)
+                logging.info(f"Downloading {save_file_name} from s3")
+                self.s3_client.download_file(self.BUCKET_NAME, save_file_name, Backend.USERS_FILE)
             except ClientError as e:
                 print(f"could not download save file from s3: {e}")
 
@@ -46,6 +51,9 @@ class ClientV2:
     
     def fetch_goal(self, goal_id: int) -> Goal:
         return self.backend.get_goal(goal_id)
+    
+    def fetch_users(self) -> Dict[str, str]:
+        return self.backend.get_users()
     
     def add_goal(self, goal: Goal) -> int:
         goal_id = self.backend.add_goal(goal)
@@ -82,7 +90,8 @@ class ClientV2:
         backup = self.backend.backup_goals()
         s3_obj_name = f"backups/{backup}"
         if not self.debug:
-             self.s3_client.upload_file(f"{Backend.BACKUP_DIR}/{backup}", self.BUCKET_NAME, s3_obj_name)
+            logging.info(f"Uploading {Backend.BACKUP_DIR}/{backup} to s3")
+            self.s3_client.upload_file(f"{Backend.BACKUP_DIR}/{backup}", self.BUCKET_NAME, s3_obj_name)
         return s3_obj_name
     
     def get_failed_goals(self) -> List[Goal]:
@@ -93,4 +102,12 @@ class ClientV2:
             self.backend.save_goals()
             if not self.debug:
                 save_file_name = os.path.basename(Backend.SAVE_FILE)
+                logging.info(f"Uploading {Backend.SAVE_FILE} to s3")
                 self.s3_client.upload_file(Backend.SAVE_FILE, self.BUCKET_NAME, save_file_name)
+
+    def save_users(self) -> None:
+        self.backend.save_users()
+        if not self.debug:
+            save_file_name = os.path.basename(Backend.USERS_FILE)
+            logging.info(f"Uploading {Backend.USERS_FILE} to s3")
+            self.s3_client.upload_file(Backend.USERS_FILE, self.BUCKET_NAME, save_file_name)

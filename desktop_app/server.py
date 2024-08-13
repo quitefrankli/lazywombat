@@ -14,9 +14,13 @@ SAVE_DIRECTORY = Path.home() / ".todoist2"
 class Backend:
     SAVE_FILE = f"{SAVE_DIRECTORY}/goals.yaml"
     BACKUP_DIR = f"{SAVE_DIRECTORY}/backups"
+    USERS_FILE = f"{SAVE_DIRECTORY}/users.yaml"
+
+    users: Dict[str, str]
 
     def __init__(self) -> None:
-        self.goals: Dict[int, Goal] = self.load_goals()
+        self._load_users()
+        self._load_goals()
         self._global_goal_id = max(self.goals.values(), key=lambda goal: goal.id).id
         
         # setup parenting
@@ -46,18 +50,30 @@ class Backend:
         }
         return data
 
+    def _load_users(self) -> None:
+        try:
+            with open(self.USERS_FILE, 'r') as file:
+                self.users = yaml.safe_load(file)
+        except FileNotFoundError:
+            self.users = {}
+        
+    def save_users(self) -> None:
+        Path(self.USERS_FILE).parent.mkdir(exist_ok=True, parents=True)
+        with open(self.USERS_FILE, 'w') as file:
+            yaml.dump(self.users, file)
+
     def save_goals(self, file_path: str = SAVE_FILE) -> None:
         Path(file_path).parent.mkdir(exist_ok=True, parents=True)
         with open(file_path, 'w') as file:
             yaml.dump(self._goals_to_obj(), file)
 
-    def load_goals(self) -> Dict[int, Goal]:
+    def _load_goals(self) -> None:
         try:
             with open(self.SAVE_FILE, 'r') as file:
                 data = yaml.safe_load(file)
-                return { goal['id']: Goal.from_dict(goal) for goal in data['goals'] }
+                self.goals = { goal['id']: Goal.from_dict(goal) for goal in data['goals'] }
         except FileNotFoundError:
-            return []
+            self.goals = {}
         
     def backup_goals(self) -> str:
         backup = f"{self.get_datetime_str()}.yaml"
@@ -126,6 +142,9 @@ class Backend:
     def delete_goal(self, goal_id: int) -> None:
         self.remove_goal_from_hierarchy(goal_id)
         del self.goals[goal_id]
+
+    def get_users(self) -> Dict[str, str]:
+        return self.users
 
     def get_goals(self) -> List[Goal]:
         return list(self.goals.values())
