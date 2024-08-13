@@ -3,22 +3,7 @@
 {% block content %}
 	<div class="text-center mt-5">
 		<h1>Login</h1>
-		{% with messages = get_flashed_messages(with_categories=true) %}
-		{% if messages %}
-			{% for category, message in messages %}
-				{% if category == 'error' %}
-				<div class="alert alert-danger" role="alert">
-					{{ message }}
-				</div>
-				{% endif %}
-				{% if category == 'info' %}
-				<div class="alert alert-info" role="alert">
-					{{ message }}
-				</div>
-				{% endif %}
-			{% endfor %}
-		{% endif %}
-		{% endwith %}
+		{% include 'flash_handler.html' %}
 		<form action="#" method="post" style="max-width: 350px; margin: auto">
 			<div class="form-group">
 				<input type="email" class="form-control" aria-describedby="emailHelp" placeholder="Email" name="email">
@@ -32,6 +17,6 @@
 					<button type="submit" class="btn btn-outline-primary" formaction="/register">Register</button>
 				</div>
 			</div>
-		<!-- </form> -->
+		</form>
 	</div>
 {% endblock %}

@@ -1,65 +1,63 @@
-<div class="container mt-3 mb-3">
-	{% for dated_goal_block in dated_goal_blocks %}
-		<div class="container-fluid my-1" style="background-color: rgb(240, 235, 190)">
-			<h6>{{ dated_goal_block[0] }}</h6>
-			{% for goal in dated_goal_block[1] %}
-			<div class="container-fluid my-1">
-				<div class="row">
-					<div class="col" style="max-width: 90%">
-						<button class="btn btn-light w-100 truncate-button" type="button" data-bs-toggle="collapse" data-bs-target="#{{goal.id}}" aria-expanded="false" aria-controls="{{ goal.id }}">
-							{{ goal.name }}
-						</button>
-					</div>
-					<div class="col d-flex align-items-center", style="max-width: 10%">
-						<div class="form-check form-switch">
-							<input class="form-check-input" type="checkbox" role="switch" {{ "checked" if goal.state else "" }} onchange="toggleGoalState(this, {{goal.id}})">
-						</div>
-					</div>
-				</div>
-				<div class="collapse" id="{{goal.id}}">
-					<div class="card" style="width: 18rem">
-						<div class="card-body">
-							<h5 class="card-title">{{ goal.name }}</h5>
-							<hr/>
-							<!-- <span style="white-space: pre-line"> -->
-							<p class="card-text" style="white-space: pre-line">
-								{{ goal.description }}
-							</p>
-						<!-- </span> -->
-						</div>
-					</div>
+{% for dated_goal_block in dated_goal_blocks %}
+<div class="container-fluid my-1 p-1" style="background-color: rgb(168, 225, 244)">
+	<h6>{{ dated_goal_block[0] }}</h6>
+	{% for goal in dated_goal_block[1] %}
+	<div class="container-fluid my-1">
+		<div class="row">
+			<div class="col" style="max-width: 90%">
+				<button class="btn btn-light w-100 truncate-button" type="button" data-bs-toggle="collapse" data-bs-target="#{{goal.id}}" aria-expanded="false" aria-controls="{{ goal.id }}">
+					{{ goal.name }}
+				</button>
+			</div>
+			<div class="col d-flex align-items-center", style="max-width: 10%">
+				<div class="form-check form-switch">
+					<input class="form-check-input" type="checkbox" role="switch" {{ "checked" if goal.state else "" }} onchange="toggleGoalState(this, {{goal.id}})">
 				</div>
 			</div>
-			{% endfor %}
 		</div>
+		<div class="collapse" id="{{goal.id}}">
+			<div class="card" style="width: 18rem">
+				<div class="card-body">
+					<h5 class="card-title">{{ goal.name }}</h5>
+					<hr/>
+					<!-- <span style="white-space: pre-line"> -->
+					<p class="card-text" style="white-space: pre-line">
+						{{ goal.description }}
+					</p>
+				<!-- </span> -->
+				</div>
+			</div>
+		</div>
+	</div>
 	{% endfor %}
-	<script>
-		function toggleGoalState(switchElement, goalId) {
-			const state = switchElement.checked;
-
-			const data = {
-				"goal_id": goalId,
-				"state": state
-			};
-
-			fetch("/goals/toggle_goal_state", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json"
-				},
-				body: JSON.stringify(data)
-			})
-			.then(response => response.json())
-			.then(data => {
-				if (data["success"]) {
-					console.log("Goal state toggled successfully");
-				} else {
-					console.error("Failed to toggle goal state");
-				}
-			})
-			.catch((error) => {
-				console.error("Failed to toggle goal state");
-			});
-		}
-	</script>
 </div>
+{% endfor %}
+<script>
+	function toggleGoalState(switchElement, goalId) {
+		const state = switchElement.checked;
+
+		const data = {
+			"goal_id": goalId,
+			"state": state
+		};
+
+		fetch("/goals/toggle_goal_state", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json"
+			},
+			body: JSON.stringify(data)
+		})
+		.then(response => response.json())
+		.then(data => {
+			if (data["success"]) {
+				console.log("Goal state toggled successfully");
+			} else {
+				console.error("Failed to toggle goal state");
+			}
+		})
+		.catch((error) => {
+			console.error("Failed to toggle goal state");
+		});
+	}
+</script>

@@ -156,10 +156,21 @@ def register():
 
     return flask.redirect(flask.url_for('home'))
 
-@app.route('/debug')
+@app.route('/new_goal', methods=["POST"])
 @flask_login.login_required
-def debug():
-    return render_template('debug.html')
+def new_goal():
+    name = request.form['name']
+    if not name:
+        flask.flash('Goal name cannot be empty', category='error')
+        return flask.redirect(flask.url_for('home'))
+
+    description = request.form['description']
+
+    client = ClientV2.instance()
+    client.add_goal(Goal(id=-1, name=name, state=False, description=description))
+    client.save_goals()
+
+    return flask.redirect(flask.url_for('home'))
 
 @app.route('/resources/<path:filename>')
 def static_file(filename):
@@ -192,6 +203,19 @@ def before_request():
 def unauthorized_handler():
     flask.flash('Log in required', category='error')
     return flask.redirect(flask.url_for('login'))
+
+@app.route('/debug')
+@flask_login.login_required
+def debug():
+    return render_template('debug.html')
+
+@app.route('/shutdown')
+@flask_login.login_required
+def shutdown_server():
+    logging.info("Shutting down server")
+    import signal
+    os.kill(os.getpid(), signal.SIGINT)
+    return "Server shutting down..."
 
 @click.command()
 @click.option('--debug', is_flag=True, help='Run the server in debug mode', default=False)
