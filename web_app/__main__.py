@@ -95,9 +95,6 @@ def get_summary_goals() -> List[Tuple[str, List[Goal]]]:
 
     return goal_blocks
     
-def save_goals():
-    ClientV2.instance().save_goals()
-
 @app.route('/')
 @app.route('/home')
 @flask_login.login_required
@@ -174,8 +171,9 @@ def static_file(filename):
 @flask_login.login_required
 def toggle_goal_state():
     data = request.get_json()
-    ClientV2.instance().toggle_goal_state(data['goal_id'])
-    save_goals()
+    client = ClientV2.instance()
+    client.toggle_goal_state(data['goal_id'])
+    client.save_goals()
     return "OK"
 
 @app.before_request
