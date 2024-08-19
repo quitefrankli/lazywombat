@@ -43,6 +43,8 @@ class _S3Client:
 
     def download_file(self, file: Path) -> None:
         logging.info(f"Downloading {self._get_s3_path(file)} from s3 to {file}")
+        if not file.parent.exists():
+            file.parent.mkdir(exist_ok=True, parents=True)
         try:
             self.s3_client.download_file(self.BUCKET_NAME, self._get_s3_path(file), str(file))
         except ClientError as e:
