@@ -10,6 +10,8 @@ from typing import *
 from pathlib import Path
 from flask import Flask, render_template, send_from_directory, request, session
 from flask_bootstrap import Bootstrap5
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from datetime import datetime, date
 from logging.handlers import RotatingFileHandler
 from functools import lru_cache
@@ -26,6 +28,13 @@ app.secret_key = os.urandom(24)
 bootstrap = Bootstrap5(app)
 login_manager = flask_login.LoginManager()
 login_manager.init_app(app)
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["2 per minute", "1 per second"],
+    storage_uri="memory://",
+    strategy="fixed-window", # or "moving-window"
+)
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
@@ -82,12 +91,14 @@ def get_summary_goals(user: User) -> List[Tuple[str, List[Goal]]]:
 @app.route('/')
 @app.route('/home')
 @flask_login.login_required
+@limiter.limit("2/second")
 def home():
     dated_goal_blocks = get_summary_goals(flask_login.current_user)
     dated_goal_blocks.reverse()
     return render_template('index.html', dated_goal_blocks=dated_goal_blocks)
 
 @app.route('/login', methods=["GET", "POST"])
+@limiter.limit("2/second")
 def login():
     if request.method == "GET":
         return render_template('login.html')
@@ -110,6 +121,7 @@ def logout():
     return flask.redirect(flask.url_for('login'))
 
 @app.route('/register', methods=["POST"])
+@limiter.limit("1/second")
 def register():
     username = request.form['username']
     password = request.form['password']
@@ -140,6 +152,7 @@ def register():
 
 @app.route('/new_goal', methods=["POST"])
 @flask_login.login_required
+@limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
 def new_goal():
     name = request.form['name']
     if not name:
@@ -165,6 +178,7 @@ def static_file(filename):
 
 @app.route('/goals/toggle_goal_state', methods=['POST'])
 @flask_login.login_required
+@limiter.limit("2/second", key_func=lambda: flask_login.current_user.id)
 def toggle_goal_state():
     req_data = request.get_json()
 
@@ -219,6 +233,7 @@ def main(debug: bool):
     global data_interface
     data_interface = DataInterface(debug)
 
+    logging.info("Starting server")
     app.run(host='0.0.0.0', port=80, debug=debug)
 
 if __name__ == '__main__':
