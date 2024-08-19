@@ -21,15 +21,25 @@
 			</div>
 		</div>
 		<div class="collapse" id="{{goal.id}}">
-			<div class="card" style="width: 18rem">
+			<div class="card" style="width: 100%">
 				<div class="card-body">
-					<h5 class="card-title">{{ goal.name }}</h5>
+					<div class="row">
+						<div class="col d-flex justify-content-start">
+							<h5 class="card-title">{{ goal.name }}</h5>
+						</div>
+						<div class="col d-flex justify-content-end">
+							<a href="/delete_goal?goal_id={{goal.id}}" class="btn">
+								<img src={{ url_for('static', filename='trash.svg') }}/>
+							</a>
+							<button type="button" class="btn" data-bs-toggle="modal" data-bs-target="#modifyGoalModal{{goal.id}}">
+								Edit
+							</button>
+						</div>
+					</div>
 					<hr/>
-					<!-- <span style="white-space: pre-line"> -->
 					<p class="card-text" style="white-space: pre-line">
 						{{ goal.description }}
 					</p>
-				<!-- </span> -->
 				</div>
 			</div>
 		</div>
@@ -37,6 +47,41 @@
 	{% endfor %}
 </div>
 {% endfor %}
+
+
+<!-- Models -->
+{% block actions_modal %}
+{% for dated_goal_block in dated_goal_blocks %}
+	{% for goal in dated_goal_block[1] %}
+	<!-- Modal -->
+	<div class="modal fade" id="modifyGoalModal{{goal.id}}" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+		<div class="modal-dialog">
+			<div class="modal-content">
+			<div class="modal-header">
+				<h1 class="modal-title fs-5" id="exampleModalLabel">Edit Goal</h1>
+				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+			</div>
+			<form action="/edit_goal?goal_id={{goal.id}}" method="post">
+				<div class="modal-body">
+					<div class="form-group">
+						<label for="name" class="col-form-label">Name</label>
+						<input type="text" class="form-control" name="name" id="name" value={{goal.name}}>
+						<label for="description" class="col-form-label">Description</label>
+						<textarea class="form-control" name="description" id="description">{{goal.description}}</textarea>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+					<button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.value='Submitting...'; this.form.submit();">Save</button>
+				</div>
+			</form>
+			</div>
+		</div>
+	</div>
+	{% endfor %}
+{% endfor %}
+{% endblock %}
+
 <script>
 	function toggleGoalState(switchElement, goalId) {
 		const state = switchElement.checked;

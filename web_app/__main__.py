@@ -31,10 +31,11 @@ login_manager.init_app(app)
 limiter = Limiter(
     get_remote_address,
     app=app,
-    default_limits=["2 per minute", "1 per second"],
+    default_limits=["1 per second"],
     storage_uri="memory://",
     strategy="fixed-window", # or "moving-window"
 )
+admin_user: str = ""
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
@@ -158,14 +159,46 @@ def new_goal():
     if not name:
         flask.flash('Goal name cannot be empty', category='error')
         return flask.redirect(flask.url_for('home'))
-
     description = request.form['description']
+
     tld = data_interface.load_data(flask_login.current_user)
     goal_id = 0 if not tld.goals else max(tld.goals.keys()) + 1
     tld.goals[goal_id] = Goal(id=goal_id, 
                               name=name, 
                               state=GoalState.ACTIVE, 
                               description=description)
+    data_interface.save_data(tld, flask_login.current_user)
+
+    return flask.redirect(flask.url_for('home'))
+
+@app.route('/edit_goal', methods=["POST"])
+@flask_login.login_required
+@limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
+def edit_goal():
+    name = request.form['name']
+    if not name:
+        flask.flash('Goal name cannot be empty', category='error')
+        return flask.redirect(flask.url_for('home'))
+    description = request.form['description']
+    goal_id = int(request.args['goal_id'])
+
+    tld = data_interface.load_data(flask_login.current_user)
+    goal = tld.goals[goal_id]
+    goal.name = name
+    goal.description = description
+    data_interface.save_data(tld, flask_login.current_user)
+
+    return flask.redirect(flask.url_for('home'))
+
+@app.route('/delete_goal', methods=["GET"])
+@flask_login.login_required
+@limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
+def delete_goal():
+    req_data = request.args
+
+    goal_id = int(req_data['goal_id'])
+    tld = data_interface.load_data(flask_login.current_user)
+    tld.goals.pop(goal_id)
     data_interface.save_data(tld, flask_login.current_user)
 
     return flask.redirect(flask.url_for('home'))
@@ -217,11 +250,17 @@ def unauthorized_handler():
 @app.route('/debug')
 @flask_login.login_required
 def debug():
+    global admin_user
+    if flask_login.current_user.id != admin_user:
+        return "You must be an admin to access this page"
     return render_template('debug.html')
 
 @click.command()
 @click.option('--debug', is_flag=True, help='Run the server in debug mode', default=False)
-def main(debug: bool):
+@click.option('--admin', help='Set the admin user', default="")
+def main(debug: bool, admin: str):
+    global admin_user, data_interface
+    admin_user = admin
     log_path = Path("logs/web_app.log")
     log_path.parent.mkdir(parents=True, exist_ok=True)
     rotating_log_handler = RotatingFileHandler(str(log_path),
@@ -230,7 +269,6 @@ def main(debug: bool):
     logging.basicConfig(level=logging.DEBUG if debug else logging.INFO, 
                         handlers=[] if debug else [rotating_log_handler])
     
-    global data_interface
     data_interface = DataInterface(debug)
 
     logging.info("Starting server")
