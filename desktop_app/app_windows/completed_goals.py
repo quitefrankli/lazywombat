@@ -14,7 +14,7 @@ from .goals_window import GoalsWindow
 
 class CompletedGoals(GoalsWindow):
     def __init__(self, master: Any, client: ClientV2, refresh_all: Callable):
-        super().__init__(master, 'Completed Goals', client, refresh_all)
+        super().__init__(master, 'Completed Goals', client, refresh_all, max_goals=1000)
 
     class DetailsWindow(GoalDetailsWindow):
         def __init__(self, *args, **kwargs):

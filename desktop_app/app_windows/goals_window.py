@@ -15,10 +15,9 @@ class GoalsWindow(Frame):
     GOALS_CANVAS_WIDTH = WIDTH * 4/5
     GOALS_CANVAS_HEIGHT = HEIGHT * 3/4
     GOAL_ENTRY_HEIGHT = 25
-    MAX_GOALS = 80
     GOAL_ENTRY_FONT = 'Helvetica 9'
 
-    def __init__(self, master: Any, goals_summary: str, client: ClientV2, refresh_all: Callable):
+    def __init__(self, master: Any, goals_summary: str, client: ClientV2, refresh_all: Callable, max_goals: int = 80):
         super().__init__(master)
         self.client = client
         self.refresh_all = refresh_all
@@ -33,7 +32,7 @@ class GoalsWindow(Frame):
         self.canvas.configure(scrollregion=(0, 
                                             0, 
                                             self.GOALS_CANVAS_WIDTH, 
-                                            self.MAX_GOALS * self.GOAL_ENTRY_HEIGHT))
+                                            max_goals * self.GOAL_ENTRY_HEIGHT))
         title.pack(side=tkinter.TOP)
         self.canvas.pack(side=tkinter.LEFT)
         self.scrollbar.pack(side=tkinter.LEFT, fill=tkinter.Y)
