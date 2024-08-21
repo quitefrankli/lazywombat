@@ -105,6 +105,6 @@ def plot_velocity(goals: List[Goal]) -> str:
     fig.update_yaxes(title_text='Cumulative', secondary_y=False)
     fig.update_yaxes(title_text='Velocity (per week)', secondary_y=True)
     fig.update_layout(yaxis2=dict(range=[0, max(completions_per_week)]))
-    fig.update_layout(legend=dict(yanchor='top', x=0, y=-0.2))
+    fig.update_layout(legend=dict(yanchor='top', x=0, y=-0.4))
     
     return fig.to_html(full_html=False)

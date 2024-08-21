@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% set active = 'Completed' %}
+
+{% block actions_menu %}
+<li>
+	<!-- Button trigger modal -->
+	<button type="button" class="btn" data-bs-toggle="modal" data-bs-target="#newGoalModal">
+		New Goal
+	</button>
+	<a class="btn" href="/visualise/goal_velocity">Goal Velocity</a>
+</li>
+{% endblock %}
+
+{% block actions_modal %}
+<!-- Modal -->
+<div class="modal fade" id="newGoalModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+	<div class="modal-content">
+	  <div class="modal-header">
+		<h1 class="modal-title fs-5" id="exampleModalLabel">New Goal</h1>
+		<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+	  </div>
+	  <form action="/goal/new" method="post">
+		<div class="modal-body">
+			<div class="form-group">
+				<label for="name" class="col-form-label">Name</label>
+				<input type="text" class="form-control" name="name" id="name">
+				<label for="description" class="col-form-label">Description</label>
+				<!-- for prefilling the description, we can pass the active as a variable from Flask and then 
+				add it before the /textarea -->
+				<textarea class="form-control" name="description" id="description"></textarea>
+			</div>
+		</div>
+		<div class="modal-footer">
+			<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+			<button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.value='Submitting...'; this.form.submit();">Save</button>
+		</div>
+	  </form>
+	</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% include "flash_handler.html" %}
+{% include "completed_goals.html" %}
+
+{% endblock %}

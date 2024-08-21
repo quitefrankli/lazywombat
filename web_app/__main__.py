@@ -91,6 +91,26 @@ def home():
     dated_goal_blocks = get_summary_goals(flask_login.current_user)
     return render_template('index.html', dated_goal_blocks=dated_goal_blocks)
 
+@app.route('/completed_goals')
+@flask_login.login_required
+@limiter.limit("2/second")
+def completed_goals():
+    user = flask_login.current_user
+    goals = list(DataInterface.instance().load_data(user).goals.values())
+    goals = [goal for goal in goals if goal.state == GoalState.COMPLETED]
+    goals.sort(key=lambda goal: goal.completion_date.timestamp(), reverse=True)
+
+    goal_blocks = []
+    last_date_label: date = None
+    for goal in goals:
+        goal_date = goal.completion_date.date()
+        if last_date_label != goal_date:
+            last_date_label = goal_date
+            goal_blocks.append((last_date_label.strftime("%d/%m/%Y"), [goal]))
+        else:
+            goal_blocks[-1] = (goal_blocks[-1][0], [goal] + goal_blocks[-1][1])
+    return render_template('completed_goals_page.html', dated_goal_blocks=goal_blocks)
+
 @app.route('/resources/<path:filename>')
 def static_file(filename):
     image = get_random_image()
