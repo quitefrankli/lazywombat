@@ -2,16 +2,6 @@
 
 {% set active = 'Completed' %}
 
-{% block actions_menu %}
-<li>
-	<!-- Button trigger modal -->
-	<button type="button" class="btn" data-bs-toggle="modal" data-bs-target="#newGoalModal">
-		New Goal
-	</button>
-	<a class="btn" href="/visualise/goal_velocity">Goal Velocity</a>
-</li>
-{% endblock %}
-
 {% block actions_modal %}
 <!-- Modal -->
 <div class="modal fade" id="newGoalModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
