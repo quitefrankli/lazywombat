@@ -68,6 +68,14 @@ class _DebugS3Client(_S3Client):
         pass
 
 class DataInterface:
+    @classmethod
+    def create_instance(cls, debug: bool) -> 'DataInterface':
+        cls._instance = DataInterface(debug)
+    
+    @classmethod
+    def instance(cls) -> 'DataInterface':
+        return cls._instance
+
     def __init__(self, debug: bool) -> None:
         self.s3_client = _DebugS3Client() if debug else _S3Client()
 

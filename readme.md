@@ -1,10 +1,3 @@
-# On Computer
-
-```
-python -m desktop_app
-```
-
-
 # Web App
 
 ## Setup Env

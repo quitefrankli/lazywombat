@@ -8,49 +8,42 @@ import re
 
 from typing import *
 from pathlib import Path
-from flask import Flask, render_template, send_from_directory, request, session
+from flask import render_template, send_from_directory, request, session
 from flask_bootstrap import Bootstrap5
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from datetime import datetime, date
 from logging.handlers import RotatingFileHandler
-from functools import lru_cache
-from copy import deepcopy
 
 from web_app.users import User
 from web_app.data_interface import DataInterface
-from web_app.app_data import TopLevelData, GoalState
-from web_app.app_data import GoalV2 as Goal
+from web_app.app_data import TopLevelData, GoalState, GoalV2 as Goal
 from web_app.visualiser import plot_velocity
+from web_app.helpers import from_req, login_manager, limiter
+from web_app.app import app
 
 
-app = Flask(__name__)
+# app = Flask(__name__)
 app.secret_key = os.urandom(24)
+from web_app.api.goals_api import goals_api
+from web_app.api.account_api import account_api
+app.register_blueprint(goals_api)
+app.register_blueprint(account_api)
+
 bootstrap = Bootstrap5(app)
-login_manager = flask_login.LoginManager()
-login_manager.init_app(app)
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    default_limits=["1 per second"],
-    storage_uri="memory://",
-    strategy="fixed-window", # or "moving-window"
-)
+
 admin_user: str = ""
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
-data_interface: DataInterface = None
 
 @login_manager.user_loader
 def user_loader(username: str) -> User | None:
-    users = data_interface.load_users()
+    users = DataInterface.instance().load_users()
     return users.get(username, None)
 
 @login_manager.request_loader
 def request_loader(request: flask.Request) -> User | None:
     username = request.form.get('username')
-    existing_users = data_interface.load_users()
+    existing_users = DataInterface.instance().load_users()
     return existing_users.get(username, None)
 
 def get_random_image() -> Path:
@@ -74,7 +67,7 @@ def get_summary_goals(user: User) -> List[Tuple[str, List[Goal]]]:
             return False
         return True
     
-    goals = list(data_interface.load_data(user).goals.values())
+    goals = list(DataInterface.instance().load_data(user).goals.values())
     goals = [goal for goal in goals if should_render(goal)]
     goals.sort(key=lambda goal: goal.creation_date.timestamp(), reverse=True)
 
@@ -89,10 +82,6 @@ def get_summary_goals(user: User) -> List[Tuple[str, List[Goal]]]:
             goal_blocks[-1] = (goal_blocks[-1][0], [goal] + goal_blocks[-1][1])
 
     return goal_blocks
-    
-def from_req(key: str) -> str:
-    val = request.form[key] if key in request.form else request.args[key]
-    return val.encode('ascii', 'ignore').decode('ascii')
 
 @app.route('/')
 @app.route('/home')
@@ -102,173 +91,17 @@ def home():
     dated_goal_blocks = get_summary_goals(flask_login.current_user)
     return render_template('index.html', dated_goal_blocks=dated_goal_blocks)
 
-@app.route('/login', methods=["GET", "POST"])
-@limiter.limit("2/second")
-def login():
-    if request.method == "GET":
-        return render_template('login.html')
-    
-    username = from_req('username')
-    password = from_req('password')
-    existing_users = data_interface.load_users()
-    if username in existing_users and password == existing_users[username].password:
-        flask_login.login_user(existing_users[username])
-        return flask.redirect(flask.url_for('home'))
-    else:
-        flask.flash('Invalid username or password', category='error')
-        return flask.redirect(flask.url_for('login'))
-
-@app.route('/logout')
-@flask_login.login_required
-def logout():
-    flask_login.logout_user()
-    flask.flash('You have been logged out', category='info')
-    return flask.redirect(flask.url_for('login'))
-
-@app.route('/register', methods=["POST"])
-@limiter.limit("1/second")
-def register():
-    username = from_req('username')
-    password = from_req('password')
-
-    if not username or not password:
-        flask.flash('Username and password are required', category='error')
-        return flask.redirect(flask.url_for('login'))
-    
-    # password regex for only visible ascii characters
-    validation_regex = re.compile(r'^[!-~]+$')
-    if not validation_regex.match(username) or not validation_regex.match(password):
-        flask.flash('Username and password must only contain visible ascii characters', category='error')
-        return flask.redirect(flask.url_for('login'))
-
-    existing_users = data_interface.load_users()
-    if username in existing_users:
-        flask.flash('User already exists', category='error')
-        return flask.redirect(flask.url_for('login'))
-
-    new_user = data_interface.generate_new_user(username, password)
-    existing_users[username] = new_user
-    data_interface.save_users(existing_users.values())
-    logging.info(f"Registered new user: {username}")
-
-    flask_login.login_user(new_user)
-
-    return flask.redirect(flask.url_for('home'))
-
-@app.route('/new_goal', methods=["POST"])
-@flask_login.login_required
-@limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
-def new_goal():
-    name = from_req('name')
-    if not name:
-        flask.flash('Goal name cannot be empty', category='error')
-        return flask.redirect(flask.url_for('home'))
-
-    description = from_req('description')
-
-    tld = data_interface.load_data(flask_login.current_user)
-    goal_id = 0 if not tld.goals else max(tld.goals.keys()) + 1
-    tld.goals[goal_id] = Goal(id=goal_id, 
-                              name=name, 
-                              state=GoalState.ACTIVE, 
-                              description=description)
-    data_interface.save_data(tld, flask_login.current_user)
-
-    return flask.redirect(flask.url_for('home'))
-
-@app.route('/edit_goal', methods=["POST"])
-@flask_login.login_required
-@limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
-def edit_goal():
-    name = from_req('name')
-    if not name:
-        flask.flash('Goal name cannot be empty', category='error')
-        return flask.redirect(flask.url_for('home'))
-    description = from_req('description')
-
-    goal_id = int(request.args['goal_id'])
-
-    tld = data_interface.load_data(flask_login.current_user)
-    goal = tld.goals[goal_id]
-    goal.name = name
-    goal.description = description
-    data_interface.save_data(tld, flask_login.current_user)
-
-    return flask.redirect(flask.url_for('home'))
-
-@app.route('/delete_goal', methods=["GET"])
-@flask_login.login_required
-@limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
-def delete_goal():
-    req_data = request.args
-
-    goal_id = int(req_data['goal_id'])
-    tld = data_interface.load_data(flask_login.current_user)
-    tld.goals.pop(goal_id)
-    data_interface.save_data(tld, flask_login.current_user)
-
-    return flask.redirect(flask.url_for('home'))
-
-@app.route('/fail_goal', methods=["GET"])
-@flask_login.login_required
-@limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
-def fail_goal():
-    req_data = request.args
-
-    goal_id = int(req_data['goal_id'])
-    tld = data_interface.load_data(flask_login.current_user)
-    tld.goals[goal_id].state = GoalState.FAILED
-    data_interface.save_data(tld, flask_login.current_user)
-
-    return flask.redirect(flask.url_for('home'))
-
-@app.route('/log_goal', methods=["POST"])
-@flask_login.login_required
-@limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
-def log_goal():
-    goal_id = int(request.args['goal_id'])
-
-    tld = data_interface.load_data(flask_login.current_user)
-    goal = tld.goals[goal_id]
-    today_date = datetime.now().date()
-    today_date = today_date.strftime("%d/%m/%Y")
-    goal.description += f"\n\n{'-'*10}\n{today_date}\n{from_req('log')}\n{'-'*10}"
-    data_interface.save_data(tld, flask_login.current_user)
-
-    return flask.redirect(flask.url_for('home'))
-
 @app.route('/resources/<path:filename>')
 def static_file(filename):
     image = get_random_image()
     logging.info(f"Sending {image} for {filename}")
     return send_from_directory(directory=image.parent, path=image.name)
 
-@app.route('/goals/toggle_goal_state', methods=['POST'])
-@flask_login.login_required
-@limiter.limit("2/second", key_func=lambda: flask_login.current_user.id)
-def toggle_goal_state():
-    req_data = request.get_json()
-
-    tld = data_interface.load_data(flask_login.current_user)
-    goal = tld.goals[req_data['goal_id']]
-    if goal.state == GoalState.ACTIVE:
-        goal.state = GoalState.COMPLETED
-        goal.completion_date = datetime.now()
-    elif goal.state == GoalState.COMPLETED:
-        goal.state = GoalState.ACTIVE
-        goal.completion_date = None
-    else:
-        raise ValueError(f"Cannot toggle goal state for goal in state {goal.state}")
-
-    data_interface.save_data(tld, flask_login.current_user)
-
-    return "OK"
-
 @app.route('/visualise/goal_velocity', methods=['GET'])
 @flask_login.login_required
 @limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
 def visualise_goal_velocity():
-    tld = data_interface.load_data(flask_login.current_user)
+    tld = DataInterface.instance().load_data(flask_login.current_user)
     goals = list(tld.goals.values())
     embeddable_plotly_html = plot_velocity(goals)
 
@@ -289,7 +122,7 @@ def before_request():
 @login_manager.unauthorized_handler
 def unauthorized_handler():
     flask.flash('Log in required', category='error')
-    return flask.redirect(flask.url_for('login'))
+    return flask.redirect(flask.url_for('account_api.login'))
 
 @app.route('/debug')
 @flask_login.login_required
@@ -313,7 +146,7 @@ def main(debug: bool, admin: str):
     logging.basicConfig(level=logging.DEBUG if debug else logging.INFO, 
                         handlers=[] if debug else [rotating_log_handler])
     
-    data_interface = DataInterface(debug)
+    DataInterface.create_instance(debug)
 
     logging.info("Starting server")
     app.run(host='0.0.0.0', port=80, debug=debug)

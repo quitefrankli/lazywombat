@@ -6,7 +6,7 @@ function toggleGoalState(switchElement, goalId) {
 		"state": state
 	};
 
-	fetch("/goals/toggle_goal_state", {
+	fetch("/goal/toggle_state", {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json"
