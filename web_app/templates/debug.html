@@ -5,10 +5,13 @@
 {% block actions_menu %}
 <li>
 	<a class="btn btn-danger" href="/shutdown">Shutdown Server</a>
+	<a class="btn" href="/backup">Backup</a>
 </li>
 {% endblock %}
 
 {% block content %}
+
+{% include "flash_handler.html" %}
 
 <img src="resources/random" class="img-fluid">
 

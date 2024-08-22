@@ -7,8 +7,18 @@
 				{{ message }}
 			</div>
 			{% endif %}
+			{% if category == 'warning' %}
+			<div class="alert alert-warning" role="alert">
+				{{ message }}
+			</div>
+			{% endif %}
 			{% if category == 'info' %}
 			<div class="alert alert-info" role="alert">
+				{{ message }}
+			</div>
+			{% endif %}
+			{% if category == 'success' %}
+			<div class="alert alert-success" role="alert">
 				{{ message }}
 			</div>
 			{% endif %}

@@ -49,9 +49,9 @@ def get_random_image() -> Path:
 def get_summary_goals(user: User) -> List[Tuple[str, List[Goal]]]:
     now = datetime.now()
     def should_render(goal: Goal) -> bool:
-        # TODO: add support for parent/children goals
-        if goal.parent or goal.children:
-            return False
+        # # TODO: add support for parent/children goals
+        # if goal.parent or goal.children:
+        #     return False
         if goal.recurrence:
             return False
         if goal.state not in (GoalState.ACTIVE, GoalState.COMPLETED):
@@ -163,6 +163,22 @@ def shutdown():
     graceful_shutdown()
     return "Shutting down..."
 
+@app.route('/backup', methods=['GET'])
+@flask_login.login_required
+def backup():
+    global admin_user
+    if flask_login.current_user.id != admin_user:
+        return "You must be an admin to access this page"
+
+    instance = DataInterface.instance()
+    users = instance.load_users()
+    for user in users.values():
+        tld = instance.load_data(user)
+        instance.backup_data(tld, user)
+
+    flask.flash('Backup complete', category='success')
+
+    return flask.redirect(flask.url_for('debug'))
 
 @click.command()
 @click.option('--debug', is_flag=True, help='Run the server in debug mode', default=False)
