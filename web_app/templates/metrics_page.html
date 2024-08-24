@@ -163,13 +163,13 @@
 				<hr class="my-1"/>
 				<div label="description" class="col-form-label">Description: {{ metric.description }}</div>
 				<div class="container-fluid">
-					<div class="overflow-auto" style="max-height: calc(10 * 2.5rem);">
+					<div class="overflow-auto" style="max-height: calc(10 * 2.5rem); overflow-x: hidden; overflow-y: auto;">
 						{% for data_point in metric.data %}
-						<div class="row">
-							<div class="col">
+						<div class="row" style="max-width: 100%; white-space: nowrap;">
+							<div class="col" style="overflow-x: hidden; text-overflow: ellipsis;">
 								{{ data_point.value }} {{ metric.unit }}
 							</div>
-							<div class="col d-flex justify-content-end">
+							<div class="col d-flex justify-content-end" style="overflow-x: hidden; text-overflow: ellipsis;">
 								{{ data_point.date.strftime('%d/%m/%Y %H:%M') }}
 							</div>
 						</div>

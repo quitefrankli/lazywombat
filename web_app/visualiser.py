@@ -127,5 +127,6 @@ def plot_metric(metric: Metric) -> str:
     fig.add_trace(trace)
     fig.update_xaxes(title_text='Date')
     fig.update_yaxes(title_text=metric.unit)
+    fig.update_layout(showlegend=False)
     
     return fig.to_html(full_html=False)
