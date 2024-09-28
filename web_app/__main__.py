@@ -49,6 +49,10 @@ def get_summary_goals(user: User) -> List[Tuple[str, List[Goal]]]:
         #     return False
         if goal.recurrence:
             return False
+        # temporarily disable backlog functionality and show all backlogged goals
+        # TODO: implement some sort of filter for different goal states
+        if goal.state == GoalState.BACKLOGGED:
+            return True
         if goal.state not in (GoalState.ACTIVE, GoalState.COMPLETED):
             return False
         # hides goals that have been completed for a while
