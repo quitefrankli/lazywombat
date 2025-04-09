@@ -10,3 +10,4 @@ logs/
 resources/
 data/
 .todoist2/
+.mypy_cache/

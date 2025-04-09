@@ -34,8 +34,6 @@ bootstrap = Bootstrap5(app)
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
-all_images = list(Path("resources").glob("*.jpeg"))
-
 
 def get_default_redirect():
     return flask.redirect(flask.url_for('home'))
@@ -133,30 +131,6 @@ def before_request():
             message += f", form={request.form}"
 
     logging.info(message)
-
-@app.route('/debug')
-@app.route('/debug/<index>')
-@flask_login.login_required
-@admin_only('home')
-def debug(index: Optional[int] = None):
-    if index is None:
-        random_idx = random.randint(0, len(all_images) - 1)
-    else:
-        random_idx = index
-
-    return render_template('debug.html', image_index=random_idx)
-
-@app.route('/debug/images/<index>')
-@flask_login.login_required
-@limiter.limit("2/second")
-@admin_only('home')
-def debug_image_index(index: int):
-    index = max(0, min(int(index), len(all_images) - 1))
-
-    image = all_images[index].absolute()
-    logging.info(f"Sending {image} for {index}")
-
-    return send_from_directory(directory=image.parent, path=image.name)
 
 def graceful_shutdown(signum=None, frame=None):
     logging.info("Shutting down server")
