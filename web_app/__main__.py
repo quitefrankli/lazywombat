@@ -1,5 +1,4 @@
 import os
-import random
 import click
 import logging
 import flask
@@ -8,16 +7,17 @@ import flask_login
 from signal import signal, SIGTERM
 from typing import *
 from pathlib import Path
-from flask import render_template, send_from_directory, request
+from flask import render_template, request
 from flask_bootstrap import Bootstrap5
+from flask_apscheduler import APScheduler
 from datetime import datetime, date
 from logging.handlers import RotatingFileHandler
 
 from web_app.users import User
 from web_app.data_interface import DataInterface
-from web_app.app_data import TopLevelData, GoalState, Goal
+from web_app.app_data import GoalState, Goal
 from web_app.visualiser import plot_velocity
-from web_app.helpers import from_req, limiter, admin_only
+from web_app.helpers import limiter, admin_only
 from web_app.app import app
 
 
@@ -177,6 +177,21 @@ def main(debug: bool):
     signal(SIGTERM, graceful_shutdown)
 
     app.run(host='0.0.0.0', port=80, debug=debug)
+
+
+scheduler = APScheduler()
+
+@scheduler.task('cron', id='scheduled_backup', day_of_week='sun', hour=0, minute=0, misfire_grace_time=3600)
+def scheduled_backup():
+    logging.info("Running scheduled backup")
+    instance = DataInterface.instance()
+    users = instance.load_users()
+    for user in users.values():
+        tld = instance.load_data(user)
+        instance.backup_data(tld, user)
+    logging.info("Backup complete")
+
+scheduler.start()
 
 if __name__ == '__main__':
     main()
