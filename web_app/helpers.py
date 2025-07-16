@@ -53,3 +53,9 @@ def admin_only(failure_redirect: str):
 
         return decorated_view
     return _admin_only
+
+def get_ip(request: flask.Request) -> str:
+    if request.headers.getlist("X-Forwarded-For"):
+        return request.headers.getlist("X-Forwarded-For")[0]
+    else:
+        return request.remote_addr

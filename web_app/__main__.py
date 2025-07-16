@@ -17,7 +17,7 @@ from web_app.users import User
 from web_app.data_interface import DataInterface
 from web_app.app_data import GoalState, Goal
 from web_app.visualiser import plot_velocity
-from web_app.helpers import limiter, admin_only
+from web_app.helpers import limiter, admin_only, get_ip
 from web_app.app import app
 
 
@@ -122,7 +122,7 @@ def visualise_goal_velocity():
 
 @app.before_request
 def before_request():
-    message = f"Processing request: client={request.remote_addr}, path={request.path}, method={request.method}"
+    message = f"Processing request: client={get_ip(request)}, path={request.path}, method={request.method}"
 
     if request.method == 'POST':
         if request.is_json:
