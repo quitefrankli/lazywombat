@@ -11,10 +11,12 @@ from web_app.config import ConfigManager
 
 
 class DataInterface(BaseDataInterface):
-    TODOIST2_DATA_DIRECTORY = ConfigManager.PROJECT_LOCAL_SAVE_DIRECTORY / "todoist2"
+    def __init__(self) -> None:
+        super().__init__()
+        self.todoist2_data_directory = ConfigManager().save_data_path / "todoist2"
 
     def get_data_file(self, user: User) -> Path:
-        return self.TODOIST2_DATA_DIRECTORY / user.folder / "data.json"
+        return self.todoist2_data_directory / user.folder / "data.json"
 
     def load_data(self, user: User) -> TopLevelData:
         data_path = self.get_data_file(user)
@@ -29,7 +31,5 @@ class DataInterface(BaseDataInterface):
             
     def save_data(self, data: TopLevelData, user: User) -> None:
         data_file = self.get_data_file(user)
-        data_file.parent.mkdir(exist_ok=True, parents=True)
-        with open(data_file, 'w', encoding='utf-8') as file:
-            file.write(data.model_dump_json(indent=4))
+        self.atomic_write(data_file, data=data.model_dump_json(indent=4), mode="w", encoding='utf-8')
         self.data_syncer.upload_file(data_file)

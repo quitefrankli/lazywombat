@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "todoist2_base.html" %}
 
 {% set active = 'Metrics' %}
 
@@ -122,8 +122,6 @@
 {% endblock %}
 
 {% block content %}
-
-{% include "flash_handler.html" %}
 
 {% for metric in metrics %}
 <div class="container-fluid my-1 p-1" style="background-color: rgb(168, 225, 244)">

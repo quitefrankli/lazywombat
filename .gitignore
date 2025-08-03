@@ -8,5 +8,4 @@ Contents.json
 *.xcassets/
 logs/
 resources/
-data/
 .mypy_cache/

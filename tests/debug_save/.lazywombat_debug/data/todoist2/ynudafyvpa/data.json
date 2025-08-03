@@ -1,0 +1,97 @@
+{
+    "goals": {
+        "0": {
+            "id": 0,
+            "name": "asd",
+            "state": 2,
+            "description": "asd",
+            "creation_date": "2025-08-02T15:46:14.735948",
+            "completion_date": "2025-08-02T15:57:51.557923",
+            "planned_completion_date": null,
+            "parent": null,
+            "children": [],
+            "recurrence": null
+        },
+        "1": {
+            "id": 1,
+            "name": "run hills",
+            "state": 2,
+            "description": "asd",
+            "creation_date": "2025-08-02T15:58:21.432771",
+            "completion_date": null,
+            "planned_completion_date": null,
+            "parent": null,
+            "children": [],
+            "recurrence": null
+        },
+        "2": {
+            "id": 2,
+            "name": "commit changes",
+            "state": 1,
+            "description": "",
+            "creation_date": "2025-08-02T16:04:23.340101",
+            "completion_date": "2025-08-03T19:32:03.131411",
+            "planned_completion_date": null,
+            "parent": null,
+            "children": [],
+            "recurrence": null
+        },
+        "3": {
+            "id": 3,
+            "name": "asd",
+            "state": 0,
+            "description": "qsasd\n\n----------\n03/08/2025\nasd\n----------",
+            "creation_date": "2025-08-02T16:08:25.032582",
+            "completion_date": null,
+            "planned_completion_date": null,
+            "parent": null,
+            "children": [],
+            "recurrence": null
+        },
+        "4": {
+            "id": 4,
+            "name": "abbabababbba",
+            "state": 0,
+            "description": "",
+            "creation_date": "2025-08-02T16:08:34.961707",
+            "completion_date": null,
+            "planned_completion_date": null,
+            "parent": null,
+            "children": [],
+            "recurrence": null
+        }
+    },
+    "metrics": {
+        "0": {
+            "id": 0,
+            "name": "asd",
+            "data": [
+                {
+                    "date": "2025-08-02T16:03:09.019010",
+                    "value": 1.0
+                },
+                {
+                    "date": "2025-08-02T16:03:12.452390",
+                    "value": 32.0
+                }
+            ],
+            "unit": "kg",
+            "description": "s",
+            "creation_date": "2025-08-02T16:00:51.613561"
+        },
+        "1": {
+            "id": 1,
+            "name": "s",
+            "data": [
+                {
+                    "date": "2025-08-02T16:03:28.807279",
+                    "value": 1.0
+                }
+            ],
+            "unit": "a",
+            "description": "sdasd",
+            "creation_date": "2025-08-02T16:03:03.791670"
+        }
+    },
+    "edited": "2025-08-02T15:46:14.735701"
+}
