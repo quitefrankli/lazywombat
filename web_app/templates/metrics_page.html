@@ -4,9 +4,9 @@
 
 {% block actions_menu %}
 <li>
-	<button type="button" class="btn btn-outline-primary w-100" data-bs-toggle="modal" data-bs-target="#newMetricModal">
-		New Metric
-	</button>
+    <button type="button" class="btn btn-outline-primary w-100" data-bs-toggle="modal" data-bs-target="#newMetricModal">
+        New Metric
+    </button>
 </li>
 {% endblock %}
 
@@ -14,109 +14,109 @@
 <!-- Modal -->
 <div class="modal fade" id="newMetricModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
   <div class="modal-dialog">
-	<div class="modal-content">
-	  <div class="modal-header">
-		<h1 class="modal-title fs-5" id="exampleModalLabel">New Metric</h1>
-		<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-	  </div>
-	  <form action="/metrics/new" method="post">
-		<div class="modal-body">
-			<div class="form-group">
-				<label for="name" class="col-form-label">Name</label>
-				<input type="text" class="form-control" name="name" id="name">
-				<label for="units" class="col-form-label">Units</label>
-				<input type="text" class="form-control" name="units" id="units">
-				<label for="description" class="col-form-label">Description</label>
-				<textarea class="form-control" name="description" id="description"></textarea>
-			</div>
-		</div>
-		<div class="modal-footer">
-			<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-			<button 
-				type="submit" 
-				class="btn btn-primary" 
-				onclick="this.disabled=true;this.value='Submitting...'; this.form.submit();">
-					Save
-			</button>
-		</div>
-	  </form>
-	</div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h1 class="modal-title fs-5" id="exampleModalLabel">New Metric</h1>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{{ url_for('.new_metric') }}" method="post">
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="name" class="col-form-label">Name</label>
+                <input type="text" class="form-control" name="name" id="name">
+                <label for="units" class="col-form-label">Units</label>
+                <input type="text" class="form-control" name="units" id="units">
+                <label for="description" class="col-form-label">Description</label>
+                <textarea class="form-control" name="description" id="description"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            <button 
+                type="submit" 
+                class="btn btn-primary" 
+                onclick="this.disabled=true;this.value='Submitting...'; this.form.submit();">
+                    Save
+            </button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 
 {% for metric in metrics %}
-	<!-- Edit Metric Modal -->
-	<div class="modal fade" id="modifyMetricModal{{ metric.id }}" tabindex="-1" aria-labelledby="modalLabel{{ metric.id }}" aria-hidden="true">
-		<div class="modal-dialog">
-			<div class="modal-content">
-			<div class="modal-header">
-				<h1 class="modal-title fs-5" id="modalLabel{{ metric.id }}">Edit Metric</h1>
-				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-			</div>
-			<form action="/metrics/edit?metric_id={{ metric.id }}" method="post">
-				<div class="modal-body">
-					<div class="form-group">
-						<label for="name" class="col-form-label">Name</label>
-						<input type="text" class="form-control" name="name" id="name" value="{{ metric.name }}">
-						<label for="units" class="col-form-label">Units</label>
-						<input type="text" class="form-control" name="units" id="units" value="{{ metric.unit }}">
-						<label for="description" class="col-form-label">Description</label>
-						<textarea class="form-control" name="description" id="description">{{ metric.description }}</textarea>
-					</div>
-				</div>
-				<div class="modal-footer">
-					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-					<button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.value='Submitting...'; this.form.submit();">Save</button>
-				</div>
-			</form>
-			</div>
-		</div>
-	</div>
+    <!-- Edit Metric Modal -->
+    <div class="modal fade" id="modifyMetricModal{{ metric.id }}" tabindex="-1" aria-labelledby="modalLabel{{ metric.id }}" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5" id="modalLabel{{ metric.id }}">Edit Metric</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('.edit_metric', metric_id=metric.id) }}" method="post">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="name" class="col-form-label">Name</label>
+                        <input type="text" class="form-control" name="name" id="name" value="{{ metric.name }}">
+                        <label for="units" class="col-form-label">Units</label>
+                        <input type="text" class="form-control" name="units" id="units" value="{{ metric.unit }}">
+                        <label for="description" class="col-form-label">Description</label>
+                        <textarea class="form-control" name="description" id="description">{{ metric.description }}</textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.value='Submitting...'; this.form.submit();">Save</button>
+                </div>
+            </form>
+            </div>
+        </div>
+    </div>
 
-	<!-- Delete Metric Modal -->
-	<div class="modal fade" id="deleteMetricModal{{ metric.id }}" tabindex="-1" aria-labelledby="modalLabel{{ metric.id }}" aria-hidden="true">
-		<div class="modal-dialog">
-			<div class="modal-content">
-			<div class="modal-header">
-				<h1 class="modal-title fs-5" id="modalLabel{{ metric.id }}">Confirm Metric Delete</h1>
-				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-			</div>
-				<div class="modal-body">
-					<a href="/metrics/delete?metric_id={{ metric.id }}" class="btn btn-danger">
-						Delete Metric
-					</a>
-				</div>
-				<div class="modal-footer">
-					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-				</div>
-			</form>
-			</div>
-		</div>
-	</div>
+    <!-- Delete Metric Modal -->
+    <div class="modal fade" id="deleteMetricModal{{ metric.id }}" tabindex="-1" aria-labelledby="modalLabel{{ metric.id }}" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5" id="modalLabel{{ metric.id }}">Confirm Metric Delete</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+                <div class="modal-body">
+                    <a href="{{ url_for('.delete_metric', metric_id=metric.id) }}" class="btn btn-danger">
+                        Delete Metric
+                    </a>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </form>
+            </div>
+        </div>
+    </div>
 
-	<!-- Log Metric Modal -->
-	<div class="modal fade" id="logMetricModal{{ metric.id }}" tabindex="-1" aria-labelledby="modalLabel{{ metric.id }}" aria-hidden="true">
-		<div class="modal-dialog">
-			<div class="modal-content">
-			<div class="modal-header">
-				<h1 class="modal-title fs-5" id="modalLabel{{ metric.id }}">Log Metric Progress</h1>
-				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-			</div>
-			<form action="/metrics/log?metric_id={{ metric.id }}" method="post">
-				<div class="modal-body">
-					<div class="form-group">
-						<label for="log" class="col-form-label">Value</label>
-						<input type="text" class="form-control" name="value" id="value">
-					</div>
-				</div>
-				<div class="modal-footer">
-					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-					<button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.value='Submitting...'; this.form.submit();">Save</button>
-				</div>
-			</form>
-			</div>
-		</div>
-	</div>
+    <!-- Log Metric Modal -->
+    <div class="modal fade" id="logMetricModal{{ metric.id }}" tabindex="-1" aria-labelledby="modalLabel{{ metric.id }}" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5" id="modalLabel{{ metric.id }}">Log Metric Progress</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('.log_metric', metric_id=metric.id) }}" method="post">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="log" class="col-form-label">Value</label>
+                        <input type="text" class="form-control" name="value" id="value">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.value='Submitting...'; this.form.submit();">Save</button>
+                </div>
+            </form>
+            </div>
+        </div>
+    </div>
 {% endfor %}
 
 {% endblock %}
@@ -127,70 +127,70 @@
 
 {% for metric in metrics %}
 <div class="container-fluid my-1 p-1" style="background-color: rgb(168, 225, 244)">
-	<button 
-		class="btn w-100 btn-light truncate-button" 
-		type="button" 
-		data-bs-toggle="collapse" 
-		data-bs-target="#{{metric.id}}" 
-		aria-expanded="false" 
-		aria-controls="{{ metric.id }}">
-			{{ metric.name }}
-	</button>
-	<div class="collapse" id="{{ metric.id }}">
-		<div class="card" style="width: 100%">
-			<div class="card-body">
-				<div class="row align-items-center">
-					<div class="col d-flex justify-content-start">
-						<h5 class="card-title">{{ metric.name }}</h5>
-					</div>
-					<div class="col d-flex justify-content-end">
-						<button 
-							type="button" 
-							class="btn btn-outline-danger me-2" 
-							data-bs-toggle="modal" 
-							data-bs-target="#deleteMetricModal{{ metric.id }}">
-								<img src={{ url_for('static', filename='trash.svg') }}/>
-						</button>
-						<button 
-							type="button" 
-							class="btn btn-outline-primary" 
-							data-bs-toggle="modal" 
-							data-bs-target="#modifyMetricModal{{ metric.id }}">
-								Edit
-						</button>
-					</div>
-				</div>
-				<hr class="my-1"/>
-				<div label="description" class="col-form-label">Description: {{ metric.description }}</div>
-				<div class="container-fluid">
-					<div class="overflow-auto" style="max-height: calc(10 * 2.5rem); overflow-x: hidden; overflow-y: auto;">
-						{% for data_point in metric.data %}
-						<div class="row" style="max-width: 100%; white-space: nowrap;">
-							<div class="col" style="overflow-x: hidden; text-overflow: ellipsis;">
-								{{ data_point.value }} {{ metric.unit }}
-							</div>
-							<div class="col d-flex justify-content-end" style="overflow-x: hidden; text-overflow: ellipsis;">
-								{{ data_point.date.strftime('%d/%m/%Y %H:%M') }}
-							</div>
-						</div>
-						{% endfor %}
-					</div>
-				</div>
-				<div class="row align-items-center">
-					<div class="col d-flex justify-content-end">
-						<a class="btn btn-outline-primary me-2" href="/metrics/visualise/{{ metric.id }}">Plot</a>
-						<button 
-							type="button" 
-							class="btn btn-outline-primary" 
-							data-bs-toggle="modal" 
-							data-bs-target="#logMetricModal{{ metric.id }}">
-								Log
-						</button>
-					</div>
-				</div>
-			</div>
-		</div>
-	</div>
+    <button 
+        class="btn w-100 btn-light truncate-button" 
+        type="button" 
+        data-bs-toggle="collapse" 
+        data-bs-target="#{{metric.id}}" 
+        aria-expanded="false" 
+        aria-controls="{{ metric.id }}">
+            {{ metric.name }}
+    </button>
+    <div class="collapse" id="{{ metric.id }}">
+        <div class="card" style="width: 100%">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col d-flex justify-content-start">
+                        <h5 class="card-title">{{ metric.name }}</h5>
+                    </div>
+                    <div class="col d-flex justify-content-end">
+                        <button 
+                            type="button" 
+                            class="btn btn-outline-danger me-2" 
+                            data-bs-toggle="modal" 
+                            data-bs-target="#deleteMetricModal{{ metric.id }}">
+                                <img src={{ url_for('static', filename='trash.svg') }}/>
+                        </button>
+                        <button 
+                            type="button" 
+                            class="btn btn-outline-primary" 
+                            data-bs-toggle="modal" 
+                            data-bs-target="#modifyMetricModal{{ metric.id }}">
+                                Edit
+                        </button>
+                    </div>
+                </div>
+                <hr class="my-1"/>
+                <div label="description" class="col-form-label">Description: {{ metric.description }}</div>
+                <div class="container-fluid">
+                    <div class="overflow-auto" style="max-height: calc(10 * 2.5rem); overflow-x: hidden; overflow-y: auto;">
+                        {% for data_point in metric.data %}
+                        <div class="row" style="max-width: 100%; white-space: nowrap;">
+                            <div class="col" style="overflow-x: hidden; text-overflow: ellipsis;">
+                                {{ data_point.value }} {{ metric.unit }}
+                            </div>
+                            <div class="col d-flex justify-content-end" style="overflow-x: hidden; text-overflow: ellipsis;">
+                                {{ data_point.date.strftime('%d/%m/%Y %H:%M') }}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="row align-items-center">
+                    <div class="col d-flex justify-content-end">
+                        <a class="btn btn-outline-primary me-2" href="{{ url_for('.visualise_metric', metric_id=metric.id) }}">Plot</a>
+                        <button 
+                            type="button" 
+                            class="btn btn-outline-primary" 
+                            data-bs-toggle="modal" 
+                            data-bs-target="#logMetricModal{{ metric.id }}">
+                                Log
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endfor %}
 

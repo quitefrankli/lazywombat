@@ -3,7 +3,7 @@ import flask_login
 import logging
 import re
 
-from typing import *
+from typing import * # type: ignore
 from datetime import timedelta
 from flask import request, Blueprint, render_template
 
@@ -11,12 +11,12 @@ from web_app.data_interface import DataInterface
 from web_app.helpers import limiter, from_req
 
 
-account_api = Blueprint('account_api', __name__)
+account_api = Blueprint('account_api', __name__, url_prefix='/account')
 
 def get_default_redirect():
-    return flask.redirect(flask.url_for('account_api.login'))
+    return flask.redirect(flask.url_for('.login'))
 
-@account_api.route('/account/login', methods=["GET", "POST"])
+@account_api.route('/login', methods=["GET", "POST"])
 @limiter.limit("2/second")
 def login():
     if request.method == "GET":
@@ -24,22 +24,22 @@ def login():
     
     username = from_req('username')
     password = from_req('password')
-    existing_users = DataInterface.instance().load_users()
+    existing_users = DataInterface().load_users()
     if username in existing_users and password == existing_users[username].password:
         flask_login.login_user(existing_users[username], duration=timedelta(weeks=1))
-        return flask.redirect(flask.url_for('home'))
+        return flask.redirect(flask.url_for('todoist2_api.summary_goals'))
     else:
         flask.flash('Invalid username or password', category='error')
         return get_default_redirect()
 
-@account_api.route('/account/logout')
+@account_api.route('/logout')
 @flask_login.login_required
 def logout():
     flask_login.logout_user()
     flask.flash('You have been logged out', category='info')
     return get_default_redirect()
 
-@account_api.route('/account/register', methods=["POST"])
+@account_api.route('/register', methods=["POST"])
 @limiter.limit("1/second")
 def register():
     username = from_req('username')
@@ -55,16 +55,16 @@ def register():
         flask.flash('Username and password must only contain visible ascii characters', category='error')
         return get_default_redirect()
 
-    existing_users = DataInterface.instance().load_users()
+    existing_users = DataInterface().load_users()
     if username in existing_users:
         flask.flash('User already exists', category='error')
         return get_default_redirect()
 
-    new_user = DataInterface.instance().generate_new_user(username, password)
+    new_user = DataInterface().generate_new_user(username, password)
     existing_users[username] = new_user
-    DataInterface.instance().save_users(existing_users.values())
+    DataInterface().save_users(list(existing_users.values()))
     logging.info(f"Registered new user: {username}")
 
     flask_login.login_user(new_user)
 
-    return flask.redirect(flask.url_for('home'))
+    return flask.redirect(flask.url_for('todoist2_api.summary_goals'))

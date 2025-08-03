@@ -78,7 +78,7 @@
 				<h1 class="modal-title fs-5" id="modalLabel{{goal.id}}">Edit Goal</h1>
 				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 			</div>
-			<form action="/goal/edit?goal_id={{goal.id}}" method="post">
+			<form action="{{ url_for('.goals_api.edit_goal', goal_id=goal.id) }}" method="post">
 				<div class="modal-body">
 					<div class="form-group">
 						<label for="name" class="col-form-label">Name</label>
@@ -105,10 +105,10 @@
 				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 			</div>
 				<div class="modal-body">
-					<a href="/goal/delete?goal_id={{goal.id}}" class="btn btn-danger">
+					<a href="{{ url_for('.goals_api.delete_goal', goal_id=goal.id) }}" class="btn btn-danger">
 						Delete Goal
 					</a>
-					<a href="/goal/fail?goal_id={{goal.id}}" class="btn btn-warning">
+					<a href="{{ url_for('.goals_api.fail_goal', goal_id=goal.id) }}" class="btn btn-warning">
 						Fail Goal Instead
 					</a>
 				</div>
@@ -128,7 +128,7 @@
 				<h1 class="modal-title fs-5" id="modalLabel{{goal.id}}">Log Goal Progress</h1>
 				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 			</div>
-			<form action="/goal/log?goal_id={{goal.id}}" method="post">
+			<form action="{{ url_for('.goals_api.log_goal', goal_id=goal.id) }}" method="post">
 				<div class="modal-body">
 					<div class="form-group">
 						<label for="description" class="col-form-label">Description</label>

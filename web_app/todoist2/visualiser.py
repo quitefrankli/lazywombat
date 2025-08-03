@@ -1,11 +1,11 @@
-from typing import *
+from typing import * # type: ignore
 from plotly import express, graph_objects
 from plotly.subplots import make_subplots
 from pandas import DataFrame
 from datetime import timedelta, datetime
 from scipy.signal import savgol_filter
 
-from web_app.app_data import Goal, GoalState, Metric, DataPoint
+from web_app.todoist2.app_data import Goal, GoalState, Metric
 
 
 def get_immediate_monday(date: datetime) -> datetime:

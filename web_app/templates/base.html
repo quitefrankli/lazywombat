@@ -19,13 +19,13 @@
 				<div class="col d-flex justify-content-start">
 					<ul class="navbar-nav d-flex flex-row nav-underline" style="white-space: nowrap; overflow-x: auto;">
 						<li class="nav-item mx-2">
-							<a class="nav-link {{'active' if active == 'Home' else ''}}" href="/">Goals</a>
+							<a class="nav-link {{'active' if active == 'Home' else ''}}" href="/todoist2">Goals</a>
 						</li>
 						<li class="nav-item mx-2">
-							<a class="nav-link {{'active' if active == 'Completed' else ''}}" href="/completed_goals">Completed</a>
+							<a class="nav-link {{'active' if active == 'Completed' else ''}}" href="/todoist2/completed_goals">Completed</a>
 						</li>
 						<li class="nav-item mx-2">
-							<a class="nav-link {{'active' if active == 'Metrics' else ''}}" href="/metrics">Metrics</a>
+							<a class="nav-link {{'active' if active == 'Metrics' else ''}}" href="/todoist2/metrics">Metrics</a>
 						</li>
 						<!-- <li class="nav-item mx-2">
 							<a class="nav-link {{'active' if active == 'Debug' else ''}}" href="/debug">Debug</a>
@@ -42,7 +42,7 @@
 							{% endblock %}
 						</ul>
 					</div>
-					<a class="btn btn-outline-primary" href="/account/logout">Logout</a>
+					<a class="btn btn-outline-primary" href="/todoist2/account/logout">Logout</a>
 				</div>
 			</div>
 		</div>

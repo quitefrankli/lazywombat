@@ -4,9 +4,9 @@ from typing import *
 
 class User(UserMixin):
     def __init__(self, 
-                 username: str = None, 
-                 password: str = None, 
-                 folder: str = None,
+                 username: str = "", 
+                 password: str = "", 
+                 folder: str = "",
                  is_admin: bool = False) -> None:
         self.id = username
         self.password = password

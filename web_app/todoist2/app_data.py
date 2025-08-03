@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import *
+from typing import * # type: ignore
 from enum import Enum
 from pydantic import BaseModel
 

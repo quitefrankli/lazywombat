@@ -4,29 +4,16 @@ import json
 import random
 import string
 import os
+import shutil
 
 from botocore.exceptions import ClientError
 from pathlib import Path
 from datetime import datetime
-from typing import *
+from typing import * # type: ignore
 
 from web_app.users import User
-from web_app.app_data import TopLevelData
+from web_app.config import ConfigManager
 
-
-LOCAL_SAVE_DIRECTORY = Path.home() / ".todoist2"
-USERS_FILE = LOCAL_SAVE_DIRECTORY / "users.json"
-
-def _get_data_file(user: User) -> Path:
-    return LOCAL_SAVE_DIRECTORY / user.folder / "data.json"
-
-def _get_backup_dir(user: User) -> Path:
-    return LOCAL_SAVE_DIRECTORY / user.folder / "backups"
-
-def _generate_random_string() -> str:
-    letters = string.ascii_lowercase
-    result_str = ''.join(random.choice(letters) for _ in range(10))
-    return result_str
 
 class _S3Client:
     BUCKET_NAME = 'todoist2'
@@ -40,7 +27,7 @@ class _S3Client:
 
     @staticmethod
     def _get_s3_path(file: Path) -> str:
-        return str(file.relative_to(LOCAL_SAVE_DIRECTORY).as_posix())
+        return str(file.relative_to(ConfigManager.PROJECT_LOCAL_SAVE_DIRECTORY).as_posix())
 
     def download_file(self, file: Path) -> None:
         logging.info(f"Downloading {self._get_s3_path(file)} from s3 to {file}")
@@ -58,76 +45,78 @@ class _S3Client:
         logging.info(f"Uploading {self._get_s3_path(file)} to s3 from {file}")
         self.s3_client.upload_file(str(file), self.BUCKET_NAME, self._get_s3_path(file))
 
-class _DebugS3Client:
+class _OfflineClient:
     def download_file(self, file: Path) -> None:
         pass
 
     def upload_file(self, file: Path) -> None:
         pass
 
-class DataInterface:
+class DataSyncer:
+    _instance: Optional['DataSyncer'] = None
+
     @classmethod
-    def create_instance(cls, debug: bool) -> 'DataInterface':
-        cls._instance = DataInterface(debug)
-    
-    @classmethod
-    def instance(cls) -> 'DataInterface':
+    def instance(cls) -> 'DataSyncer':
+        if cls._instance is None:
+            config = ConfigManager()
+            if config.use_offline_syncer:
+                cls._instance = DataSyncer(_OfflineClient())
+            else:
+                cls._instance = DataSyncer(_S3Client())
+
         return cls._instance
+    
+    def __init__(self, client: Union[_S3Client, _OfflineClient]) -> None:
+        self.client = client
 
-    def __init__(self, debug: bool) -> None:
-        # don't really need to use s3 if we keep everything on ec2
-        self.s3_client = _DebugS3Client() # if debug else _S3Client()
+    def download_file(self, file: Path) -> None:
+        self.client.download_file(file)
 
-    def load_data(self, user: User) -> TopLevelData:
-        data_file = _get_data_file(user)
-        self.s3_client.download_file(data_file)
-        if not data_file.exists():
-            return TopLevelData(goals={}, edited=datetime.now())
-        
-        with open(data_file, 'r') as file:
-            data = json.load(file)
+    def upload_file(self, file: Path) -> None:
+        self.client.upload_file(file)
 
-        return TopLevelData(**data)
+
+class DataInterface:
+    BACKUPS_DIRECTORY = ConfigManager.PROJECT_LOCAL_SAVE_DIRECTORY.parent / "backups"
+    USERS_FILE = ConfigManager.PROJECT_LOCAL_SAVE_DIRECTORY / "users.json"
+
+    def __init__(self) -> None:
+        self.data_syncer = DataSyncer.instance()
     
     def load_users(self) -> Dict[str, User]:
-        self.s3_client.download_file(USERS_FILE)
+        self.data_syncer.download_file(self.USERS_FILE)
 
-        if not USERS_FILE.exists():
+        if not self.USERS_FILE.exists():
             return {}
 
-        with open(USERS_FILE, 'r') as file:
+        with open(self.USERS_FILE, 'r') as file:
             users_data: list = json.load(file)
             users = [User.from_dict(user) for user in users_data]
 
         return {user.id: user for user in users}
 
+    def save_users(self, users: List[User]) -> None:
+        self.USERS_FILE.parent.mkdir(exist_ok=True, parents=True)
+        with open(self.USERS_FILE, 'w', encoding='utf-8') as file:
+            json.dump([user.to_dict() for user in users], file, indent=4)
+        self.data_syncer.upload_file(self.USERS_FILE)
+
     def generate_new_user(self, username: str, password: str) -> User:
         users = self.load_users()
         used_folders = {user.folder for user in users.values()}
+        def _generate_random_string() -> str:
+            letters = string.ascii_lowercase
+            result_str = ''.join(random.choice(letters) for _ in range(10))
+            return result_str
         for _ in range(100):
             folder = _generate_random_string()
             if folder not in used_folders:
                 return User(username, password, folder)
-
         raise RuntimeError("Could not generate unique folder")
-
-    def backup_data(self, data: TopLevelData, user: User) -> None:
+    
+    def backup_data(self) -> None:
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        backup_file = _get_backup_dir(user) / f"{timestamp}.json"
-        backup_file.parent.mkdir(exist_ok=True, parents=True)
-        with open(backup_file, 'w', encoding='utf-8') as file:
-            file.write(data.model_dump_json(indent=4))
-        self.s3_client.upload_file(backup_file)
-        
-    def save_data(self, data: TopLevelData, user: User) -> None:
-        data_file = _get_data_file(user)
-        data_file.parent.mkdir(exist_ok=True, parents=True)
-        with open(data_file, 'w', encoding='utf-8') as file:
-            file.write(data.model_dump_json(indent=4))
-        self.s3_client.upload_file(data_file)
-
-    def save_users(self, users: List[User]) -> None:
-        USERS_FILE.parent.mkdir(exist_ok=True, parents=True)
-        with open(USERS_FILE, 'w', encoding='utf-8') as file:
-            json.dump([user.to_dict() for user in users], file, indent=4)
-        self.s3_client.upload_file(USERS_FILE)
+        new_backup = self.BACKUPS_DIRECTORY / timestamp
+        shutil.copytree(ConfigManager.PROJECT_LOCAL_SAVE_DIRECTORY, new_backup)
+        # TODO: zip the backup and upload to s3
+        # self.data_syncer.upload_file(new_backup)

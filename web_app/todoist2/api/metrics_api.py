@@ -2,27 +2,26 @@ import flask
 import flask_login
 import logging
 
-from typing import *
+from typing import * # type: ignore
 from flask import request, Blueprint, render_template
 from datetime import datetime
-from flask_limiter import Limiter
 
-from web_app.app_data import Metric, DataPoint
-from web_app.data_interface import DataInterface
-from web_app.helpers import limiter, from_req
-from web_app.visualiser import plot_metric
+from web_app.helpers import limiter, from_req, cur_user
+from web_app.todoist2.app_data import Metric, DataPoint
+from web_app.todoist2.data_interface import DataInterface
+from web_app.todoist2.visualiser import plot_metric
 
 
-metrics_api = Blueprint('metrics_api', __name__)
+metrics_api = Blueprint('metrics_api', __name__, url_prefix='/metrics')
 
 def get_default_redirect():
-    return flask.redirect(flask.url_for('metrics_api.get_metrics'))
+    return flask.redirect(flask.url_for('.get_metrics'))
 
-@metrics_api.route('/metrics', methods=['GET'])
+@metrics_api.route('/', methods=['GET'])
 @flask_login.login_required
 @limiter.limit("2 per second")
 def get_metrics():
-    tld = DataInterface.instance().load_data(flask_login.current_user)
+    tld = DataInterface().load_data(cur_user())
     metrics = list(tld.metrics.values())
     metrics.sort(key=lambda x: x.id)
     for metric in metrics:
@@ -30,7 +29,7 @@ def get_metrics():
 
     return render_template('metrics_page.html', metrics=metrics)
 
-@metrics_api.route('/metrics/new', methods=['POST'])
+@metrics_api.route('/new', methods=['POST'])
 @flask_login.login_required
 @limiter.limit("2 per second")
 def new_metric():
@@ -42,8 +41,8 @@ def new_metric():
         flask.flash('Metric name cannot be empty', category='error')
         return get_default_redirect()
 
-    data_interface = DataInterface.instance()
-    tld = data_interface.load_data(flask_login.current_user)
+    data_interface = DataInterface()
+    tld = data_interface.load_data(cur_user())
     
     metric_id = 0 if not tld.metrics else max(tld.metrics.keys()) + 1
     tld.metrics[metric_id] = Metric(id=metric_id, 
@@ -52,22 +51,22 @@ def new_metric():
                                     unit=unit, 
                                     description=description,
                                     creation_date=datetime.now())
-    data_interface.save_data(tld, flask_login.current_user)
+    data_interface.save_data(tld, cur_user())
     
     return get_default_redirect()
 
-@metrics_api.route('/metrics/delete', methods=['GET'])
+@metrics_api.route('/delete', methods=['GET'])
 @flask_login.login_required
 @limiter.limit("2 per second")
 def delete_metric():
     metric_id = int(from_req('metric_id'))
-    tld = DataInterface.instance().load_data(flask_login.current_user)
+    tld = DataInterface().load_data(cur_user())
     tld.metrics.pop(metric_id)
-    DataInterface.instance().save_data(tld, flask_login.current_user)
+    DataInterface().save_data(tld, cur_user())
 
     return get_default_redirect()
 
-@metrics_api.route('/metrics/edit', methods=['POST'])
+@metrics_api.route('/edit', methods=['POST'])
 @flask_login.login_required
 @limiter.limit("2 per second")
 def edit_metric():
@@ -81,16 +80,16 @@ def edit_metric():
     unit = from_req('units')
     description = from_req('description')
 
-    tld = DataInterface.instance().load_data(flask_login.current_user)
+    tld = DataInterface().load_data(cur_user())
     metric = tld.metrics[metric_id]
     metric.name = name
     metric.unit = unit
     metric.description = description
-    DataInterface.instance().save_data(tld, flask_login.current_user)
+    DataInterface().save_data(tld, cur_user())
 
     return get_default_redirect()
 
-@metrics_api.route('/metrics/log', methods=['POST'])
+@metrics_api.route('/log', methods=['POST'])
 @flask_login.login_required
 @limiter.limit("2 per second")
 def log_metric():
@@ -101,18 +100,18 @@ def log_metric():
         flask.flash('Value must be a number', category='error')
         return get_default_redirect()
 
-    tld = DataInterface.instance().load_data(flask_login.current_user)
+    tld = DataInterface().load_data(cur_user())
     metric = tld.metrics[metric_id]
     metric.data.append(DataPoint(date=datetime.now(), value=value))
-    DataInterface.instance().save_data(tld, flask_login.current_user)
+    DataInterface().save_data(tld, cur_user())
 
     return get_default_redirect()
 
-@metrics_api.route('/metrics/visualise/<int:metric_id>', methods=['GET'])
+@metrics_api.route('/visualise/<int:metric_id>', methods=['GET'])
 @flask_login.login_required
 @limiter.limit("1 per second")
 def visualise_metric(metric_id: int):
-    tld = DataInterface.instance().load_data(flask_login.current_user)
+    tld = DataInterface().load_data(cur_user())
     metric = tld.metrics[metric_id]
 
     try:

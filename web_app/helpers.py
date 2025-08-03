@@ -1,5 +1,5 @@
-import flask_login
 import flask
+import flask_login
 
 from flask import request
 from flask_limiter import Limiter
@@ -15,19 +15,21 @@ login_manager = flask_login.LoginManager()
 login_manager.init_app(app)
 @login_manager.user_loader
 def user_loader(username: str) -> User | None:
-    users = DataInterface.instance().load_users()
+    users = DataInterface().load_users()
     return users.get(username, None)
 
 @login_manager.request_loader
 def request_loader(request: flask.Request) -> User | None:
     username = request.form.get('username')
-    existing_users = DataInterface.instance().load_users()
+    if not username:
+        return None
+    existing_users = DataInterface().load_users()
     return existing_users.get(username, None)
 
 @login_manager.unauthorized_handler
 def unauthorized_handler():
     flask.flash('Log in required', category='error')
-    return flask.redirect(flask.url_for('account_api.login'))
+    return flask.redirect(flask.url_for('todoist2_api.account_api.login'))
 
 limiter = Limiter(
     get_remote_address,
@@ -58,4 +60,9 @@ def get_ip(request: flask.Request) -> str:
     if request.headers.getlist("X-Forwarded-For"):
         return request.headers.getlist("X-Forwarded-For")[0]
     else:
-        return request.remote_addr
+        return request.remote_addr if request.remote_addr else "Unknown IP"
+    
+def cur_user() -> User:
+    if not isinstance(flask_login.current_user, User):
+        raise TypeError("Current user is not an instance of User")
+    return flask_login.current_user
