@@ -1,0 +1,14 @@
+[
+    {
+        "username": "admin",
+        "password": "admin",
+        "folder": "ynudafyvpa",
+        "is_admin": true
+    },
+    {
+        "username": "fli8",
+        "password": "woma",
+        "folder": "guyecsmubu",
+        "is_admin": false
+    }
+]

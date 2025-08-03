@@ -3,8 +3,6 @@ from pathlib import Path
 
 class ConfigManager:
     _instance = None  # Class-level variable to store the single instance
-    PROJECT_NAME = "lazywombat"
-    PROJECT_LOCAL_SAVE_DIRECTORY = Path.home() / f".{PROJECT_NAME}" / "data"
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -21,3 +19,11 @@ class ConfigManager:
         self._initialized = True
         self.use_offline_syncer = True
         self.debug_mode = False
+
+    @property
+    def project_name(self) -> str:
+        return "lazywombat" if not self.debug_mode else "lazywombat_debug"
+
+    @property
+    def save_data_path(self) -> Path:
+        return Path.home() / f".{self.project_name}" / "data"

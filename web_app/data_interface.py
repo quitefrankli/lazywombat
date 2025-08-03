@@ -6,6 +6,7 @@ import string
 import os
 import shutil
 
+from atomicwrites import atomic_write
 from botocore.exceptions import ClientError
 from pathlib import Path
 from datetime import datetime
@@ -27,7 +28,7 @@ class _S3Client:
 
     @staticmethod
     def _get_s3_path(file: Path) -> str:
-        return str(file.relative_to(ConfigManager.PROJECT_LOCAL_SAVE_DIRECTORY).as_posix())
+        return str(file.relative_to(ConfigManager().save_data_path).as_posix())
 
     def download_file(self, file: Path) -> None:
         logging.info(f"Downloading {self._get_s3_path(file)} from s3 to {file}")
@@ -77,29 +78,28 @@ class DataSyncer:
 
 
 class DataInterface:
-    BACKUPS_DIRECTORY = ConfigManager.PROJECT_LOCAL_SAVE_DIRECTORY.parent / "backups"
-    USERS_FILE = ConfigManager.PROJECT_LOCAL_SAVE_DIRECTORY / "users.json"
-
     def __init__(self) -> None:
         self.data_syncer = DataSyncer.instance()
+        self.backups_directory = ConfigManager().save_data_path.parent / "backups"
+        self.users_file = ConfigManager().save_data_path / "users.json"
     
     def load_users(self) -> Dict[str, User]:
-        self.data_syncer.download_file(self.USERS_FILE)
+        self.data_syncer.download_file(self.users_file)
 
-        if not self.USERS_FILE.exists():
+        if not self.users_file.exists():
             return {}
 
-        with open(self.USERS_FILE, 'r') as file:
+        with open(self.users_file, 'r') as file:
             users_data: list = json.load(file)
             users = [User.from_dict(user) for user in users_data]
 
         return {user.id: user for user in users}
 
     def save_users(self, users: List[User]) -> None:
-        self.USERS_FILE.parent.mkdir(exist_ok=True, parents=True)
-        with open(self.USERS_FILE, 'w', encoding='utf-8') as file:
+        self.users_file.parent.mkdir(exist_ok=True, parents=True)
+        with open(self.users_file, 'w', encoding='utf-8') as file:
             json.dump([user.to_dict() for user in users], file, indent=4)
-        self.data_syncer.upload_file(self.USERS_FILE)
+        self.data_syncer.upload_file(self.users_file)
 
     def generate_new_user(self, username: str, password: str) -> User:
         users = self.load_users()
@@ -116,7 +116,22 @@ class DataInterface:
     
     def backup_data(self) -> None:
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        new_backup = self.BACKUPS_DIRECTORY / timestamp
-        shutil.copytree(ConfigManager.PROJECT_LOCAL_SAVE_DIRECTORY, new_backup)
+        new_backup = self.backups_directory / timestamp
+        shutil.copytree(ConfigManager().save_data_path, new_backup)
         # TODO: zip the backup and upload to s3
         # self.data_syncer.upload_file(new_backup)
+
+    def atomic_write(self, file_path: Path, data: bytes|str|None=None, stream: IO|None=None, **kwargs) -> None:
+        if stream is None and data is None:
+            raise ValueError("Either 'data' or 'stream' must be provided")
+        file_path.parent.mkdir(exist_ok=True, parents=True)
+        with atomic_write(file_path, overwrite=True, **kwargs) as f:
+            if data is not None:
+                f.write(data)
+            if stream is not None:
+                CHUNK_SIZE = 8192
+                while True:
+                    chunk = stream.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    f.write(chunk)
