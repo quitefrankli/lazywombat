@@ -23,7 +23,6 @@ export DOMAIN=your website domain
 export EMAIL=your email
 sudo $(which certbot) certonly --standalone -d $DOMAIN --staple-ocsp -m $EMAIL --agree-tos
 sudo cp todoist2.conf /etc/nginx/conf.d/
-sudo sed -i 's/yourdomain\.com/'"$DOMAIN"'/g' /etc/nginx/conf.d/todoist2.conf
 
 sudo systemctl start nginx
 sudo systemctl enable nginx

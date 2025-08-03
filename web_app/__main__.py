@@ -14,7 +14,6 @@ from web_app.config import ConfigManager
 from web_app.data_interface import DataInterface
 from web_app.helpers import admin_only, get_ip
 from web_app.app import app
-from web_app.users import User
 from web_app.crosswords import crosswords_api
 from web_app.todoist2 import todoist2_api
 from web_app.cheapify import cheapify_api
@@ -56,6 +55,19 @@ def before_request():
 @app.route('/')
 def landing():
     return render_template('landing.html')
+
+@app.route('/update', methods=['GET'])
+@flask_login.login_required
+@admin_only('landing')
+def update():
+    # Update the server code
+    import subprocess
+    
+    subprocess.Popen(["bash", "update_server.sh"], close_fds=True)
+
+    flask.flash('Update in progress...', category='success')
+
+    return flask.redirect(flask.url_for('todoist2_api.summary_goals'))
 
 @app.route('/backup', methods=['GET'])
 @flask_login.login_required
