@@ -41,7 +41,7 @@
 								class="btn btn-outline-danger me-2" 
 								data-bs-toggle="modal" 
 								data-bs-target="#deleteGoalModal{{ goal.id }}">
-									<img src={{ url_for('static', filename='trash.svg') }}/>
+									<img src={{ url_for('.static', filename='trash.svg') }}/>
 							</button>
 							<button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modifyGoalModal{{goal.id}}">
 								Edit

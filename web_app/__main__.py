@@ -1,34 +1,36 @@
-import os
 import click
 import logging
 import flask
 import flask_login
 
-from signal import signal, SIGTERM
 from typing import * # type: ignore
 from pathlib import Path
 from flask import render_template, request
-from flask_bootstrap import Bootstrap5
 from flask_apscheduler import APScheduler
 from logging.handlers import RotatingFileHandler
 
 from web_app.config import ConfigManager
 from web_app.data_interface import DataInterface
-from web_app.helpers import limiter, admin_only, get_ip
+from web_app.helpers import admin_only, get_ip
 from web_app.app import app
-from web_app.todoist2.todoist2_api import todoist2_api
+from web_app.crosswords import crosswords_api
+from web_app.todoist2 import todoist2_api
 
-app.secret_key = os.urandom(24)
+
 app.register_blueprint(todoist2_api)
-
-bootstrap = Bootstrap5(app)
+app.register_blueprint(crosswords_api)
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
-
-def get_default_redirect():
-    return flask.redirect(flask.url_for('home'))
+scheduler = APScheduler()
+@scheduler.task('cron', id='scheduled_backup', day_of_week='sun', hour=0, minute=0, misfire_grace_time=3600)
+def scheduled_backup():
+    logging.info("Running scheduled backup")
+    instance = DataInterface()
+    instance.backup_data()
+    logging.info("Backup complete")
+scheduler.start()
 
 @app.before_request
 def before_request():
@@ -41,17 +43,6 @@ def before_request():
             message += f", form={request.form}"
 
     logging.info(message)
-
-def graceful_shutdown(signum=None, frame=None):
-    logging.info("Shutting down server")
-    exit(0)
-
-@app.route('/shutdown')
-@flask_login.login_required
-@admin_only('home')
-def shutdown():
-    graceful_shutdown()
-    return "Shutting down..."
 
 @app.route('/backup', methods=['GET'])
 @flask_login.login_required
@@ -77,27 +68,15 @@ def configure_logging(debug: bool) -> None:
 @click.command()
 @click.option('--debug', is_flag=True, help='Run the server in debug mode', default=False)
 @click.option('--port', default=80, help='Port to run the server on', type=int)
-def main(debug: bool, port: int):
+def cli_start(debug: bool, port: int):
     configure_logging(debug=debug)
-    signal(SIGTERM, graceful_shutdown)
     ConfigManager().debug_mode = debug
 
     logging.info("Starting server")
     app.run(host='0.0.0.0', port=port, debug=debug)
 
-scheduler = APScheduler()
-
-@scheduler.task('cron', id='scheduled_backup', day_of_week='sun', hour=0, minute=0, misfire_grace_time=3600)
-def scheduled_backup():
-    logging.info("Running scheduled backup")
-    instance = DataInterface()
-    instance.backup_data()
-    logging.info("Backup complete")
-
-scheduler.start()
-
 if __name__ == '__main__':
-    main()
+    cli_start()
 else:
     configure_logging(debug=False)
     logging.info("Starting server")

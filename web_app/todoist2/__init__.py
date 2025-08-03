@@ -19,11 +19,19 @@ from web_app.todoist2.api.goals_api import goals_api
 from web_app.todoist2.api.account_api import account_api
 from web_app.todoist2.api.metrics_api import metrics_api
 
-todoist2_api = Blueprint('todoist2_api', __name__, url_prefix='/todoist2')
+todoist2_api = Blueprint(
+    'todoist2_api', 
+    __name__, 
+    template_folder='templates',
+    static_folder='static',
+    url_prefix='/todoist2')
 todoist2_api.register_blueprint(goals_api)
 todoist2_api.register_blueprint(account_api)
 todoist2_api.register_blueprint(metrics_api)
 
+@todoist2_api.context_processor
+def inject_app_name():
+    return dict(app_name='Todoist2')
 
 def get_default_redirect():
     return flask.redirect(flask.url_for('.summary_goals'))
@@ -68,7 +76,7 @@ def get_summary_goals(user: User) -> List[Tuple[str, List[Goal]]]:
 @limiter.limit("2/second")
 def summary_goals():
     dated_goal_blocks = get_summary_goals(cur_user())
-    return render_template('index.html', dated_goal_blocks=dated_goal_blocks)
+    return render_template('summary_goals_page.html', dated_goal_blocks=dated_goal_blocks)
 
 @todoist2_api.route('/completed_goals')
 @flask_login.login_required

@@ -10,14 +10,13 @@ from web_app.todoist2.app_data import GoalState, Goal
 from web_app.todoist2.data_interface import DataInterface
 
 
-goals_api = Blueprint('goals_api', __name__)
+goals_api = Blueprint('goals_api', __name__, url_prefix='/goal')
 
 
 def get_default_redirect():
     return flask.redirect(flask.url_for('todoist2_api.summary_goals'))
 
-
-@goals_api.route('/goal/new', methods=["POST"])
+@goals_api.route('/new', methods=["POST"])
 @flask_login.login_required
 @limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
 def new_goal():
@@ -39,7 +38,7 @@ def new_goal():
 
     return get_default_redirect()
 
-@goals_api.route('/goal/fail', methods=["GET"])
+@goals_api.route('/fail', methods=["GET"])
 @flask_login.login_required
 @limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
 def fail_goal():
@@ -52,7 +51,7 @@ def fail_goal():
 
     return get_default_redirect()
 
-@goals_api.route('/goal/log', methods=["POST"])
+@goals_api.route('/log', methods=["POST"])
 @flask_login.login_required
 @limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
 def log_goal():
@@ -67,7 +66,7 @@ def log_goal():
 
     return get_default_redirect()
 
-@goals_api.route('/goal/toggle_state', methods=['POST'])
+@goals_api.route('/toggle_state', methods=['POST'])
 @flask_login.login_required
 @limiter.limit("2/second", key_func=lambda: flask_login.current_user.id)
 def toggle_goal_state():
@@ -86,9 +85,9 @@ def toggle_goal_state():
 
     DataInterface().save_data(tld, cur_user())
 
-    return "OK"
+    return flask.jsonify(success=True)
 
-@goals_api.route('/goal/edit', methods=["POST"])
+@goals_api.route('/edit', methods=["POST"])
 @flask_login.login_required
 @limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
 def edit_goal():
@@ -108,7 +107,7 @@ def edit_goal():
 
     return get_default_redirect()
 
-@goals_api.route('/goal/delete', methods=["GET"])
+@goals_api.route('/delete', methods=["GET"])
 @flask_login.login_required
 @limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
 def delete_goal():

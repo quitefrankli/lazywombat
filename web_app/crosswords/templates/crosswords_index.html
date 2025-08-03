@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Crosswords Home</title>
+    <link rel="stylesheet" href="{{ url_for('crosswords.static', filename='style.css') }}">
+    <style>
+        table.crossword { border-collapse: collapse; }
+        table.crossword td { width: 32px; height: 32px; border: 1px solid #888; text-align: center; font-size: 20px; background: #fff; }
+        table.crossword td.empty { background: #eee; }
+    </style>
+</head>
+<body>
+    {% extends "root_base.html" %}
+    {% block content %}
+    <h1>Welcome to Crosswords!</h1>
+    <form action="{{ url_for('crosswords.new_crossword') }}" method="post">
+        <button type="submit">New Crossword</button>
+    </form>
+    {% if crossword_generated %}
+        <p>A new crossword puzzle has been generated!</p>
+        <table class="crossword">
+        {% for row in crossword_grid %}
+            <tr>
+            {% for cell in row %}
+                {% if cell %}
+                    <td>{{ cell }}</td>
+                {% else %}
+                    <td class="empty"></td>
+                {% endif %}
+            {% endfor %}
+            </tr>
+        {% endfor %}
+        </table>
+    {% endif %}
+    <p>This is the crosswords blueprint home page.</p>
+    {% endblock %}
+</body>
+</html>

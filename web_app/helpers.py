@@ -5,6 +5,7 @@ from flask import request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from functools import wraps
+from jinja2 import Environment, FileSystemLoader
 
 from web_app.app import app
 from web_app.data_interface import DataInterface
@@ -66,3 +67,10 @@ def cur_user() -> User:
     if not isinstance(flask_login.current_user, User):
         raise TypeError("Current user is not an instance of User")
     return flask_login.current_user
+
+# class TemplateRenderer:
+#     def __init__(self, template_folder: str):
+#         base_template_folder = "templates"
+#         base_static_folder = "static"
+
+#     def render(self, template_name: str, **context) -> str:
