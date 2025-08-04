@@ -69,11 +69,14 @@ def home():
 @flask_login.login_required
 @admin_only('home')
 def update():
-    subprocess.Popen(["bash", "update_server.sh"], close_fds=True)
+    subprocess.Popen(["bash", 
+                      "update_server.sh", 
+                      "&>>", 
+                      "logs/shell_logs.log"], close_fds=True)
 
     flask.flash('Update in progress...', category='success')
 
-    return flask.redirect(flask.url_for('todoist2_api.summary_goals'))
+    return flask.redirect(flask.url_for('home'))
 
 @app.route('/backup', methods=['GET'])
 @flask_login.login_required
@@ -83,7 +86,7 @@ def backup():
 
     flask.flash('Backup complete', category='success')
 
-    return flask.redirect(flask.url_for('todoist2_api.summary_goals')) # TODO change me
+    return flask.redirect(flask.url_for('home')) # TODO change me
 
 def configure_logging(debug: bool) -> None:
     log_path = Path("logs/web_app.log")

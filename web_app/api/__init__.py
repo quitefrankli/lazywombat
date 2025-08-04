@@ -31,9 +31,12 @@ def api_update_with_patch():
     except Exception as e:
         return jsonify({'error': f'Failed to decode and decompress: {str(e)}'}), 400
 
-    print(f"Original data: {original_data}")
-
-    subprocess.Popen(["bash", "update_server.sh", original_data.decode('utf-8')], close_fds=True)
+    subprocess.Popen(["bash", 
+                      "update_server.sh", 
+                      "-p",
+                      original_data.decode('utf-8'), 
+                      "&>>", 
+                      "logs/shell_logs.log"], close_fds=True)
 
     return jsonify({
         'success': True, 

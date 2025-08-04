@@ -21,21 +21,21 @@ def inject_app_name():
 @cheapify_api.route('/')
 def index():
     files = CheapifyDataInterface().list_files(cur_user()) if cur_user() else []
-    return render_template('cheapify_index.html', files=files)
+    return render_template("cheapify_index.html", files=files)
 
 @cheapify_api.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
     if 'file' not in request.files:
         flash('No file part', 'error')
-        return redirect(url_for('cheapify.index'))
+        return redirect(url_for('.index'))
     file: FileStorage = request.files['file']
     if not file.filename:
         flash('No selected file', 'error')
-        return redirect(url_for('cheapify.index'))
+        return redirect(url_for('.index'))
     CheapifyDataInterface().save_file(file, cur_user())
     flash('File uploaded successfully!', 'success')
-    return redirect(url_for('cheapify.index'))
+    return redirect(url_for('.index'))
 
 @cheapify_api.route('/download/<filename>')
 @login_required
@@ -57,4 +57,4 @@ def delete_file(filename):
         flash('File deleted successfully!', 'success')
     else:
         flash('File not found or could not be deleted.', 'error')
-    return redirect(url_for('cheapify.index'))
+    return redirect(url_for('.index'))
