@@ -2,22 +2,18 @@ import flask
 import flask_login
 import logging
 
-from flask import render_template, request
+from flask import render_template, Blueprint
 from typing import * # type: ignore
-from flask import request, Blueprint
 from datetime import datetime, date
 
-
-from web_app.helpers import limiter, from_req, cur_user
+from web_app.helpers import limiter, cur_user
 from web_app.users import User
-
 from web_app.todoist2.app_data import GoalState, Goal
 from web_app.todoist2.data_interface import DataInterface
 from web_app.todoist2.visualiser import plot_velocity
-
 from web_app.todoist2.api.goals_api import goals_api
-from web_app.todoist2.api.account_api import account_api
 from web_app.todoist2.api.metrics_api import metrics_api
+
 
 todoist2_api = Blueprint(
     'todoist2_api', 
@@ -26,7 +22,6 @@ todoist2_api = Blueprint(
     static_folder='static',
     url_prefix='/todoist2')
 todoist2_api.register_blueprint(goals_api)
-todoist2_api.register_blueprint(account_api)
 todoist2_api.register_blueprint(metrics_api)
 
 @todoist2_api.context_processor
@@ -51,7 +46,7 @@ def get_summary_goals(user: User) -> List[Tuple[str, List[Goal]]]:
         if goal.state not in (GoalState.ACTIVE, GoalState.COMPLETED):
             return False
         # hides goals that have been completed for a while
-        if goal.state == GoalState.COMPLETED and (now - goal.completion_date).days > 2:
+        if goal.state == GoalState.COMPLETED and goal.completion_date and (now - goal.completion_date).days > 2:
             return False
         return True
     
@@ -82,15 +77,14 @@ def summary_goals():
 @flask_login.login_required
 @limiter.limit("2/second")
 def completed_goals():
-    user = flask_login.current_user
-    goals = list(DataInterface().load_data(user).goals.values())
+    goals = list(DataInterface().load_data(cur_user()).goals.values())
     goals = [goal for goal in goals if goal.state == GoalState.COMPLETED]
-    goals.sort(key=lambda goal: goal.completion_date.timestamp(), reverse=True)
+    goals.sort(key=lambda goal: goal.completion_date.timestamp(), reverse=True) # type: ignore
 
     goal_blocks = []
     last_date_label: date | None = None
     for goal in goals:
-        goal_date = goal.completion_date.date()
+        goal_date = goal.completion_date.date() # type: ignore
         if last_date_label != goal_date:
             last_date_label = goal_date
             goal_blocks.append((last_date_label.strftime("%d/%m/%Y"), [goal]))

@@ -27,7 +27,7 @@ def login():
     existing_users = DataInterface().load_users()
     if username in existing_users and password == existing_users[username].password:
         flask_login.login_user(existing_users[username], duration=timedelta(weeks=1))
-        return flask.redirect(flask.url_for('todoist2_api.summary_goals'))
+        return flask.redirect(flask.url_for('home'))
     else:
         flask.flash('Invalid username or password', category='error')
         return get_default_redirect()
@@ -37,7 +37,7 @@ def login():
 def logout():
     flask_login.logout_user()
     flask.flash('You have been logged out', category='info')
-    return get_default_redirect()
+    return flask.redirect(flask.url_for('home'))
 
 @account_api.route('/register', methods=["POST"])
 @limiter.limit("1/second")
@@ -67,4 +67,4 @@ def register():
 
     flask_login.login_user(new_user)
 
-    return flask.redirect(flask.url_for('todoist2_api.summary_goals'))
+    return flask.redirect(flask.url_for('home'))

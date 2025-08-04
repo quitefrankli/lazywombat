@@ -17,11 +17,13 @@ from web_app.app import app
 from web_app.crosswords import crosswords_api
 from web_app.todoist2 import todoist2_api
 from web_app.cheapify import cheapify_api
+from web_app.account_api import account_api
 
 
 app.register_blueprint(todoist2_api)
 app.register_blueprint(crosswords_api)
 app.register_blueprint(cheapify_api)
+app.register_blueprint(account_api)
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
@@ -53,12 +55,12 @@ def before_request():
     logging.info(message)
 
 @app.route('/')
-def landing():
-    return render_template('landing.html')
+def home():
+    return render_template('home.html')
 
 @app.route('/update', methods=['GET'])
 @flask_login.login_required
-@admin_only('landing')
+@admin_only('home')
 def update():
     # Update the server code
     import subprocess
@@ -71,7 +73,7 @@ def update():
 
 @app.route('/backup', methods=['GET'])
 @flask_login.login_required
-@admin_only('landing')
+@admin_only('home')
 def backup():
     DataInterface().backup_data()
 

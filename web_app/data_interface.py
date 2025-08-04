@@ -129,7 +129,7 @@ class DataInterface:
             if data is not None:
                 f.write(data)
             if stream is not None:
-                CHUNK_SIZE = 8192
+                CHUNK_SIZE = 1024 * 1024  # 1 MB
                 while True:
                     chunk = stream.read(CHUNK_SIZE)
                     if not chunk:

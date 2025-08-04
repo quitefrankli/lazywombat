@@ -30,7 +30,7 @@ def request_loader(request: flask.Request) -> User | None:
 @login_manager.unauthorized_handler
 def unauthorized_handler():
     flask.flash('Log in required', category='error')
-    return flask.redirect(flask.url_for('todoist2_api.account_api.login'))
+    return flask.redirect(flask.url_for('account_api.login'))
 
 limiter = Limiter(
     get_remote_address,
@@ -67,10 +67,3 @@ def cur_user() -> User:
     if not isinstance(flask_login.current_user, User):
         raise TypeError("Current user is not an instance of User")
     return flask_login.current_user
-
-# class TemplateRenderer:
-#     def __init__(self, template_folder: str):
-#         base_template_folder = "templates"
-#         base_static_folder = "static"
-
-#     def render(self, template_name: str, **context) -> str:

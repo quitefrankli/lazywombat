@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, send_file, redirect, url_for, flash
-from flask_login import current_user, login_required
+from flask_login import login_required
 from werkzeug.datastructures import FileStorage
 
 from web_app.cheapify.data_interface import CheapifyDataInterface
