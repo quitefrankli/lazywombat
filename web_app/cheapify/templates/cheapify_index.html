@@ -12,6 +12,10 @@
         <button type="button" class="btn btn-success align-self-center" data-bs-toggle="modal" data-bs-target="#downloadModal">
             Download File
         </button>
+        <!-- Delete Button trigger modal -->
+        <button type="button" class="btn btn-danger align-self-center" data-bs-toggle="modal" data-bs-target="#deleteModal">
+            Delete File
+        </button>
     </div>
     <!-- Upload Modal -->
     <div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
@@ -44,6 +48,21 @@
           <div class="modal-body">
             <input class="form-control mb-2" type="text" id="fileSearch" placeholder="Search files...">
             <div id="fileList" style="max-height: 250px; overflow-y: auto;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Delete Modal -->
+    <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="deleteModalLabel">Delete File</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <input class="form-control mb-2" type="text" id="deleteFileSearch" placeholder="Search files...">
+            <div id="deleteFileList" style="max-height: 250px; overflow-y: auto;"></div>
           </div>
         </div>
       </div>

@@ -135,3 +135,4 @@ class DataInterface:
                     if not chunk:
                         break
                     f.write(chunk)
+        # self.data_syncer.upload_file(file_path)

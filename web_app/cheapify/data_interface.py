@@ -24,12 +24,20 @@ class CheapifyDataInterface(BaseDataInterface):
 
         return file_path
 
-    def list_files(self, user: User):
+    def list_files(self, user: User) -> list[str]:
         user_dir = self.get_user_dir(user)
         if not user_dir.exists():
             return []
         
         return [f.name for f in user_dir.iterdir() if f.is_file()]
 
-    def get_file_path(self, filename, user: User):
+    def get_file_path(self, filename: str, user: User) -> Path:
         return self.get_user_dir(user) / filename
+
+    def delete_file(self, filename: str, user: User) -> bool:
+        file_path = self.get_file_path(filename, user)
+        if file_path.exists() and file_path.is_file():
+            file_path.unlink() # unlink means to delete as well
+            # self.data_syncer.delete_file(file_path)
+            return True
+        return False
