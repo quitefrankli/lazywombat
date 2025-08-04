@@ -25,6 +25,10 @@ app.register_blueprint(crosswords_api)
 app.register_blueprint(cheapify_api)
 app.register_blueprint(account_api)
 
+@app.context_processor
+def inject_app_name():
+    return dict(app_name="LazyWombat")
+
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 

@@ -5,6 +5,7 @@ from werkzeug.datastructures import FileStorage
 from web_app.cheapify.data_interface import CheapifyDataInterface
 from web_app.helpers import cur_user
 
+
 cheapify_api = Blueprint(
     'cheapify',
     __name__,
@@ -13,9 +14,14 @@ cheapify_api = Blueprint(
     url_prefix='/cheapify'
 )
 
+@cheapify_api.context_processor
+def inject_app_name():
+    return dict(app_name='Cheapify')
+
 @cheapify_api.route('/')
 def index():
-    return render_template('cheapify_index.html')
+    files = CheapifyDataInterface().list_files(cur_user()) if cur_user() else []
+    return render_template('cheapify_index.html', files=files)
 
 @cheapify_api.route('/upload', methods=['POST'])
 @login_required
@@ -33,7 +39,7 @@ def upload_file():
 
 @cheapify_api.route('/download/<filename>')
 @login_required
-def download_file(filename):
+def download_file(filename: str):
     file_path = CheapifyDataInterface().get_file_path(filename, cur_user())
     return send_file(file_path, as_attachment=True)
 
@@ -42,3 +48,13 @@ def download_file(filename):
 def files_list():
     files = CheapifyDataInterface().list_files(cur_user())
     return {'files': files}
+
+@cheapify_api.route('/delete/<filename>', methods=['POST'])
+@login_required
+def delete_file(filename):
+    success = CheapifyDataInterface().delete_file(filename, cur_user())
+    if success:
+        flash('File deleted successfully!', 'success')
+    else:
+        flash('File not found or could not be deleted.', 'error')
+    return redirect(url_for('cheapify.index'))
