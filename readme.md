@@ -33,3 +33,16 @@ sudo systemctl status nginx
 
 gunicorn -b 127.0.0.1:5000 web_app.__main__:app &
 ```
+
+## Updating Server
+
+### Method 1: via git push
+
+1. commit code and push to main (force pushes are supported)
+2. on an admin authenticated account, visit `https://lazywombat.site/update`
+
+### Method 2: via curl
+
+1. make sure you are on main branch (force pushes are NOT supported, make sure origin/main is STRICTLY behind main)
+2. `CONTENT=$(git format-patch origin/main..main --stdout | gzip -c | base64)`
+2. `curl -F "username=$USERNAME" -F "password=$PASSWORD" -F "content=$CONTENT" https://lazywombat.site/api/update_with_patch`

@@ -1,5 +1,16 @@
+set -e
+
+git checkout main
 git fetch --all
-git checkout origin/main
+git reset --hard origin/main
+
+# if an argument is provided, use it as the patches to be applied
+if [ $# -gt 0 ]
+then
+    git am "$@"
+    git push
+fi
+
 pip install -r requirements.txt
 pkill gunicorn
 sudo cp todoist2.conf /etc/nginx/conf.d/
