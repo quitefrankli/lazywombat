@@ -1,18 +1,33 @@
-set -e
+set -ex
 
 git checkout main
-git fetch --all
+git fetch
 git reset --hard origin/main
 
-# if an argument is provided, use it as the patches to be applied
-if [ $# -gt 0 ]
+# Default values
+PATCHES=""
+while getopts "p" opt; do
+    case "$opt" in
+        p)
+            PATCHES="$OPTARG"
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG" >&2
+            exit 1
+            ;;
+    esac
+done
+shift $((OPTIND-1))
+
+# check if patches are provided
+if [ -n "$PATCHES" ]
 then
-    git am "$@"
+    git am "$PATCHES"
     git push
 fi
 
-pip install -r requirements.txt
+pip install -r requirements.txt --quiet
 pkill gunicorn
-sudo cp todoist2.conf /etc/nginx/conf.d/
+sudo cp lazywombat.conf /etc/nginx/conf.d/
 sudo systemctl reload nginx
 gunicorn -b 127.0.0.1:5000 web_app.__main__:app &
