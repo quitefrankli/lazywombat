@@ -4,12 +4,14 @@ git checkout main
 git fetch
 git reset --hard origin/main
 
-# Default values
-PATCHES=""
-while getopts "p" opt; do
+while getopts ":p:" opt
+do
     case "$opt" in
         p)
-            PATCHES="$OPTARG"
+            PATCHES=$OPTARG
+            echo "Applying patches..."
+            echo $PATCHES | base64 -di | gzip -d | git am
+            git push
             ;;
         \?)
             echo "Invalid option: -$OPTARG" >&2
@@ -18,13 +20,6 @@ while getopts "p" opt; do
     esac
 done
 shift $((OPTIND-1))
-
-# check if patches are provided
-if [ -n "$PATCHES" ]
-then
-    git am "$PATCHES"
-    git push
-fi
 
 pip install -r requirements.txt --quiet
 pkill gunicorn

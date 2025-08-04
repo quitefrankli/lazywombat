@@ -23,7 +23,8 @@ def api_update_with_patch():
     if not user.is_admin:
         return jsonify({'error': 'Unauthorized'}), 403
 
-    # Decode base64 and decompress gzip
+    # Test decode and decompress, don't actually apply the patch here
+    # Just checking if the content can be decoded and decompressed
     try:
         compressed_bytes = base64.b64decode(content)
         with gzip.GzipFile(fileobj=BytesIO(compressed_bytes)) as gz:
@@ -34,7 +35,7 @@ def api_update_with_patch():
     subprocess.Popen(["bash", 
                       "update_server.sh", 
                       "-p",
-                      original_data.decode('utf-8'), 
+                      f"\"{content}\"", 
                       "&>>", 
                       "logs/shell_logs.log"], close_fds=True)
 
