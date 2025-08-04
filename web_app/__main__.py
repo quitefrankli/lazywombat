@@ -3,10 +3,11 @@ import logging
 import flask
 import flask_login
 import shutil
+import subprocess
 
 from typing import * # type: ignore
 from pathlib import Path
-from flask import render_template, request
+from flask import render_template, request, jsonify
 from flask_apscheduler import APScheduler
 from logging.handlers import RotatingFileHandler
 
@@ -18,12 +19,14 @@ from web_app.crosswords import crosswords_api
 from web_app.todoist2 import todoist2_api
 from web_app.cheapify import cheapify_api
 from web_app.account_api import account_api
+from web_app.api import api_api
 
 
 app.register_blueprint(todoist2_api)
 app.register_blueprint(crosswords_api)
 app.register_blueprint(cheapify_api)
 app.register_blueprint(account_api)
+app.register_blueprint(api_api)
 
 @app.context_processor
 def inject_app_name():
@@ -66,9 +69,6 @@ def home():
 @flask_login.login_required
 @admin_only('home')
 def update():
-    # Update the server code
-    import subprocess
-    
     subprocess.Popen(["bash", "update_server.sh"], close_fds=True)
 
     flask.flash('Update in progress...', category='success')
