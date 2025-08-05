@@ -12,6 +12,7 @@ do
             echo "Applying patches..."
             echo $PATCHES | base64 -di | gzip -d | git am
             git push
+            exit 0
             ;;
         \?)
             echo "Invalid option: -$OPTARG" >&2

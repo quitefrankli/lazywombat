@@ -65,19 +65,6 @@ def before_request():
 def home():
     return render_template('home.html')
 
-@app.route('/update', methods=['GET'])
-@flask_login.login_required
-@admin_only('home')
-def update():
-    subprocess.Popen(["bash", 
-                      "update_server.sh", 
-                      "&>>", 
-                      "logs/shell_logs.log"], close_fds=True)
-
-    flask.flash('Update in progress...', category='success')
-
-    return flask.redirect(flask.url_for('home'))
-
 @app.route('/backup', methods=['GET'])
 @flask_login.login_required
 @admin_only('home')
