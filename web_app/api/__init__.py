@@ -20,10 +20,17 @@ def authenticate_user(username: str, password: str) -> bool:
         return False
     return user.is_admin
 
-def handle_github_webhook():
+def handle_github_webhook(request_body: dict) -> Response:
     if request.headers.get(GITHUB_EVENT_HEADER) != 'push':
+        logging.info(f"Ignoring GitHub webhook event: {request.headers.get(GITHUB_EVENT_HEADER)}")
         return jsonify({"status": "ignored"}), 200
         
+    # Step 3: Check if push was to the main branch
+    ref = request_body.get('ref')
+    if ref != "refs/heads/main":
+        logging.info(f"Ignoring push event for non-main branch: {ref}")
+        return jsonify({"status": "ignored"}), 200
+
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Basic "):
         return jsonify({'error': 'Missing or invalid Authorization header'}), 401
@@ -40,6 +47,7 @@ def handle_github_webhook():
     if not authenticate_user(username, password):
         return jsonify({'error': 'Invalid credentials'}), 401
     
+    logging.info(f"Applying GitHub push webhook update")
     subprocess.Popen(["bash", 
                       "update_server.sh", 
                       "&>>", 
@@ -51,26 +59,28 @@ def handle_github_webhook():
 
 @api_api.route('/update', methods=['POST'])
 def api_update() -> Response:
+    logging.info(f"Received update request from {request.remote_addr}")
+
     content_type = request.headers.get('Content-Type', '')
     if content_type.startswith('application/json'):
-        data = request.get_json(silent=True)
-        if data is None:
-            return jsonify({'error': 'Invalid JSON data'}), 400
+        request_body = request.get_json(silent=True)
+        if request_body is None:
+            return jsonify({'error': 'Invalid JSON request_body'}), 400
     elif content_type.startswith('application/x-www-form-urlencoded'):
-        data = request.form.to_dict()
+        request_body = request.form.to_dict()
     else:
         return jsonify({'error': 'Unsupported content type'}), 415
 
     if GITHUB_EVENT_HEADER in request.headers:
-        return handle_github_webhook()
+        return handle_github_webhook(request_body)
 
     # check if the request contains username and password in body
     # or if the username and password are provided in the Authorization header
-    username = data.get('username', None)
-    password = data.get('password', None)
+    username = request_body.get('username', None)
+    password = request_body.get('password', None)
     if not authenticate_user(username, password):
         return jsonify({'error': 'Invalid credentials'}), 401
-    patch = data.get('patch', None)
+    patch = request_body.get('patch', None)
     if not patch:
         return jsonify({'error': 'Missing patch data'}), 400
     try:
@@ -82,6 +92,7 @@ def api_update() -> Response:
     except Exception as e:
         return jsonify({'error': f'Failed to decode and decompress: {str(e)}'}), 400
 
+    logging.info(f"Updating with patch of size {len(original_data)} bytes")
     subprocess.Popen(["bash", 
                       "update_server.sh", 
                       "-p",
