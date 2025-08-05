@@ -3,7 +3,7 @@ import gzip
 import subprocess
 import logging
 
-from flask import request, jsonify, Blueprint, Response
+from flask import request, jsonify, Blueprint
 from web_app.data_interface import DataInterface
 from io import BytesIO
 
@@ -20,7 +20,7 @@ def authenticate_user(username: str, password: str) -> bool:
         return False
     return user.is_admin
 
-def handle_github_webhook(request_body: dict) -> Response:
+def handle_github_webhook(request_body: dict):
     if request.headers.get(GITHUB_EVENT_HEADER) != 'push':
         logging.info(f"Ignoring GitHub webhook event: {request.headers.get(GITHUB_EVENT_HEADER)}")
         return jsonify({"status": "ignored"}), 200
@@ -52,10 +52,10 @@ def handle_github_webhook(request_body: dict) -> Response:
 
     return jsonify({
         'success': True, 
-    })
+    }), 200
 
 @api_api.route('/update', methods=['POST'])
-def api_update() -> Response:
+def api_update():
     logging.info(f"Received update request from {request.remote_addr}")
 
     content_type = request.headers.get('Content-Type', '')
@@ -95,5 +95,5 @@ def api_update() -> Response:
     return jsonify({
         'success': True, 
         'patch_size': len(original_data),
-    })
+    }), 200
     

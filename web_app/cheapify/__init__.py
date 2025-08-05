@@ -19,6 +19,7 @@ def inject_app_name():
     return dict(app_name='Cheapify')
 
 @cheapify_api.route('/')
+@login_required
 def index():
     files = CheapifyDataInterface().list_files(cur_user()) if cur_user() else []
     return render_template("cheapify_index.html", files=files)
