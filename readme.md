@@ -43,4 +43,4 @@ gunicorn -b 127.0.0.1:5000 web_app.__main__:app &
 ### Method 2: via curl
 
 1. make sure you are on main branch (force pushes are NOT supported, make sure origin/main is STRICTLY behind main)
-2. `PATCH=$(git format-patch origin/main..main --stdout | gzip -c | base64) curl -F "username=$USERNAME" -F "password=$PASSWORD" -F "patch=$PATCH" https://lazywombat.site/api/update`
+2. `PATCH=$(git format-patch origin/main..main --stdout | gzip -c | base64 -w 0) curl --header "Content-Type: application/json" --request POST --data "{\"username\":\"$USERNAME\", \"password\":\"$PASSWORD\", \"patch\":\"$PATCH\"}" https://lazywombat.site/api/update`

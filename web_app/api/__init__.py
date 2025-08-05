@@ -65,6 +65,8 @@ def api_update():
             return jsonify({'error': 'Invalid JSON request_body'}), 400
     elif content_type.startswith('application/x-www-form-urlencoded'):
         request_body = request.form.to_dict()
+    elif content_type.startswith('multipart/form-data'):
+        request_body = {key: value for key, value in request.form.items()}
     else:
         return jsonify({'error': 'Unsupported content type'}), 415
 
@@ -73,8 +75,8 @@ def api_update():
 
     # check if the request contains username and password in body
     # or if the username and password are provided in the Authorization header
-    username = request_body.get('username', None)
-    password = request_body.get('password', None)
+    username = request_body.get('username', "")
+    password = request_body.get('password', "")
     if not authenticate_user(username, password):
         return jsonify({'error': 'Invalid credentials'}), 401
     patch = request_body.get('patch', None)

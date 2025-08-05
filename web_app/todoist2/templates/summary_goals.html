@@ -12,8 +12,9 @@
 					data-bs-toggle="collapse" 
 					data-bs-target="#{{goal.id}}" 
 					aria-expanded="false" 
-					aria-controls="{{ goal.id }}">
-						{{ goal.name }}
+					aria-controls="{{ goal.id }}"
+					style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">
+						<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">{{ goal.name }}</span>
 				</button>
 			</div>
 			<div class="col-auto d-flex align-items-center justify-content-end">
@@ -84,7 +85,7 @@
 						<label for="name" class="col-form-label">Name</label>
 						<input type="text" class="form-control" name="name" id="name" value="{{ goal.name }}">
 						<label for="description" class="col-form-label">Description</label>
-						<textarea class="form-control" name="description" id="description">{{ goal.description }}</textarea>
+						<textarea class="form-control" name="description" id="description" rows="5" style="min-height: 120px;">{{ goal.description }}</textarea>
 					</div>
 				</div>
 				<div class="modal-footer">

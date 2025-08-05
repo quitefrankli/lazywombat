@@ -9,8 +9,9 @@
 			data-bs-toggle="collapse" 
 			data-bs-target="#{{goal.id}}" 
 			aria-expanded="false" 
-			aria-controls="{{ goal.id }}">
-				{{ goal.name }}
+			aria-controls="{{ goal.id }}"
+			style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">
+			<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">{{ goal.name }}</span>
 		</button>
 		<div class="collapse" id="{{goal.id}}">
 			<div class="card" style="width: 100%">
