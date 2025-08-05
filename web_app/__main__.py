@@ -65,16 +65,6 @@ def before_request():
 def home():
     return render_template('home.html')
 
-@app.route('/backup', methods=['GET'])
-@flask_login.login_required
-@admin_only('home')
-def backup():
-    DataInterface().backup_data()
-
-    flask.flash('Backup complete', category='success')
-
-    return flask.redirect(flask.url_for('home')) # TODO change me
-
 def configure_logging(debug: bool) -> None:
     log_path = Path("logs/web_app.log")
     log_path.parent.mkdir(parents=True, exist_ok=True)

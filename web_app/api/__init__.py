@@ -5,6 +5,7 @@ import logging
 
 from flask import request, jsonify, Blueprint
 from web_app.data_interface import DataInterface
+from web_app.helpers import get_ip
 from io import BytesIO
 
 
@@ -54,21 +55,29 @@ def handle_github_webhook(request_body: dict):
         'success': True, 
     }), 200
 
-@api_api.route('/update', methods=['POST'])
-def api_update():
-    logging.info(f"Received update request from {request.remote_addr}")
-
+def retrieve_body_from_post() -> dict:
     content_type = request.headers.get('Content-Type', '')
     if content_type.startswith('application/json'):
         request_body = request.get_json(silent=True)
         if request_body is None:
-            return jsonify({'error': 'Invalid JSON request_body'}), 400
+            raise ValueError("Invalid JSON request_body")
     elif content_type.startswith('application/x-www-form-urlencoded'):
         request_body = request.form.to_dict()
     elif content_type.startswith('multipart/form-data'):
         request_body = {key: value for key, value in request.form.items()}
     else:
-        return jsonify({'error': 'Unsupported content type'}), 415
+        raise ValueError("Unsupported content type")
+    
+    return request_body
+
+@api_api.route('/update', methods=['POST'])
+def api_update():
+    logging.info(f"Received update request from {get_ip()}")
+    try:
+        request_body = retrieve_body_from_post()
+    except ValueError as e:
+        logging.error(f"Error processing request: {str(e)}")
+        return jsonify({'error': str(e)}), 400
 
     if GITHUB_EVENT_HEADER in request.headers:
         return handle_github_webhook(request_body)
@@ -98,4 +107,23 @@ def api_update():
         'success': True, 
         'patch_size': len(original_data),
     }), 200
-    
+
+@api_api.route('/backup', methods=['POST'])
+def api_backup():
+    logging.info(f"Received backup request from {get_ip()}")
+
+    try:
+        request_body = retrieve_body_from_post()
+    except ValueError as e:
+        logging.error(f"Error processing request: {str(e)}")
+        return jsonify({'error': str(e)}), 400
+
+    username = request_body.get('username', "")
+    password = request_body.get('password', "")
+    if not authenticate_user(username, password):
+        return jsonify({'error': 'Invalid credentials'}), 401
+    DataInterface().backup_data()
+    logging.info("Backup complete")
+
+    return jsonify({'success': True, 'message': 'Backup complete'})
+
