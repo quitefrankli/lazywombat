@@ -48,10 +48,7 @@ def handle_github_webhook(request_body: dict) -> Response:
         return jsonify({'error': 'Invalid credentials'}), 401
     
     logging.info(f"Applying GitHub push webhook update")
-    subprocess.Popen(["bash", 
-                      "update_server.sh", 
-                      "&>>", 
-                      "logs/shell_logs.log"], close_fds=True)
+    subprocess.Popen("bash update_server.sh &>> logs/shell_logs.log", shell=True, close_fds=True)
 
     return jsonify({
         'success': True, 
@@ -93,12 +90,7 @@ def api_update() -> Response:
         return jsonify({'error': f'Failed to decode and decompress: {str(e)}'}), 400
 
     logging.info(f"Updating with patch of size {len(original_data)} bytes")
-    subprocess.Popen(["bash", 
-                      "update_server.sh", 
-                      "-p",
-                      f"\"{patch}\"", 
-                      "&>>", 
-                      "logs/shell_logs.log"], close_fds=True)
+    subprocess.Popen(f"bash update_server.sh -p \"{patch}\" &>> logs/shell_logs.log", shell=True, close_fds=True)
     
     return jsonify({
         'success': True, 
