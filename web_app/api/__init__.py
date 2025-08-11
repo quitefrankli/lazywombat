@@ -26,7 +26,6 @@ def handle_github_webhook(request_body: dict):
         logging.info(f"Ignoring GitHub webhook event: {request.headers.get(GITHUB_EVENT_HEADER)}")
         return jsonify({"status": "ignored"}), 200
         
-    # Step 3: Check if push was to the main branch
     ref = request_body.get('ref')
     if ref != "refs/heads/main":
         logging.info(f"Ignoring push event for non-main branch: {ref}")
