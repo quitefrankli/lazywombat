@@ -1,4 +1,6 @@
 import logging
+import yt_dlp
+from pathlib import Path
 
 from flask import Blueprint, render_template, request, send_file, redirect, url_for, flash
 from flask_login import login_required
@@ -77,4 +79,26 @@ def youtube_search():
         query = request.form.get('youtube_query', '')
         if query:
             results = AudioDownloader.search_youtube(query)
-    return render_template('cheapify_index.html', files=CheapifyDataInterface().list_files(cur_user()), youtube_results=results, youtube_query=query)
+    return render_template('cheapify_index.html', 
+                           files=CheapifyDataInterface().list_files(cur_user()), 
+                           youtube_results=results, 
+                           youtube_query=query)
+
+@cheapify_api.route('/youtube_download', methods=['POST'])
+@login_required
+def youtube_download():
+    video_id = request.form.get('video_id')
+    title = request.form.get('title')
+    if not video_id:
+        flash('No video ID provided.', 'error')
+        return redirect(url_for('.index'))
+    user = cur_user()
+    user_dir = CheapifyDataInterface().get_user_dir(user)
+    try:
+        filename = AudioDownloader.download_youtube_audio(video_id, title, user_dir)
+        flash(f'Audio downloaded for: {filename}', 'success')
+    except Exception as e:
+        flash(f'Error downloading audio: {e}', 'error')
+    return redirect(url_for('.index'))
+
+AudioDownloader.download_youtube_audio("CGj85pVzRJs", "Sample Video", Path("resources"))
