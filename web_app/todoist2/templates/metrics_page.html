@@ -123,73 +123,80 @@
 
 {% block content %}
 
-{% for metric in metrics %}
-<div class="container-fluid my-1 p-1" style="background-color: rgb(168, 225, 244)">
-    <button 
-        class="btn w-100 btn-light truncate-button" 
-        type="button" 
-        data-bs-toggle="collapse" 
-        data-bs-target="#{{metric.id}}" 
-        aria-expanded="false" 
-        aria-controls="{{ metric.id }}">
-            {{ metric.name }}
-    </button>
-    <div class="collapse" id="{{ metric.id }}">
-        <div class="card" style="width: 100%">
-            <div class="card-body">
-                <div class="row align-items-center">
-                    <div class="col d-flex justify-content-start">
-                        <h5 class="card-title">{{ metric.name }}</h5>
-                    </div>
-                    <div class="col d-flex justify-content-end">
-                        <button 
-                            type="button" 
-                            class="btn btn-outline-danger me-2" 
-                            data-bs-toggle="modal" 
-                            data-bs-target="#deleteMetricModal{{ metric.id }}">
-                                <img src="../static/trash.svg"/>
-                        </button>
-                        <button 
-                            type="button" 
-                            class="btn btn-outline-primary" 
-                            data-bs-toggle="modal" 
-                            data-bs-target="#modifyMetricModal{{ metric.id }}">
-                                Edit
-                        </button>
-                    </div>
-                </div>
-                <hr class="my-1"/>
-                <div label="description" class="col-form-label">Description: {{ metric.description }}</div>
-                <div class="container-fluid">
-                    <div class="overflow-auto" style="max-height: calc(10 * 2.5rem); overflow-x: hidden; overflow-y: auto;">
-                        {% for data_point in metric.data %}
-                        <div class="row" style="max-width: 100%; white-space: nowrap;">
-                            <div class="col" style="overflow-x: hidden; text-overflow: ellipsis;">
-                                {{ data_point.value }} {{ metric.unit }}
+
+<div class="container-fluid mt-2">
+    <div class="row">
+        <div class="col-12">
+            {% for metric in metrics %}
+            <div class="my-1 p-1 text-start" style="background-color: rgb(168, 225, 244);">
+                <button 
+                    class="btn w-100 btn-light truncate-button text-start" 
+                    type="button" 
+                    data-bs-toggle="collapse" 
+                    data-bs-target="#{{metric.id}}" 
+                    aria-expanded="false" 
+                    aria-controls="{{ metric.id }}">
+                        {{ metric.name }}
+                </button>
+                <div class="collapse" id="{{ metric.id }}">
+                    <div class="card" style="width: 100%">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col d-flex justify-content-start">
+                                    <h5 class="card-title">{{ metric.name }}</h5>
+                                </div>
+                                <div class="col d-flex justify-content-end">
+                                    <button 
+                                        type="button" 
+                                        class="btn btn-outline-danger me-2" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#deleteMetricModal{{ metric.id }}">
+                                            <img src="../static/trash.svg"/>
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        class="btn btn-outline-primary" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#modifyMetricModal{{ metric.id }}">
+                                            Edit
+                                    </button>
+                                </div>
                             </div>
-                            <div class="col d-flex justify-content-end" style="overflow-x: hidden; text-overflow: ellipsis;">
-                                {{ data_point.date.strftime('%d/%m/%Y %H:%M') }}
+                            <hr class="my-1"/>
+                            <div label="description" class="col-form-label">Description: {{ metric.description }}</div>
+                            <div class="container-fluid">
+                                <div class="overflow-auto" style="max-height: calc(10 * 2.5rem); overflow-x: hidden; overflow-y: auto;">
+                                    {% for data_point in metric.data %}
+                                    <div class="row" style="max-width: 100%; white-space: nowrap;">
+                                        <div class="col" style="overflow-x: hidden; text-overflow: ellipsis;">
+                                            {{ data_point.value }} {{ metric.unit }}
+                                        </div>
+                                        <div class="col d-flex justify-content-end" style="overflow-x: hidden; text-overflow: ellipsis;">
+                                            {{ data_point.date.strftime('%d/%m/%Y %H:%M') }}
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="row align-items-center">
+                                <div class="col d-flex justify-content-end">
+                                    <a class="btn btn-outline-primary me-2" href="{{ url_for('.visualise_metric', metric_id=metric.id) }}">Plot</a>
+                                    <button 
+                                        type="button" 
+                                        class="btn btn-outline-primary" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#logMetricModal{{ metric.id }}">
+                                            Log
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="row align-items-center">
-                    <div class="col d-flex justify-content-end">
-                        <a class="btn btn-outline-primary me-2" href="{{ url_for('.visualise_metric', metric_id=metric.id) }}">Plot</a>
-                        <button 
-                            type="button" 
-                            class="btn btn-outline-primary" 
-                            data-bs-toggle="modal" 
-                            data-bs-target="#logMetricModal{{ metric.id }}">
-                                Log
-                        </button>
                     </div>
                 </div>
             </div>
+            {% endfor %}
         </div>
     </div>
 </div>
-{% endfor %}
 
 {% endblock %}
