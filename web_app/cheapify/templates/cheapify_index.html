@@ -2,9 +2,6 @@
 {% block content %}
 <div class="container text-center mt-5">
     <h1>Welcome to Cheapify!</h1>
-    <div class="ratio ratio-16x9 my-4">
-        <iframe src="https://www.youtube.com/embed/CoOp12ayIVg?si=JpeTMCn_JR1OEZb4" title="YouTube video player" allowfullscreen></iframe>
-    </div>
     <div class="d-flex justify-content-center gap-3 mt-4">
         <!-- Upload Button trigger modal -->
         <button type="button" class="btn btn-primary align-self-center" data-bs-toggle="modal" data-bs-target="#uploadModal">
@@ -69,6 +66,43 @@
         </div>
       </div>
     </div>
+    <form class="my-4" method="post" action="{{ url_for('.youtube_search') }}">
+        <div class="input-group mb-3" style="max-width: 500px; margin: 0 auto;">
+            <input type="text" class="form-control" name="youtube_query" placeholder="Search YouTube..." value="{{ youtube_query|default('') }}" required>
+            <button class="btn btn-outline-secondary" type="submit">Search</button>
+        </div>
+    </form>
+    {% if youtube_results is defined and youtube_results %}
+    <div class="mb-4">
+        <h5>Search Results</h5>
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover align-middle mx-auto" style="max-width: 900px;">
+                <thead class="table-light">
+                    <tr>
+                        <th>Title</th>
+                        <th>Description</th>
+                        <th>Views</th>
+                        <th>Published</th>
+                        <th>Length</th>
+                        <th>Link</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for video in youtube_results %}
+                    <tr>
+                        <td class="text-break">{{ video.title }}</td>
+                        <td class="text-break" style="max-width: 300px;">{{ video.description }}</td>
+                        <td>{{ video.view_count }}</td>
+                        <td>{{ video.published }}</td>
+                        <td>{{ video.length }}</td>
+                        <td><a href="{{ video.url }}" target="_blank">Open</a></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}

@@ -1,8 +1,11 @@
+import logging
+
 from flask import Blueprint, render_template, request, send_file, redirect, url_for, flash
 from flask_login import login_required
 from werkzeug.datastructures import FileStorage
 
 from web_app.cheapify.data_interface import DataInterface as CheapifyDataInterface
+from web_app.cheapify.audio_downloader import AudioDownloader
 from web_app.helpers import cur_user
 
 
@@ -27,6 +30,7 @@ def index():
 @cheapify_api.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
+    print(request.files)
     if 'file' not in request.files:
         flash('No file part', 'error')
         return redirect(url_for('.index'))
@@ -35,6 +39,7 @@ def upload_file():
         flash('No selected file', 'error')
         return redirect(url_for('.index'))
     CheapifyDataInterface().save_file(file, cur_user())
+    logging.info(f"user {cur_user().id} uploaded file: {file.filename}")
     flash('File uploaded successfully!', 'success')
     return redirect(url_for('.index'))
 
@@ -62,3 +67,14 @@ def delete_file(filename):
     flash('File deleted successfully!', 'success')
 
     return redirect(url_for('.index'))
+
+@cheapify_api.route('/youtube_search', methods=['GET', 'POST'])
+@login_required
+def youtube_search():
+    results = []
+    query = ''
+    if request.method == 'POST':
+        query = request.form.get('youtube_query', '')
+        if query:
+            results = AudioDownloader.search_youtube(query)
+    return render_template('cheapify_index.html', files=CheapifyDataInterface().list_files(cur_user()), youtube_results=results, youtube_query=query)
