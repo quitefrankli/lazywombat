@@ -12,3 +12,4 @@ resources/
 .pytest_cache/
 ios_app/
 desktop_app/
+cookies.txt
