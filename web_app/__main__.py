@@ -51,7 +51,7 @@ def before_request():
         user = DataInterface().load_users()["admin"]
         flask_login.login_user(user)
 
-    message = f"Processing request: client={get_ip(request)}, path={request.path}, method={request.method}"
+    message = f"Processing request: client={get_ip()}, path={request.path}, method={request.method}"
 
     if request.method == 'POST':
         if request.is_json:
