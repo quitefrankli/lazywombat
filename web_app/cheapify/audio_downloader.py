@@ -2,6 +2,11 @@ import requests
 from typing import List
 import re
 import json
+import certifi
+import logging
+import yt_dlp
+from pathlib import Path
+
 
 class AudioDownloader:
     YOUTUBE_SEARCH_URL = "https://www.youtube.com/results"
@@ -59,3 +64,33 @@ class AudioDownloader:
                 if len(results) >= max_results:
                     return results
         return results
+
+    @staticmethod
+    def download_youtube_audio(video_id: str, title: str, user_dir: Path) -> str:
+        """
+        Download audio from YouTube using yt-dlp, save to user_dir, return the saved filename or raise Exception.
+        """
+        logging.info(f"Downloading YouTube audio: {title} ({video_id})")
+        url = f'https://www.youtube.com/watch?v={video_id}'
+        user_dir.mkdir(parents=True, exist_ok=True)
+        safe_title = ''.join(c for c in title if c.isalnum() or c in (' ', '_', '-')).rstrip()
+        output_path = f"{user_dir}/{video_id}.%(ext)s"
+        ydl_opts = {
+            'format': 'bestaudio[ext=m4a]/bestaudio/best',
+            'outtmpl': output_path,
+            'noplaylist': True,
+            'quiet': True,
+            'no_warnings': True,
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'm4a',
+                'preferredquality': '32',  # lowest quality for cost
+            }],
+            'extractaudio': True,
+            'audioformat': 'm4a',
+            'audioquality': 0,  # best effort for lowest
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        # Return the expected filename (with .m4a extension)
+        return (user_dir / f"{safe_title or video_id}.m4a").name

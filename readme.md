@@ -12,6 +12,9 @@ python -m web_app [--debug] [--port PORT]
 run `python -m web_app --debug --port 12345`
 and on separate terminal run `pytest`
 
+need to install:
+* sudo apt-get install ffmpeg
+
 ## On EC2
 
 ```
