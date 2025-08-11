@@ -30,7 +30,8 @@ def request_loader(request: flask.Request) -> User | None:
 @login_manager.unauthorized_handler
 def unauthorized_handler():
     flask.flash('Log in required', category='error')
-    return flask.redirect(flask.url_for('account_api.login'))
+    return flask.redirect(flask.url_for('account_api.login', 
+                                        next=flask.request.path))
 
 limiter = Limiter(
     get_remote_address,

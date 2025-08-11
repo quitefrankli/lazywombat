@@ -19,14 +19,18 @@ def get_default_redirect():
 @account_api.route('/login', methods=["GET", "POST"])
 @limiter.limit("2/second")
 def login():
+    next_url = request.args.get('next') or request.form.get('next')
     if request.method == "GET":
-        return render_template('login.html')
+        return render_template('login.html', next=next_url)
     
     username = from_req('username')
     password = from_req('password')
     existing_users = DataInterface().load_users()
     if username in existing_users and password == existing_users[username].password:
         flask_login.login_user(existing_users[username], duration=timedelta(weeks=1))
+        # Validate next_url to prevent open redirect vulnerabilities
+        if next_url and next_url.startswith('/'):
+            return flask.redirect(next_url)
         return flask.redirect(flask.url_for('home'))
     else:
         flask.flash('Invalid username or password', category='error')
