@@ -45,3 +45,5 @@ urllib3>=2.5.0
 atomicwrites==1.4.1
 gitpython>=3.1.45
 yt_dlp>=2025.8.20
+openai>=1.99.6
+groq>=0.31.0
