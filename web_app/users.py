@@ -27,3 +27,6 @@ class User(UserMixin):
                     data['password'], 
                     data['folder'],
                     data.get('is_admin', False))
+    
+    def __repr__(self):
+        return f"User(username={self.id}, password={self.password}, folder={self.folder}, is_admin={self.is_admin})"
