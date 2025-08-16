@@ -59,6 +59,8 @@ def before_request():
         elif request.form:
             message += f", form={request.form}"
 
+    if len(message) > 500:
+        message = message[:500] + f"... (truncated {len(message) - 500} characters)"
     logging.info(message)
 
 @app.route('/')
