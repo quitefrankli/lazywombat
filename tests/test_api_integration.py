@@ -62,12 +62,6 @@ def test_delete_data():
     files = response.json().get("files", [])
     assert FILENAME not in files
 
-def test_list_files_after_deletion():
-    url = f"{BASE_URL}/list"
-    payload = get_auth_payload()
-    response = requests.post(url, json=payload)
-    assert response.status_code == 200
-
 def test_pull_data_after_deletion():
     url = f"{BASE_URL}/pull"
     payload = {
@@ -75,4 +69,4 @@ def test_pull_data_after_deletion():
         "name": FILENAME
     }
     response = requests.post(url, json=payload)
-    assert response.status_code == 404  # Expecting not found since file was deleted
+    assert response.status_code == 404

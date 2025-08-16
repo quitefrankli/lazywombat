@@ -15,7 +15,14 @@ from web_app.errors import *
 GITHUB_EVENT_HEADER = "X-GitHub-Event"
 api_api = Blueprint("api_api", __name__, url_prefix="/api")
 
-def handle_github_webhook(request_body: dict):
+def update_server():
+    logging.info(f"Updating server...")
+    subprocess.Popen("bash update_server.sh &>> logs/shell_logs.log", shell=True, close_fds=True)
+
+def handle_github_webhook():
+    # for the webhook, login creds are supplied in the authorization header
+    request_body = parse_request(require_login=False, require_admin=False)
+
     if request.headers.get(GITHUB_EVENT_HEADER) != "push":
         logging.info(f"Ignoring GitHub webhook event: {request.headers.get(GITHUB_EVENT_HEADER)}")
         return jsonify({"status": "ignored"}), 200
@@ -42,7 +49,7 @@ def handle_github_webhook(request_body: dict):
         return jsonify({"error": "Invalid credentials"}), 401
     
     logging.info(f"Applying GitHub push webhook update")
-    subprocess.Popen("bash update_server.sh &>> logs/shell_logs.log", shell=True, close_fds=True)
+    update_server()
 
     return jsonify({
         "success": True, 
@@ -51,20 +58,23 @@ def handle_github_webhook(request_body: dict):
 @api_api.route("/update", methods=["POST"])
 def api_update():
     logging.info(f"Received update request from {get_ip()}")
+    
+    if GITHUB_EVENT_HEADER in request.headers:
+        return handle_github_webhook()
+    
     try:
         request_body = parse_request()
     except APIError as e:
         logging.error(f"Error processing request: {str(e)}")
         return jsonify({"error": str(e)}), 400
 
-    if GITHUB_EVENT_HEADER in request.headers:
-        return handle_github_webhook(request_body)
-
     # check if the request contains username and password in body
     # or if the username and password are provided in the Authorization header
     patch = request_body.get("patch", None)
     if not patch:
-        return jsonify({"error": "Missing patch data"}), 400
+        update_server()
+        return jsonify({'success': True}), 200
+    
     try:
         # Test decode and decompress, don't actually apply the patch here
         # Just checking if the content can be decoded and decompressed
