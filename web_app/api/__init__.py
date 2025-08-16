@@ -138,7 +138,11 @@ def api_pull():
 
     username = request_body["username"]
     user = DataInterface().load_users()[username]
-    data = APIDataInterface().read_data(name, user)
+
+    try:
+        data = APIDataInterface().read_data(name, user)
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
 
     if "raw" in request_body:
         return data.decode('utf-8'), 200, {'Content-Type': 'text/plain'}

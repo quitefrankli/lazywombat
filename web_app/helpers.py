@@ -36,7 +36,7 @@ def unauthorized_handler():
 limiter = Limiter(
     get_remote_address,
     app=app,
-    default_limits=["1 per second"],
+    default_limits=["3 per second"],
     storage_uri="memory://",
     strategy="fixed-window", # or "moving-window"
 )
