@@ -1,0 +1,51 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<style>
+		body {
+			font-family: 'Segoe UI', Arial, sans-serif;
+			background: #f7f7fa;
+			margin: 0;
+			padding: 0;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			min-height: 100vh;
+		}
+		.container {
+			background: #fff;
+			border-radius: 12px;
+			box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+			padding: 2rem 3rem;
+			text-align: center;
+		}
+		h1 {
+			color: #3a3a4a;
+			margin-bottom: 0.5em;
+		}
+		.version {
+			margin-top: 1.5em;
+			font-size: 1.1em;
+			color: #666;
+		}
+		code {
+			background: #eaeaea;
+			border-radius: 4px;
+			padding: 2px 6px;
+			font-size: 1.3em;
+			color: #2d2d2d;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<h1>Build #</h1>
+		<div class="version">
+			<code>{{ commit_hash }}</code>
+		</div>
+	</div>
+</body>
+</html>

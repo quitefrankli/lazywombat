@@ -9,5 +9,6 @@ Contents.json
 logs/
 resources/
 .mypy_cache/
+.pytest_cache/
 ios_app/
 desktop_app/

@@ -3,17 +3,17 @@ import logging
 import flask
 import flask_login
 import shutil
-import subprocess
+from git import Repo
 
 from typing import * # type: ignore
 from pathlib import Path
-from flask import render_template, request, jsonify
+from flask import render_template, request
 from flask_apscheduler import APScheduler
 from logging.handlers import RotatingFileHandler
 
 from web_app.config import ConfigManager
 from web_app.data_interface import DataInterface
-from web_app.helpers import admin_only, get_ip
+from web_app.helpers import get_ip
 from web_app.app import app
 from web_app.crosswords import crosswords_api
 from web_app.todoist2 import todoist2_api
@@ -63,7 +63,8 @@ def before_request():
 
 @app.route('/')
 def home():
-    return render_template('home.html')
+    commit_hash = Repo(".").head.commit.hexsha
+    return render_template('home.html', commit_hash=commit_hash)
 
 def configure_logging(debug: bool) -> None:
     log_path = Path("logs/web_app.log")
