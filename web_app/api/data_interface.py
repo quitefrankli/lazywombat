@@ -21,7 +21,7 @@ class DataInterface(BaseDataInterface):
         data_file = user_dir / filename
 
         if not data_file.exists():
-            return bytes()
+            raise FileNotFoundError(f"data: {filename} not found for user: {user.id}")
 
         with open(data_file, 'rb') as file:
             return file.read()

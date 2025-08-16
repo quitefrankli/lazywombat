@@ -1,11 +1,16 @@
 # Web App
 
-## Setup Env
+## Running
 
-conda create -n lazywombat python=3.11
-conda activate lazywombat
+```bash
 pip install -r requirements.txt
-python -m web_app [--debug]
+python -m web_app [--debug] [--port PORT]
+```
+
+## Testing
+
+run `python -m web_app --debug --port 12345`
+and on separate terminal run `pytest`
 
 ## On EC2
 
