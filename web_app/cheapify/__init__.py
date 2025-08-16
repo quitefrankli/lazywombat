@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, send_file, redirect, url_
 from flask_login import login_required
 from werkzeug.datastructures import FileStorage
 
-from web_app.cheapify.data_interface import CheapifyDataInterface
+from web_app.cheapify.data_interface import DataInterface as CheapifyDataInterface
 from web_app.helpers import cur_user
 
 
