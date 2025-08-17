@@ -54,7 +54,7 @@ def files_list():
 @login_required
 def delete_file(filename):
     try:
-        CheapifyDataInterface().delete_file(filename, cur_user())
+        CheapifyDataInterface().delete_data(filename, cur_user())
     except FileNotFoundError:
         flash('File not found or could not be deleted.', 'error')
         return redirect(url_for('.index'))
