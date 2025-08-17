@@ -53,9 +53,12 @@ def files_list():
 @cheapify_api.route('/delete/<filename>', methods=['POST'])
 @login_required
 def delete_file(filename):
-    success = CheapifyDataInterface().delete_file(filename, cur_user())
-    if success:
-        flash('File deleted successfully!', 'success')
-    else:
+    try:
+        CheapifyDataInterface().delete_file(filename, cur_user())
+    except FileNotFoundError:
         flash('File not found or could not be deleted.', 'error')
+        return redirect(url_for('.index'))
+    
+    flash('File deleted successfully!', 'success')
+
     return redirect(url_for('.index'))

@@ -4,6 +4,9 @@ import base64
 import gzip
 import getpass
 import keyring
+import io
+import zipfile
+import sys
 
 from pathlib import Path
 
@@ -29,7 +32,7 @@ def login(username: str = None, password: str = None) -> None:
 
 @cli.command()
 @click.argument("file", type=Path)
-@click.option("--base_url", type=str, default=DEFAULT_BASE_URL)
+@click.option("--base-url", "base_url", type=str, default=DEFAULT_BASE_URL)
 def upload(base_url: str, file: Path) -> None:
     """
     Sends compressed bas64 encoded data to the server
@@ -41,12 +44,29 @@ def upload(base_url: str, file: Path) -> None:
         print("No credentials found. Please login first using the 'login' command.")
         return
 
-    with open(file, 'rb') as f:
-        data = f.read()
+    if file.is_dir():
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file_obj:
+            for path in file.rglob('*'):
+                if path.is_file():
+                    zip_file_obj.write(path, arcname=path.relative_to(file))
+        zip_buffer.seek(0)
+        data = zip_buffer.read()
+        mb = len(data) / (1024 * 1024)
+        should_send = input(f"Confirm upload of {file} ({mb:.2f} MB) (y/n): ").strip().lower()
+        if should_send != 'y':
+            print("Upload cancelled.")
+            return
+        base_filename = file.with_suffix('.zip').name
+    else:
+        if not file.is_file():
+            raise ValueError(f"Invalid file: {file}")
+        with open(file, 'rb') as f:
+            data = f.read()
+        base_filename = file.name
 
     compressed_data = gzip.compress(data)
     encoded_data = base64.b64encode(compressed_data).decode('utf-8')
-    base_filename = file.name
     payload = {
         "username": username,
         "password": password,
@@ -60,8 +80,9 @@ def upload(base_url: str, file: Path) -> None:
 
 @cli.command()
 @click.argument("file", type=str)
-@click.option("--base_url", type=str, default=DEFAULT_BASE_URL)
-def download(base_url: str, file: str) -> None:
+@click.option("--base-url", "base_url", type=str, default=DEFAULT_BASE_URL)
+@click.option("--raw", is_flag=True, default=False, help="print to stdout instead of saving to a file")
+def download(base_url: str, file: str, raw: bool) -> None:
     """
     Downloads a file from the server and decompresses it
     """
@@ -86,6 +107,9 @@ def download(base_url: str, file: str) -> None:
         if compressed_data:
             decoded_data = base64.b64decode(compressed_data)
             decompressed_data = gzip.decompress(decoded_data)
+            if raw:
+                sys.stdout.buffer.write(decompressed_data)
+                return
             with open(file, 'wb') as f:
                 f.write(decompressed_data)
             print(f"File {file} downloaded and decompressed successfully.")
@@ -95,7 +119,7 @@ def download(base_url: str, file: str) -> None:
         print(f"Failed to download file: {response.status_code} - {response.text}")
 
 @cli.command()
-@click.option("--base_url", type=str, default=DEFAULT_BASE_URL)
+@click.option("--base-url", "base_url", type=str, default=DEFAULT_BASE_URL)
 def list_files(base_url: str) -> None:
     """
     Lists files available for the logged-in user
@@ -125,7 +149,7 @@ def list_files(base_url: str) -> None:
 
 @cli.command()
 @click.argument("file", type=str)
-@click.option("--base_url", type=str, default=DEFAULT_BASE_URL)
+@click.option("--base-url", "base_url", type=str, default=DEFAULT_BASE_URL)
 def delete_file(base_url: str, file: str) -> None:
     """
     Deletes a file from the server
