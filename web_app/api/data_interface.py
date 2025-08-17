@@ -30,15 +30,16 @@ class DataInterface(BaseDataInterface):
         user_dir = self._get_user_dir(user)
         data_file = user_dir / filename
 
-        if data_file.exists() and data_file.is_file():
-            data_file.unlink()
+        if not data_file.exists() or not data_file.is_file():
+            raise FileNotFoundError(f"data: {filename} not found for user: {user.id}")
+        
+        data_file.unlink()
         # self.data_syncer.delete_file(data_file)
 
     def list_files(self, user: User) -> list[str]:
         user_dir = self._get_user_dir(user)
         if not user_dir.exists():
             return []
-        
         return [f.name for f in user_dir.iterdir() if f.is_file()]
 
     def _get_user_dir(self, user: User) -> Path:

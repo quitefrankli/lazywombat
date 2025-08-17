@@ -177,7 +177,11 @@ def api_delete():
 
     username = request_body["username"]
     user = DataInterface().load_users()[username]
-    APIDataInterface().delete_data(name, user)
+
+    try:
+        APIDataInterface().delete_data(name, user)
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
 
     return jsonify({"success": True, "message": "Data deleted successfully"}), 200
 
