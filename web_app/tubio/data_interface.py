@@ -8,7 +8,7 @@ from web_app.users import User
 class DataInterface(BaseDataInterface):
     def __init__(self) -> None:
         super().__init__()
-        self.data_sub_dirname = "cheapify"
+        self.data_sub_dirname = "tubio"
 
     def save_file(self, file_storage: FileStorage, user: User) -> None:
         user_dir = self._get_user_dir(user)

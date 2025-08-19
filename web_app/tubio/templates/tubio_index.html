@@ -1,7 +1,7 @@
-{% extends "cheapify_base.html" %}
+{% extends "tubio_base.html" %}
 {% block content %}
 <div class="container text-center mt-5">
-		<h1>Welcome to Cheapify!</h1>
+		<h1>Welcome to Tubio!</h1>
 		<form class="my-4" method="post" action="{{ url_for('.youtube_search') }}">
 				<div class="input-group mb-3" style="max-width: 500px; margin: 0 auto;">
 						<input type="text" class="form-control" name="youtube_query" placeholder="Search YouTube..." value="{{ youtube_query|default('') }}" required>
