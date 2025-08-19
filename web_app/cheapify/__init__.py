@@ -60,4 +60,12 @@ def youtube_download():
         flash(f'Error downloading audio: {e}', 'error')
     return redirect(url_for('.index'))
 
-# AudioDownloader.download_youtube_audio("CGj85pVzRJs", "Sample Video", Path("resources"))
+@cheapify_api.route('/audio/<filename>')
+@login_required
+def serve_audio(filename):
+    user = cur_user()
+    file_path = CheapifyDataInterface().get_file_path(filename, user)
+    if not file_path.exists():
+        flash('Audio file not found.', 'error')
+        return redirect(url_for('.index'))
+    return send_file(file_path, mimetype='audio/mp4')
