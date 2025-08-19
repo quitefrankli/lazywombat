@@ -1,0 +1,72 @@
+{% extends "root_base.html" %}
+{% block content %}
+<div class="container text-center mt-5">
+		<div class="d-flex justify-content-center gap-3 mt-4">
+				<!-- Upload Button trigger modal -->
+				<button type="button" class="btn btn-primary align-self-center" data-bs-toggle="modal" data-bs-target="#uploadModal">
+						Upload File
+				</button>
+				<!-- Download Button trigger modal -->
+				<button type="button" class="btn btn-success align-self-center" data-bs-toggle="modal" data-bs-target="#downloadModal">
+						Download File
+				</button>
+				<!-- Delete Button trigger modal -->
+				<button type="button" class="btn btn-danger align-self-center" data-bs-toggle="modal" data-bs-target="#deleteModal">
+						Delete File
+				</button>
+		</div>
+		<!-- Upload Modal -->
+		<div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
+			<div class="modal-dialog">
+				<div class="modal-content">
+					<div class="modal-header">
+						<h5 class="modal-title" id="uploadModalLabel">Upload File</h5>
+						<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+					</div>
+					<form method="post" action="{{ url_for('.upload_file') }}" enctype="multipart/form-data">
+						<div class="modal-body">
+								<input class="form-control" type="file" name="file" required>
+						</div>
+						<div class="modal-footer">
+								<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+								<button class="btn btn-primary" type="submit">Upload</button>
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+		<!-- Download Modal -->
+		<div class="modal fade" id="downloadModal" tabindex="-1" aria-labelledby="downloadModalLabel" aria-hidden="true">
+			<div class="modal-dialog">
+				<div class="modal-content">
+					<div class="modal-header">
+						<h5 class="modal-title" id="downloadModalLabel">Download File</h5>
+						<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+					</div>
+					<div class="modal-body">
+						<input class="form-control mb-2" type="text" id="fileSearch" placeholder="Search files...">
+						<div id="fileList" style="max-height: 250px; overflow-y: auto;"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<!-- Delete Modal -->
+		<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+			<div class="modal-dialog">
+				<div class="modal-content">
+					<div class="modal-header">
+						<h5 class="modal-title" id="deleteModalLabel">Delete File</h5>
+						<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+					</div>
+					<div class="modal-body">
+						<input class="form-control mb-2" type="text" id="deleteFileSearch" placeholder="Search files...">
+						<div id="deleteFileList" style="max-height: 250px; overflow-y: auto;"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('.static', filename='script.js') }}"></script>
+{% endblock %}
