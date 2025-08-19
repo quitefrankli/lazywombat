@@ -19,6 +19,7 @@ from web_app.crosswords import crosswords_api
 from web_app.todoist2 import todoist2_api
 from web_app.cheapify import cheapify_api
 from web_app.account_api import account_api
+from web_app.misc import misc_api
 from web_app.api import api_api
 
 
@@ -26,6 +27,7 @@ app.register_blueprint(todoist2_api)
 app.register_blueprint(crosswords_api)
 app.register_blueprint(cheapify_api)
 app.register_blueprint(account_api)
+app.register_blueprint(misc_api)
 app.register_blueprint(api_api)
 
 @app.context_processor
