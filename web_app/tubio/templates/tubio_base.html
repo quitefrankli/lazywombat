@@ -1,1 +1,13 @@
 {% extends "root_base.html" %}
+{% block scripts %}
+<script src="{{ url_for('.static', filename='script.js') }}"></script>
+{% endblock %}
+
+{% block navbar_items %}
+    <li class="nav-item mx-2">
+        <a class="nav-link {{'active' if active == 'Favourites' else ''}}" href="{{ url_for('.favourites') }}">Favourites</a>
+    </li>
+    <li class="nav-item mx-2">
+        <a class="nav-link {{'active' if active == 'Search' else ''}}" href="{{ url_for('.search') }}">Search</a>
+    </li>
+{% endblock %}

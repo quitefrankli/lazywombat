@@ -6,7 +6,7 @@ import string
 import os
 import shutil
 
-from atomicwrites import atomic_write
+from atomicwrites import atomic_write as _atomic_write
 from botocore.exceptions import ClientError
 from pathlib import Path
 from datetime import datetime
@@ -96,20 +96,21 @@ class DataInterface:
         return {user.id: user for user in users}
 
     def save_users(self, users: List[User]) -> None:
-        self.users_file.parent.mkdir(exist_ok=True, parents=True)
-        with open(self.users_file, 'w', encoding='utf-8') as file:
-            json.dump([user.to_dict() for user in users], file, indent=4)
-        self.data_syncer.upload_file(self.users_file)
+        json_str = json.dumps([user.to_dict() for user in users], indent=4)
+        self.atomic_write(self.users_file, data=json_str, mode='w', encoding='utf-8')
+
+    @staticmethod
+    def generate_random_string(length: int = 10) -> str:
+        letters = string.ascii_lowercase
+        result_str = ''.join(random.choice(letters) for _ in range(length))
+
+        return result_str
 
     def generate_new_user(self, username: str, password: str) -> User:
         users = self.load_users()
         used_folders = {user.folder for user in users.values()}
-        def _generate_random_string() -> str:
-            letters = string.ascii_lowercase
-            result_str = ''.join(random.choice(letters) for _ in range(10))
-            return result_str
         for _ in range(100):
-            folder = _generate_random_string()
+            folder = self.generate_random_string()
             if folder not in used_folders:
                 return User(username, password, folder)
         raise RuntimeError("Could not generate unique folder")
@@ -125,7 +126,7 @@ class DataInterface:
         if stream is None and data is None:
             raise ValueError("Either 'data' or 'stream' must be provided")
         file_path.parent.mkdir(exist_ok=True, parents=True)
-        with atomic_write(file_path, overwrite=True, **kwargs) as f:
+        with _atomic_write(file_path, overwrite=True, **kwargs) as f:
             if data is not None:
                 f.write(data)
             if stream is not None:
@@ -136,3 +137,8 @@ class DataInterface:
                         break
                     f.write(chunk)
         # self.data_syncer.upload_file(file_path)
+
+    def atomic_delete(self, file_path: Path) -> None:
+        if file_path.exists():
+            file_path.unlink()
+        # self.data_syncer.upload_file(file_path)  # Not needed for deletion

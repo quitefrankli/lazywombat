@@ -1,18 +1,29 @@
 import requests
-from typing import List
 import re
 import json
-import certifi
 import logging
 import yt_dlp
+
+from typing import List
 from pathlib import Path
+from datetime import datetime, timedelta
+
+from web_app.config import ConfigManager
 
 
 class AudioDownloader:
     YOUTUBE_SEARCH_URL = "https://www.youtube.com/results"
 
     @staticmethod
-    def search_youtube(query: str, max_results: int = 10) -> List[dict]:
+    def get_vid_length(text: str) -> timedelta:
+        parts = reversed(text.split(':'))
+        sec_map = [ 1, 60, 3600 ]  # seconds, minutes, hours
+        total_seconds = sum(int(part) * sec for part, sec in zip(parts, sec_map))
+
+        return timedelta(seconds=total_seconds)
+
+    @staticmethod
+    def search_youtube(query: str) -> List[dict]:
         """
         Search YouTube for videos matching the query and return a list of video info dicts.
         Extracts video_id, title, description, view count, date, and length.
@@ -30,39 +41,45 @@ class AudioDownloader:
         except Exception:
             return []
         # Traverse the JSON to get videoRenderer items
-        results = []
         sections = data.get('contents', {}) \
             .get('twoColumnSearchResultsRenderer', {}) \
             .get('primaryContents', {}) \
             .get('sectionListRenderer', {}) \
             .get('contents', [])
         
-        
+        logging.info(f"Searching YouTube with query: {query}")
+        results = []
         for section in sections:
             items = section.get('itemSectionRenderer', {}).get('contents', [])
             for item in items:
+                if len(results) > ConfigManager().tudio_max_results:
+                    return results
                 video = item.get('videoRenderer')
                 if not video:
                     continue
-                vid = video.get('videoId')
+                length_txt = video.get('lengthText', {}).get('simpleText', '')
+                if not length_txt:
+                    continue
+                vid_length = AudioDownloader.get_vid_length(length_txt)
+                if vid_length > ConfigManager().tudio_max_video_length:
+                    continue
+
+                view_count = video.get('viewCountText', {}).get('simpleText', '')
+                published = video.get('publishedTimeText', {}).get('simpleText', '')
+                vid_id = video.get('videoId')
                 title = ''.join([r.get('text', '') for r in video.get('title', {}).get('runs', [])])
                 description = ''
                 if 'detailedMetadataSnippets' in video:
                     description = ' '.join([s.get('snippetText', {}).get('runs', [{}])[0].get('text', '') for s in video['detailedMetadataSnippets']])
-                view_count = video.get('viewCountText', {}).get('simpleText', '')
-                published = video.get('publishedTimeText', {}).get('simpleText', '')
-                length = video.get('lengthText', {}).get('simpleText', '')
                 results.append({
-                    "video_id": vid,
-                    "url": f"https://www.youtube.com/watch?v={vid}",
+                    "video_id": vid_id,
+                    "url": f"https://www.youtube.com/watch?v={vid_id}",
                     "title": title,
                     "description": description,
                     "view_count": view_count,
                     "published": published,
-                    "length": length
+                    "length": length_txt
                 })
-                if len(results) >= max_results:
-                    return results
         return results
 
     @staticmethod
