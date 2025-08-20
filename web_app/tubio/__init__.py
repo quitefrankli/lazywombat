@@ -1,15 +1,13 @@
 import logging
-import yt_dlp
-from pathlib import Path
 
+from typing import *
 from flask import Blueprint, render_template, request, send_file, redirect, url_for, flash
 from flask_login import login_required
-from werkzeug.datastructures import FileStorage
 
 from web_app.tubio.data_interface import DataInterface
 from web_app.tubio.audio_downloader import AudioDownloader
 from web_app.config import ConfigManager
-from web_app.helpers import cur_user
+from web_app.helpers import cur_user, parse_request
 
 
 tubio_api = Blueprint(
@@ -24,11 +22,23 @@ tubio_api = Blueprint(
 def inject_app_name():
     return dict(app_name='Tubio')
 
+def get_cached_yt_vid_ids() -> Set[str]:
+    metadata = DataInterface().get_metadata()
+    return {audio.yt_video_id for audio in metadata.audios.values()}
+
 @tubio_api.route('/')
 @login_required
 def favourites():
-    files = DataInterface().list_files(cur_user()) if cur_user() else []
-    return render_template("favourites.html", files=files)
+    user_id = cur_user().id
+    metadata = DataInterface().get_metadata()
+    if user_id not in metadata.users:
+        return render_template("favourites.html", favourites=[])
+    
+    user_data = metadata.users[user_id]
+    crcs = user_data.favourites
+    titles = [metadata.audios[crc].title for crc in crcs]
+
+    return render_template("favourites.html", favourites=zip(crcs, titles))
 
 @tubio_api.route('/search', methods=['GET', 'POST'])
 @login_required
@@ -40,38 +50,45 @@ def search():
         if query:
             try:
                 decorated_query = f"{ConfigManager().tudio_search_prefix}{query}"
-                results = AudioDownloader.search_youtube(decorated_query)
-            except Exception:
+                results = AudioDownloader.search_youtube(decorated_query, get_cached_yt_vid_ids())
+            except Exception as e:
+                logging.error(f"Error searching YouTube: {e}")
                 flash("Error: Search Failed!")
+
     return render_template('search.html', 
-                           files=DataInterface().list_files(cur_user()), 
                            youtube_results=results, 
                            youtube_query=query)
 
 @tubio_api.route('/youtube_download', methods=['POST'])
 @login_required
 def youtube_download():
-    video_id = request.form.get('video_id')
-    title = request.form.get('title')
-    if not video_id:
+    req = parse_request(require_login=False, require_admin=False)
+    video_id = req.get('video_id')
+    title = req.get('title')
+    if not video_id or not title:
         flash('No video ID provided.', 'error')
-        return redirect(url_for('.index'))
-    user = cur_user()
-    user_dir = DataInterface()._get_user_dir(user)
-    try:
-        filename = AudioDownloader.download_youtube_audio(video_id, title, user_dir)
-        flash(f'Audio downloaded for: {filename}', 'success')
-    except Exception as e:
-        flash(f'Error downloading audio: {e}', 'error')
-    return redirect(url_for('.index'))
+        return redirect(url_for('.favourites'))
+    if video_id in get_cached_yt_vid_ids():
+        flash('Video already downloaded.', 'info')
+        return redirect(url_for('.favourites'))
 
-@tubio_api.route('/audio/<filename>')
+    try:
+        AudioDownloader.download_youtube_audio(video_id, title, cur_user())
+        flash(f'Audio downloaded for: {title}', 'success')
+    except Exception as e:
+        logging.error(f"Error downloading audio: {e}")
+        flash("Error downloading audio")
+
+    return redirect(url_for('.favourites'))
+
+@tubio_api.route('/audio/<int:crc>')
 @login_required
 def serve_audio(crc: int):
     try:
         file_path = DataInterface().get_audio_path(crc)
-    except ValueError:
+    except ValueError as e:
         flash(f'Error: no such audio file: {crc: int}', 'error')
-        return redirect(url_for('.index'))
+        logging.error(f"Error serving audio file: {e}")
+        return redirect(url_for('.favourites'))
     
     return send_file(file_path, mimetype='audio/mp4')

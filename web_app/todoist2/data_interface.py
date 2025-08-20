@@ -29,7 +29,6 @@ class DataInterface(BaseDataInterface):
     def save_data(self, data: TopLevelData, user: User) -> None:
         data_file = self._get_data_file(user)
         self.atomic_write(data_file, data=data.model_dump_json(indent=4), mode="w", encoding='utf-8')
-        self.data_syncer.upload_file(data_file)
 
     def _get_data_file(self, user: User) -> Path:
         return self.todoist2_data_directory / user.folder / "data.json"
