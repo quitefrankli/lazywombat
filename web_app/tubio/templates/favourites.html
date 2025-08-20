@@ -9,10 +9,16 @@
         {% for crc, title in favourites %}
             <li class="list-group-item d-flex justify-content-between align-items-center">
                     <span>{{ title }}</span>
-                    <audio controls style="max-width: 300px;">
+                    <div class="d-flex flex-column align-items-end">
+                        <audio controls id="audio-{{ crc }}" style="max-width: 300px;">
                             <source src="{{ url_for('.serve_audio', crc=crc) }}" type="audio/mp4">
                             Your browser does not support the audio element.
-                    </audio>
+                        </audio>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="loop-{{ crc }}" onchange="document.getElementById('audio-{{ crc }}').loop = this.checked">
+                            <label class="form-check-label" for="loop-{{ crc }}">Loop</label>
+                        </div>
+                    </div>
             </li>
         {% endfor %}
     </ul>
