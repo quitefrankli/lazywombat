@@ -23,7 +23,7 @@ bash ~/miniconda -b -p $HOME/miniconda
 ~/miniconda/bin/conda init bash
 source ~/.bashrc
 
-sudo yum install nginx
+sudo yum install nginx ffmpeg
 
 # for generating certs for ssl
 conda install certbot -y
@@ -51,7 +51,7 @@ Simply push from main branch, force push also works too
 ### Method 2: via curl
 
 1. make sure you are on main branch (force pushes are NOT supported, make sure origin/main is STRICTLY behind main)
-2. `PATCH=$(git format-patch origin/main..main --stdout | gzip -c | base64 -w 0) && curl -F "username:$USERNAME" "password:$PASSWORD" -F "patch=$PATCH" https://lazywombat.site/api/update`
+2. `PATCH=$(git format-patch origin/main..main --stdout | gzip -c | base64 -w 0) && curl -F "username=$USER" -F "password=$PASS" -F "patch=$PATCH" https://lazywombat.site/api/update`
 
 ## Creating Backup
 
