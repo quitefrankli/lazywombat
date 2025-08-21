@@ -66,7 +66,7 @@ def api_update():
     try:
         request_body = parse_request()
     except APIError as e:
-        logging.error(f"Error processing request: {str(e)}")
+        logging.exception("Error processing request")
         return jsonify({"error": str(e)}), 400
 
     # check if the request contains username and password in body
@@ -100,7 +100,7 @@ def api_backup():
     try:
         parse_request()
     except APIError as e:
-        logging.error(f"Error processing request: {str(e)}")
+        logging.exception("Error processing request")
         return jsonify({"error": str(e)}), 400
 
     DataInterface().backup_data()
@@ -115,14 +115,14 @@ def api_push():
     try:
         request_body = parse_request(require_login=True, require_admin=False)
     except APIError as e:
-        logging.error(f"Error processing request: {str(e)}")
+        logging.exception("Error processing request")
         return jsonify({"error": str(e)}), 400
 
     try:
         name: str = request_body["name"]
         data: str = request_body["data"]
     except KeyError as e:
-        logging.error(f"push request rejected missing required field(s): {str(e)}")
+        logging.exception("push request rejected missing required field(s)")
         return jsonify({"error": f"Missing required field: {str(e)}"}), 400
 
     username = request_body["username"]
@@ -138,13 +138,13 @@ def api_pull():
     try:
         request_body = parse_request(require_login=True, require_admin=False)
     except APIError as e:
-        logging.error(f"Error processing request: {str(e)}")
+        logging.exception("Error processing request")
         return jsonify({"error": str(e)}), 400
 
     try:
         name: str = request_body["name"]
     except KeyError as e:
-        logging.error(f"pull request rejected missing required field(s): {str(e)}")
+        logging.exception("pull request rejected missing required field(s)")
         return jsonify({"error": f"Missing required field: {str(e)}"}), 400
 
     username = request_body["username"]
@@ -167,13 +167,13 @@ def api_delete():
     try:
         request_body = parse_request(require_login=True, require_admin=False)
     except APIError as e:
-        logging.error(f"Error processing request: {str(e)}")
+        logging.exception("Error processing request")
         return jsonify({"error": str(e)}), 400
 
     try:
         name: str = request_body["name"]
     except KeyError as e:
-        logging.error(f"delete request rejected missing required field(s): {str(e)}")
+        logging.exception("delete request rejected missing required field(s)")
         return jsonify({"error": f"Missing required field: {str(e)}"}), 400
 
     username = request_body["username"]
@@ -193,7 +193,7 @@ def api_list():
     try:
         request_body = parse_request(require_login=True, require_admin=False)
     except APIError as e:
-        logging.error(f"Error processing request: {str(e)}")
+        logging.exception("Error processing request")
         return jsonify({"error": str(e)}), 400
 
     username = request_body["username"]
@@ -209,7 +209,7 @@ def api_upload_cookie():
     try:
         request_body = parse_request(require_login=True, require_admin=True)
     except APIError as e:
-        logging.error(f"Error processing request: {str(e)}")
+        logging.exception("Error processing request")
         return jsonify({"error": str(e)}), 400
 
     cookie: str = request_body.get("cookie")

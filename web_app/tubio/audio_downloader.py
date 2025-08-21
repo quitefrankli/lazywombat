@@ -3,7 +3,6 @@ import re
 import json
 import logging
 import yt_dlp
-import tempfile
 import os
 import binascii
 
@@ -43,8 +42,8 @@ class AudioDownloader:
             return []
         try:
             data = json.loads(initial_data_match.group(1))
-        except Exception as e:
-            logging.error(f"Failed to parse YouTube search results: {e}")
+        except Exception:
+            logging.exception("Failed to parse YouTube search results")
             return []
         # Traverse the JSON to get videoRenderer items
         sections = data.get('contents', {}) \
@@ -94,11 +93,11 @@ class AudioDownloader:
     def download_youtube_audio(video_id: str, title: str, user: User) -> None:
         logging.info(f"Tubio downloading video_id:={video_id}")
         url = f"https://www.youtube.com/watch?v={video_id}"
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            temp_out_name = tmp.name
+        temp_file = DataInterface().find_avail_temp_file_path(ext=".%(ext)s")
+        temp_file.parent.mkdir(parents=True, exist_ok=True)
         ydl_opts = {
             'format': 'bestaudio[ext=m4a]/bestaudio/best',
-            'outtmpl': f"{temp_out_name}.%(ext)s",
+            'outtmpl': temp_file.as_posix(),
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
@@ -112,14 +111,15 @@ class AudioDownloader:
             'audioquality': 0,  # best effort for lowest
         }
 
-        if ConfigManager().tubio_cookie_path.exists():
+        if ConfigManager().tubio_cookie_path.exists() and not ConfigManager().debug_mode:
+            # Use cookies only if not in debug mode
             logging.info(f"Using cookie file: {ConfigManager().tubio_cookie_path}")
             ydl_opts['cookiefile'] = str(ConfigManager().tubio_cookie_path)
             
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
-        temp_out_name = f"{temp_out_name}.m4a"
-        with open(temp_out_name, 'rb') as f:
+        temp_file = temp_file.with_suffix('.m4a')
+        with open(temp_file, 'rb') as f:
             crc = binascii.crc32(f.read())
         metadata = DataInterface().get_metadata()
         metadata.audios[crc] = AudioMetadata(crc=crc, title=title, yt_video_id=video_id)
@@ -129,4 +129,4 @@ class AudioDownloader:
         DataInterface().save_metadata(metadata)
         output_file = DataInterface().get_audio_path(crc)
         output_file.parent.mkdir(parents=True, exist_ok=True)
-        os.rename(temp_out_name, output_file)
+        os.rename(temp_file, output_file)

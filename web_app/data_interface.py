@@ -11,6 +11,7 @@ from botocore.exceptions import ClientError
 from pathlib import Path
 from datetime import datetime
 from typing import * # type: ignore
+from contextlib import contextmanager
 
 from web_app.users import User
 from web_app.config import ConfigManager
@@ -142,3 +143,34 @@ class DataInterface:
         if file_path.exists():
             file_path.unlink()
         # self.data_syncer.upload_file(file_path)  # Not needed for deletion
+
+    def find_avail_temp_file_path(self, ext: str = "") -> Path:
+        dir = ConfigManager().temp_dir
+        ext = ext if ext.startswith('.') else f".{ext}"
+        for _ in range(100):
+            temp_file = dir / f"{self.generate_random_string(10)}{ext}"
+            if not temp_file.exists():
+                return temp_file
+        raise RuntimeError("Could not find available temporary file path")
+    
+    def create_temp_file(self, ext: str = "") -> Path:
+        temp_file = self.find_avail_temp_file_path(ext)
+        temp_file.parent.mkdir(parents=True, exist_ok=True)
+        temp_file.touch(exist_ok=True)
+
+        return temp_file
+    
+    @contextmanager
+    def temp_file_ctx(self, ext: str = ""):
+        """
+        Context manager for creating and cleaning up a temp file.
+        Usage:
+            with self.temp_file_ctx('.txt') as temp_path:
+                # use temp_path
+        """
+        temp_path = self.create_temp_file(ext)
+        try:
+            yield temp_path
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()

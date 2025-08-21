@@ -52,7 +52,7 @@ def search():
                 decorated_query = f"{ConfigManager().tudio_search_prefix}{query}"
                 results = AudioDownloader.search_youtube(decorated_query, get_cached_yt_vid_ids())
             except Exception as e:
-                logging.error(f"Error searching YouTube: {e}")
+                logging.exception("Error searching YouTube")
                 flash("Error: Search Failed!")
 
     return render_template('search.html', 
@@ -75,9 +75,9 @@ def youtube_download():
     try:
         AudioDownloader.download_youtube_audio(video_id, title, cur_user())
         flash(f'Audio downloaded for: {title}', 'success')
-    except Exception as e:
-        logging.error(f"Error downloading audio: {e}")
-        flash("Error downloading audio")
+    except Exception:
+        logging.exception("Error downloading audio")
+        flash("Error downloading audio", 'error')
 
     return redirect(url_for('.favourites'))
 
@@ -86,9 +86,9 @@ def youtube_download():
 def serve_audio(crc: int):
     try:
         file_path = DataInterface().get_audio_path(crc)
-    except ValueError as e:
+    except ValueError:
         flash(f'Error: no such audio file: {crc: int}', 'error')
-        logging.error(f"Error serving audio file: {e}")
+        logging.exception("Error serving audio file")
         return redirect(url_for('.favourites'))
     
     return send_file(file_path, mimetype='audio/mp4')
