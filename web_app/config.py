@@ -20,7 +20,7 @@ class ConfigManager:
         self._initialized = True
         self.use_offline_syncer = True
         self.debug_mode = False
-        self.tudio_search_prefix = "music " # helps narrow down search results
+        self.tudio_search_prefix = "" # helps narrow down search results
         self.tudio_max_results = 10
         self.tudio_max_video_length = timedelta(minutes=10)
 
