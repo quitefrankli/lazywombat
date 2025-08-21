@@ -158,3 +158,39 @@ def serve_audio(crc: int):
 
     logging.info(response.headers)
     return response
+
+@tubio_api.route('/delete_audio/<int:crc>', methods=['POST'])
+@login_required
+def delete_audio(crc: int):
+    try:
+        user = cur_user()
+        user_metadata = DataInterface().get_user_metadata(user)
+        
+        # Check if user has this audio in their favourites
+        if crc not in user_metadata.favourites:
+            flash('Audio not found in your favourites.', 'error')
+            return redirect(url_for('.favourites'))
+        
+        # Remove from user's favourites
+        user_metadata.favourites.remove(crc)
+        DataInterface().save_user_metadata(user, user_metadata)
+        
+        # Check if any other users have this audio in their favourites
+        metadata = DataInterface().get_metadata()
+        other_users_have_audio = any(
+            crc in user_metadata.favourites 
+            for user_metadata in metadata.users.values() 
+        )
+        
+        # If no other users have this audio, delete it completely
+        if not other_users_have_audio:
+            DataInterface().delete_audio(crc)
+            flash('Audio deleted successfully.', 'success')
+        else:
+            flash('Audio removed from your favourites.', 'info')
+            
+    except Exception as e:
+        logging.exception("Error deleting audio")
+        flash('Error deleting audio.', 'error')
+    
+    return redirect(url_for('.favourites'))
