@@ -55,4 +55,4 @@ Simply push from main branch, force push also works too
 
 ## Creating Backup
 
-`curl -F "username:$USERNAME" "password:$PASSWORD" https://lazywombat.site/api/backup`
+`curl -F "username=$USERNAME" "password=$PASSWORD" https://lazywombat.site/api/backup`

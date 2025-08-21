@@ -219,10 +219,9 @@ def api_upload_cookie():
     # Save cookie to a file in the user's data directory
     compressed_bytes = base64.b64decode(cookie)
     with gzip.GzipFile(fileobj=BytesIO(compressed_bytes)) as gz:
-        cookie_str = gz.read()
-    APIDataInterface().atomic_write(ConfigManager().tubio_cookie_file, 
-                                    data=cookie_str, 
-                                    mode="w",
-                                    encoding="utf-8")
+        cookie_bytes = gz.read()
+    APIDataInterface().atomic_write(ConfigManager().tubio_cookie_path, 
+                                    data=cookie_bytes, 
+                                    mode="wb")
 
     return jsonify({"success": True, "message": "Cookies uploaded successfully"}), 200

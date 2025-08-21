@@ -112,8 +112,9 @@ class AudioDownloader:
             'audioquality': 0,  # best effort for lowest
         }
 
-        if ConfigManager().tubio_cookie_file.exists():
-            ydl_opts['cookiefile'] = str(ConfigManager().tubio_cookie_file)
+        if ConfigManager().tubio_cookie_path.exists():
+            logging.info(f"Using cookie file: {ConfigManager().tubio_cookie_path}")
+            ydl_opts['cookiefile'] = str(ConfigManager().tubio_cookie_path)
             
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
