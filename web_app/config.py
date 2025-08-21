@@ -31,3 +31,7 @@ class ConfigManager:
     @property
     def save_data_path(self) -> Path:
         return Path.home() / f".{self.project_name}" / "data"
+    
+    @property
+    def tubio_cookie_path(self) -> Path:
+        return self.save_data_path / "cookies.txt"

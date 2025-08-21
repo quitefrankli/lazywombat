@@ -9,6 +9,7 @@ from flask import request, jsonify, Blueprint
 from web_app.data_interface import DataInterface
 from web_app.api.data_interface import DataInterface as APIDataInterface
 from web_app.helpers import get_ip, parse_request, authenticate_user
+from web_app.config import ConfigManager
 from web_app.errors import *
 
 
@@ -200,3 +201,28 @@ def api_list():
     files = APIDataInterface().list_files(user)
 
     return jsonify({"success": True, "files": files}), 200
+
+@api_api.route("/push_cookie", methods=["POST"])
+def api_upload_cookie():
+    logging.info(f"Received cookie upload request from {get_ip()}")
+
+    try:
+        request_body = parse_request(require_login=True, require_admin=True)
+    except APIError as e:
+        logging.error(f"Error processing request: {str(e)}")
+        return jsonify({"error": str(e)}), 400
+
+    cookie: str = request_body.get("cookie")
+    if not cookie:
+        return jsonify({"error": "Missing cookie data"}), 400
+
+    # Save cookie to a file in the user's data directory
+    compressed_bytes = base64.b64decode(cookie)
+    with gzip.GzipFile(fileobj=BytesIO(compressed_bytes)) as gz:
+        cookie_str = gz.read()
+    APIDataInterface().atomic_write(ConfigManager().tubio_cookie_file, 
+                                    data=cookie_str, 
+                                    mode="w",
+                                    encoding="utf-8")
+
+    return jsonify({"success": True, "message": "Cookies uploaded successfully"}), 200
