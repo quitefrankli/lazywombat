@@ -45,7 +45,6 @@ def index():
 @misc_api.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
-    print(request.files)
     if 'file' not in request.files:
         flash('No file part', 'error')
         return redirect(url_for('.index'))

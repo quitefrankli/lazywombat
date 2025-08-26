@@ -10,4 +10,7 @@
     <li class="nav-item mx-2">
         <a class="nav-link {{'active' if active == 'Search' else ''}}" href="{{ url_for('.search') }}">Search</a>
     </li>
+    <li class="nav-item mx-2">
+        <a class="nav-link {{'active' if active == 'Playlists' else ''}}" href="{{ url_for('.playlists') }}">Playlists</a>
+    </li>
 {% endblock %}

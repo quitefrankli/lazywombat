@@ -122,12 +122,10 @@ class AudioDownloader:
         temp_file = temp_file.with_suffix('.m4a')
         with open(temp_file, 'rb') as f:
             crc = binascii.crc32(f.read())
-        metadata = DataInterface().get_metadata()
-        metadata.audios[crc] = AudioMetadata(crc=crc, title=title, yt_video_id=video_id)
-        if user.id not in metadata.users:
-            metadata.users[user.id] = UserMetadata()
-        metadata.users[user.id].favourites.append(crc)  
-        DataInterface().save_metadata(metadata)
+        DataInterface().save_audio_metadata(AudioMetadata(crc=crc, title=title, yt_video_id=video_id))
+        user_metadata = DataInterface().get_user_metadata(user)
+        user_metadata.add_to_playlist(crc)
+        DataInterface().save_user_metadata(user, user_metadata)
         output_file = DataInterface().get_audio_path(crc)
         output_file.parent.mkdir(parents=True, exist_ok=True)
         os.rename(temp_file, output_file)

@@ -24,27 +24,39 @@ tubio_api = Blueprint(
 def inject_app_name():
     return dict(app_name='Tubio')
 
-def get_cached_yt_vid_ids(user: User = None) -> Set[str]:
+def get_cached_yt_vid_ids(user: User|None = None) -> Set[str]:
     metadata = DataInterface().get_metadata()
     if user is None:
         return {audio.yt_video_id for audio in metadata.audios.values()}
     else:
         user_metadata = DataInterface().get_user_metadata(user)
-        return {metadata.audios[crc].yt_video_id for crc in user_metadata.favourites}
+        return {metadata.audios[crc].yt_video_id for crc in user_metadata.get_playlist().audio_crcs}
 
 @tubio_api.route('/')
 @login_required
 def favourites():
-    user_id = cur_user().id
+    user_metadata = DataInterface().get_user_metadata(cur_user())
+    crcs = user_metadata.get_playlist().audio_crcs
     metadata = DataInterface().get_metadata()
-    if user_id not in metadata.users:
-        return render_template("favourites.html", favourites=[])
-    
-    user_data = metadata.users[user_id]
-    crcs = user_data.favourites
     titles = [metadata.audios[crc].title for crc in crcs]
 
     return render_template("favourites.html", favourites=zip(crcs, titles))
+
+@tubio_api.route('/playlists')
+@login_required
+def playlists():
+    user_metadata = DataInterface().get_user_metadata(cur_user())
+    playlists = []
+    metadata = DataInterface().get_metadata()
+    for playlist in user_metadata.get_playlists():
+        playlist_data = []
+        for crc in playlist.audio_crcs:
+            if crc in metadata.audios:
+                title = metadata.audios[crc].title
+                playlist_data.append((crc, title))
+        playlists.append((playlist.name, playlist_data))
+    
+    return render_template("playlists.html", playlists=playlists)
 
 @tubio_api.route('/search', methods=['GET', 'POST'])
 @login_required
@@ -84,7 +96,7 @@ def youtube_download():
         # check if audio is already downloaded on the server but not in user's favourites
         existing_audio_metadata = DataInterface().get_audio_metadata(yt_video_id=video_id)
         user_metadata = DataInterface().get_user_metadata(cur_user())
-        user_metadata.favourites.append(existing_audio_metadata.crc)
+        user_metadata.add_to_playlist(existing_audio_metadata.crc)
         DataInterface().save_user_metadata(cur_user(), user_metadata)
         flash(f'Added {existing_audio_metadata.title} to favourites', 'info')
         return redirect(url_for('.favourites'))
@@ -167,18 +179,18 @@ def delete_audio(crc: int):
         user_metadata = DataInterface().get_user_metadata(user)
         
         # Check if user has this audio in their favourites
-        if crc not in user_metadata.favourites:
+        if crc not in user_metadata.get_playlist().audio_crcs:
             flash('Audio not found in your favourites.', 'error')
             return redirect(url_for('.favourites'))
         
         # Remove from user's favourites
-        user_metadata.favourites.remove(crc)
+        user_metadata.remove_from_playlist(crc)
         DataInterface().save_user_metadata(user, user_metadata)
         
         # Check if any other users have this audio in their favourites
         metadata = DataInterface().get_metadata()
         other_users_have_audio = any(
-            crc in user_metadata.favourites 
+            crc in user_metadata.get_playlist().audio_crcs 
             for user_metadata in metadata.users.values() 
         )
         

@@ -10,9 +10,37 @@ from web_app.users import User
 from web_app.config import ConfigManager
 
 
+class Playlist(BaseModel):
+    name: str
+    audio_crcs: list[int] = []
+
 class UserMetadata(BaseModel):
-    # list of audio crcs
-    favourites: list[int] = []
+    user_id: str
+    playlists: dict[str, Playlist] = {}
+
+    def add_to_playlist(self, audio_crc: int, playlist_name: str = "Favourites") -> None:
+        playlist = self.get_playlist(playlist_name)
+        if audio_crc not in playlist.audio_crcs:
+            playlist.audio_crcs.append(audio_crc)
+
+        # Always add it to Favourites as well
+        fav_playlist = self.get_playlist()
+        if audio_crc not in fav_playlist.audio_crcs:
+            fav_playlist.audio_crcs.append(audio_crc)
+
+    def remove_from_playlist(self, audio_crc: int, playlist_name: str = "Favourites") -> None:
+        playlist = self.get_playlist(playlist_name)
+        if audio_crc in playlist.audio_crcs:
+            playlist.audio_crcs.remove(audio_crc)
+
+    def get_playlist(self, playlist_name: str = "Favourites") -> Playlist:
+        if playlist_name not in self.playlists:
+            self.playlists[playlist_name] = Playlist(name=playlist_name)
+        
+        return self.playlists[playlist_name]
+    
+    def get_playlists(self) -> list[Playlist]:
+        return list(self.playlists.values())
 
 class AudioMetadata(BaseModel):
     # this is also the filename to be saved on disk
@@ -63,11 +91,11 @@ class DataInterface(BaseDataInterface):
     def get_user_metadata(self, user: User) -> UserMetadata:
         metadata = self.get_metadata()
         if user.id not in metadata.users:
-            metadata.users[user.id] = UserMetadata()
+            metadata.users[user.id] = UserMetadata(user_id=user.id)
 
         return metadata.users[user.id]
     
-    def get_audio_metadata(self, crc: int = None, yt_video_id: str = None) -> AudioMetadata:
+    def get_audio_metadata(self, crc: int|None = None, yt_video_id: str|None = None) -> AudioMetadata:
         if not ((crc is None) ^ (yt_video_id is None)):
             raise ValueError("Either crc or yt_video_id must be provided, but not both.")
         
@@ -81,6 +109,11 @@ class DataInterface(BaseDataInterface):
                 if audio.yt_video_id == yt_video_id:
                     return audio
             raise ValueError(f"Audio with yt_video_id {yt_video_id} does not exist.")
+        
+    def save_audio_metadata(self, audio_metadata: AudioMetadata) -> None:
+        metadata = self.get_metadata()
+        metadata.audios[audio_metadata.crc] = audio_metadata
+        self.save_metadata(metadata)
     
     def save_user_metadata(self, user: User, user_metadata: UserMetadata) -> None:
         metadata = self.get_metadata()
