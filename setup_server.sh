@@ -26,11 +26,11 @@ function setup_certs()
 }
 
 sudo apt update
-sudo apt install -y nginx gunicorn # ffmpeg
+sudo apt install -y nginx gunicorn ffmpeg
 setup_conda
 setup_certs
 sudo systemctl start nginx
 sudo systemctl enable nginx
 # sudo systemctl status nginx
 
-bash update_server.sh
+bash update_server.sh &> logs/shell_logs.log &

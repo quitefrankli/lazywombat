@@ -101,11 +101,12 @@ class AudioDownloader:
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
-            # 'postprocessors': [{
-            #     'key': 'FFmpegExtractAudio',
-            #     'preferredcodec': 'm4a',
-            #     'preferredquality': '32',  # lowest quality for cost
-            # }],
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'm4a',
+                'preferredquality': '32',  # lowest quality for cost
+                
+            }],
             'extractaudio': True,
             'audioformat': 'm4a',
             'audioquality': 0,  # best effort for lowest
