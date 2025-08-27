@@ -60,6 +60,33 @@ class DataInterface(BaseDataInterface):
 
         return Metadata(**json.loads(data))
     
+    def get_user_metadata(self, user: User) -> UserMetadata:
+        metadata = self.get_metadata()
+        if user.id not in metadata.users:
+            metadata.users[user.id] = UserMetadata()
+
+        return metadata.users[user.id]
+    
+    def get_audio_metadata(self, crc: int = None, yt_video_id: str = None) -> AudioMetadata:
+        if not ((crc is None) ^ (yt_video_id is None)):
+            raise ValueError("Either crc or yt_video_id must be provided, but not both.")
+        
+        metadata = self.get_metadata()
+        if crc is not None:
+            if crc not in metadata.audios:
+                raise ValueError(f"Audio with crc {crc} does not exist.")
+            return metadata.audios[crc]
+        else:
+            for audio in metadata.audios.values():
+                if audio.yt_video_id == yt_video_id:
+                    return audio
+            raise ValueError(f"Audio with yt_video_id {yt_video_id} does not exist.")
+    
+    def save_user_metadata(self, user: User, user_metadata: UserMetadata) -> None:
+        metadata = self.get_metadata()
+        metadata.users[user.id] = user_metadata
+        self.save_metadata(metadata)
+    
     def save_metadata(self, metadata: Metadata) -> None:
         self.atomic_write(self.app_metadata_file, 
                           data=metadata.model_dump_json(indent=4), 
