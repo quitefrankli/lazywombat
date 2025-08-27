@@ -15,31 +15,36 @@ and on separate terminal run `pytest`
 need to install:
 * sudo apt-get install ffmpeg
 
-## On EC2
+## Cloud Setup
 
+1. install terraform
+2. `terraform -chdir terraform init`
+3. `terraform -chdir terraform plan`
+4. `terraform -chdir terraform apply -auto-approve`
+
+terraform should output something like
+
+> elastic_ip = "54.79.119.112"
+
+with the generated ip, the "A Record" would need to be updated via the appropriate domain provider
+
+### Setup EC2
+
+```bash
+export ELASTIC_IP=$(terraform -chdir=terraform output elastic_ip | sed 's/\"//g')
+
+ssh ubuntu@$ELASTIC_IP -t "sudo useradd -m $USER && sudo adduser $USER sudo && sudo cp -r ~/.ssh /home/$USER/ && sudo chown -R $USER:$USER /home/ereh && sudo chsh $USER -s /bin/bash && echo \"$USER ALL=(ALL) NOPASSWD: ALL\" | sudo tee -a /etc/sudoers"
+
+# assuming ssh key has been added to GitHub already
+scp ~/.ssh/id_rsa.pub $ELASTIC_IP:~/.ssh/
+scp ~/.ssh/id_rsa $ELASTIC_IP:~/.ssh/
 ```
-wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh
-bash ~/miniconda -b -p $HOME/miniconda
-~/miniconda/bin/conda init bash
-source ~/.bashrc
 
-sudo yum install nginx ffmpeg
-
-# for generating certs for ssl
-conda install certbot -y
-export DOMAIN=lazywombat.site
-export EMAIL=your email
-sudo $(which certbot) certonly --standalone -d $DOMAIN --staple-ocsp -m $EMAIL --agree-tos
-sudo cp lazywombat.conf /etc/nginx/conf.d/
-
-sudo systemctl start nginx
-sudo systemctl enable nginx
-# below step might be needed but not sure
-# sudo systemctl reload nginx
-
-sudo systemctl status nginx
-
-gunicorn -b 127.0.0.1:5000 web_app.__main__:app &
+```bash
+ssh $ELASTIC_IP
+git clone git@github.com:quitefrankli/lazywombat.git
+cd lazywombat
+bash lazywombat/setup_server.sh
 ```
 
 ## Updating Server
