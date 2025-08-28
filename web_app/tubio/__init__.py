@@ -32,20 +32,8 @@ def get_cached_yt_vid_ids(user: User|None = None) -> Set[str]:
         user_metadata = DataInterface().get_user_metadata(user)
         return {metadata.audios[crc].yt_video_id for crc in user_metadata.get_playlist().audio_crcs}
 
-@tubio_api.route('/')
-@login_required
-def favourites():
-    user_metadata = DataInterface().get_user_metadata(cur_user())
-    crcs = user_metadata.get_playlist().audio_crcs
-    metadata = DataInterface().get_metadata()
-    titles = [metadata.audios[crc].title for crc in crcs]
-
-    return render_template("favourites.html", favourites=zip(crcs, titles))
-
-@tubio_api.route('/playlists')
-@login_required
-def playlists():
-    user_metadata = DataInterface().get_user_metadata(cur_user())
+def get_playlists_data(user: User) -> list[tuple[str, list[tuple[int, str]]]]:
+    user_metadata = DataInterface().get_user_metadata(user)
     playlists = []
     metadata = DataInterface().get_metadata()
     for playlist in user_metadata.get_playlists():
@@ -56,7 +44,12 @@ def playlists():
                 playlist_data.append((crc, title))
         playlists.append((playlist.name, playlist_data))
     
-    return render_template("playlists.html", playlists=playlists)
+    return playlists
+
+@tubio_api.route('/')
+@login_required
+def index():
+    return render_template("index.html", playlists=get_playlists_data(cur_user()))
 
 @tubio_api.route('/search', methods=['GET', 'POST'])
 @login_required
@@ -65,18 +58,23 @@ def search():
     query = ''
     if request.method == 'POST':
         query = request.form.get('youtube_query', '')
-        if query:
-            try:
-                decorated_query = f"{ConfigManager().tudio_search_prefix}{query}"
-                user_favourites = get_cached_yt_vid_ids(cur_user())
-                results = AudioDownloader.search_youtube(decorated_query, user_favourites)
-            except Exception as e:
-                logging.exception("Error searching YouTube")
-                flash("Error: Search Failed!")
+        if not query:
+            flash("No search query provided.", 'error')
+            return redirect(url_for('.index') + '#search')
 
-    return render_template('search.html', 
-                           youtube_results=results, 
-                           youtube_query=query)
+        try:
+            decorated_query = f"{ConfigManager().tudio_search_prefix}{query}"
+            user_favourites = get_cached_yt_vid_ids(cur_user())
+            results = AudioDownloader.search_youtube(decorated_query, user_favourites)
+            # assume AJAX POST request
+            return {'results': results, 'query': query}
+        
+        except Exception:
+            logging.exception("Error searching YouTube")
+            flash("Error: Search Failed!", 'error')
+            redirect(url_for('.index') + '#search')
+    
+    return redirect(url_for('.index') + '#search')
 
 @tubio_api.route('/youtube_download', methods=['POST'])
 @login_required
