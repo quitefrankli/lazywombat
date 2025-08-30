@@ -1,10 +1,9 @@
 import click
 import logging
-import flask
 import flask_login
 import shutil
-from git import Repo
 
+from git import Repo
 from typing import * # type: ignore
 from pathlib import Path
 from flask import render_template, request

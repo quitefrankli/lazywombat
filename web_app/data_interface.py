@@ -6,6 +6,7 @@ import string
 import os
 import shutil
 
+from git import Repo
 from atomicwrites import atomic_write as _atomic_write
 from botocore.exceptions import ClientError
 from pathlib import Path
@@ -83,6 +84,7 @@ class DataInterface:
         self.data_syncer = DataSyncer.instance()
         self.backups_directory = ConfigManager().save_data_path.parent / "backups"
         self.users_file = ConfigManager().save_data_path / "users.json"
+        self.metadata_file = ConfigManager().save_data_path / "metadata.json"
     
     def load_users(self) -> Dict[str, User]:
         self.data_syncer.download_file(self.users_file)
@@ -116,9 +118,21 @@ class DataInterface:
                 return User(username, password, folder)
         raise RuntimeError("Could not generate unique folder")
     
+    def generate_metadata_file(self) -> None:
+        repo = Repo(".")
+        commit_hash = repo.head.commit.hexsha
+        data = {
+            "commit_hash": commit_hash,
+        }
+        self.atomic_write(self.metadata_file, 
+                          data=json.dumps(data, indent=4), 
+                          mode='w', 
+                          encoding='utf-8')
+
     def backup_data(self) -> None:
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         new_backup = self.backups_directory / timestamp
+        self.generate_metadata_file()
         shutil.copytree(ConfigManager().save_data_path, new_backup)
         # TODO: zip the backup and upload to s3
         # self.data_syncer.upload_file(new_backup)
