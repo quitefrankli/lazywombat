@@ -29,10 +29,16 @@ def get_base_url() -> str:
     base_url = keyring.get_password(KEYRING_APP_ID, "base_url")
     return base_url if base_url else DEFAULT_BASE_URL
 
+def send_request(endpoint: str, payload: dict = dict(), require_cred: bool = True) -> requests.Response:
+    url = f"{get_base_url()}/{endpoint}"
+    if require_cred:
+        payload = generate_cred_payload() | payload
+    response = requests.post(url, json=payload)
+    return response
+
 def compress_and_encode(data: bytes) -> str:
     compressed_data = gzip.compress(data)
     encoded_data = base64.b64encode(compressed_data).decode('utf-8')
-
     return encoded_data
 
 @click.group()
@@ -83,13 +89,11 @@ def upload(file: Path) -> None:
 
     compressed_data = gzip.compress(data)
     encoded_data = base64.b64encode(compressed_data).decode('utf-8')
-    payload = generate_cred_payload() | {
+    payload = {
         "name": base_filename,
         "data": encoded_data
     }
-
-    url = f"{get_base_url()}/api/push"
-    response = requests.post(url, json=payload)
+    response = send_request("api/push", payload)
     print(f"Response: {response.status_code} - {response.text}")
 
 @cli.command()
@@ -100,12 +104,7 @@ def download(file: str, raw: bool) -> None:
     Downloads a file from the server and decompresses it
     """
     
-    payload = generate_cred_payload() | {
-        "name": file
-    }
-
-    url = f"{get_base_url()}/api/pull"
-    response = requests.post(url, json=payload)
+    response = send_request("api/pull", { "name": file })
 
     if response.status_code == 200:
         compressed_data = response.json().get("data")
@@ -129,8 +128,7 @@ def list_files() -> None:
     Lists files available for the logged-in user
     """
     
-    url = f"{get_base_url()}/api/list"
-    response = requests.post(url, json=generate_cred_payload())
+    response = send_request("api/list")
 
     if response.status_code == 200:
         files = response.json().get("files", [])
@@ -146,8 +144,7 @@ def backup() -> None:
     Creates a backup of the server data
     """
     
-    url = f"{get_base_url()}/api/backup"
-    response = requests.post(url, json=generate_cred_payload())
+    response = send_request("api/backup")
 
     if response.status_code == 200:
         print("Backup completed successfully.")
@@ -160,8 +157,35 @@ def update() -> None:
     Updates the server with a patch
     """
     
-    # TODO: Implement the update logic
-    pass
+    repo = Repo(".")
+    if repo.is_dirty(untracked_files=True):
+        print("Repository has uncommitted changes. Please commit or stash them before updating.")
+        return
+
+    origin = repo.remotes.origin
+    origin.fetch()
+    local_commit = repo.head.commit
+    remote_commit = origin.refs.main.commit
+
+    ahead_commits = list(repo.iter_commits(f'{remote_commit.hexsha}..{local_commit.hexsha}'))
+    if len(ahead_commits) <= 0:
+        print("Invalid git state detected, aborting update")
+        return
+
+    patch_data = repo.git.format_patch(f"{remote_commit.hexsha}..{local_commit.hexsha}", stdout=True)
+    compressed_patch = compress_and_encode(patch_data.encode('utf-8'))
+
+    if input(f"Apply update with {len(ahead_commits)} commits and patch size {len(compressed_patch)/1e3}kB ? (y/n): ").strip().lower() != 'y':
+        print("Update cancelled.")
+        return
+
+    response = send_request("api/update", {"patch": compressed_patch})
+
+    if response.status_code == 200:
+        print("Update applied successfully.")
+        print("Please restart the server to apply changes.")
+    else:
+        print(f"Failed to apply update: {response.status_code} - {response.text}")
 
 @cli.command()
 @click.argument("file", type=str)
@@ -170,12 +194,7 @@ def delete_file(file: str) -> None:
     Deletes a file from the server
     """
     
-    payload = generate_cred_payload() | {
-        "name": file
-    }
-
-    url = f"{get_base_url()}/api/delete"
-    response = requests.post(url, json=payload)
+    response = send_request("api/delete", {"name": file})
 
     if response.status_code == 200:
         print(f"File {file} deleted successfully.")
@@ -192,12 +211,7 @@ def upload_cookies(cookies: Path) -> None:
     with open(cookies, 'rb') as f:
         cookie_data = compress_and_encode(f.read())
 
-    payload = generate_cred_payload() | {
-        "cookie": cookie_data
-    }
-
-    url = f"{get_base_url()}/api/push_cookie"
-    response = requests.post(url, json=payload)
+    response = send_request("api/push_cookie", {"cookie": cookie_data})
 
     if response.status_code == 200:
         print("Cookies uploaded successfully.")

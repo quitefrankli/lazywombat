@@ -82,31 +82,45 @@ def youtube_download():
     req = parse_request(require_login=False, require_admin=False)
     video_id = req.get('video_id')
     title = req.get('title')
+    
+    is_ajax = (request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 
+              'application/json' in request.headers.get('Accept', ''))
+    if not is_ajax:
+        logging.error("Non-AJAX request to /youtube_download")
+        flash("Invalid request.", 'error')
+        return redirect(url_for('.index') + '#playlists')
+
+    # for rest of function assume we are dealing with AJAX request
+    
     if not video_id or not title:
-        flash("No video ID provided.", 'error')
-        return redirect(url_for('.favourites'))
+        return {'error': 'No video ID or title provided'}, 400
 
     if video_id in get_cached_yt_vid_ids(cur_user()):
-        flash('Already favourited', 'info')
-        return redirect(url_for('.favourites'))
+        return {'error': 'Already in playlist', 'type': 'info'}, 400
 
     if video_id in get_cached_yt_vid_ids():
-        # check if audio is already downloaded on the server but not in user's favourites
+        # check if audio is already downloaded on the server but not in user's playlists
         existing_audio_metadata = DataInterface().get_audio_metadata(yt_video_id=video_id)
         user_metadata = DataInterface().get_user_metadata(cur_user())
         user_metadata.add_to_playlist(existing_audio_metadata.crc)
         DataInterface().save_user_metadata(cur_user(), user_metadata)
-        flash(f'Added {existing_audio_metadata.title} to favourites', 'info')
-        return redirect(url_for('.favourites'))
+        
+        return {
+            'success': True,
+            'message': f'Added {existing_audio_metadata.title} to playlist',
+            'playlists': get_playlists_data(cur_user())
+        }
         
     try:
         AudioDownloader.download_youtube_audio(video_id, title, cur_user())
-        flash(f'Audio downloaded for: {title}', 'success')
+        return {
+            'success': True,
+            'message': f'Audio downloaded for: {title}',
+            'playlists': get_playlists_data(cur_user())
+        }
     except Exception:
         logging.exception("Error downloading audio")
-        flash("Error downloading audio", 'error')
-
-    return redirect(url_for('.favourites'))
+        return {'error': 'Error downloading audio'}, 500
 
 @tubio_api.route('/audio/<int:crc>')
 @limiter.limit("100 per second") # TODO: only 1 should be loaded at a time temporary fix
@@ -117,7 +131,7 @@ def serve_audio(crc: int):
     except ValueError:
         flash(f'Error: no such audio file: {crc: int}', 'error')
         logging.exception("Error serving audio file")
-        return redirect(url_for('.favourites'))
+        return redirect(url_for('.index'))
     
     file_size = file_path.stat().st_size
     range_header = request.headers.get("Range", None)
@@ -158,7 +172,6 @@ def serve_audio(crc: int):
         content_type="audio/mp4",
         direct_passthrough=True,
         headers={
-            # "Content-Length": str(length),
             "Content-Type": "audio/mp4",
             "Content-Range": f"bytes {byte1}-{byte2-1}/{file_size}",
             "Accept-Ranges": "bytes",
@@ -166,7 +179,6 @@ def serve_audio(crc: int):
     )
     response.headers.set("Content-Length", str(length))
 
-    logging.info(response.headers)
     return response
 
 @tubio_api.route('/delete_audio/<int:crc>', methods=['POST'])
@@ -176,16 +188,16 @@ def delete_audio(crc: int):
         user = cur_user()
         user_metadata = DataInterface().get_user_metadata(user)
         
-        # Check if user has this audio in their favourites
+        # Check if user has this audio in their playlists
         if crc not in user_metadata.get_playlist().audio_crcs:
-            flash('Audio not found in your favourites.', 'error')
-            return redirect(url_for('.favourites'))
+            flash('Audio not found in your playlists.', 'error')
+            return redirect(url_for('.index'))
         
-        # Remove from user's favourites
+        # Remove from user's playlists
         user_metadata.remove_from_playlist(crc)
         DataInterface().save_user_metadata(user, user_metadata)
         
-        # Check if any other users have this audio in their favourites
+        # Check if any other users have this audio in their playlists
         metadata = DataInterface().get_metadata()
         other_users_have_audio = any(
             crc in user_metadata.get_playlist().audio_crcs 
@@ -197,10 +209,10 @@ def delete_audio(crc: int):
             DataInterface().delete_audio(crc)
             flash('Audio deleted successfully.', 'success')
         else:
-            flash('Audio removed from your favourites.', 'info')
+            flash('Audio removed from your playlists.', 'info')
             
     except Exception as e:
         logging.exception("Error deleting audio")
         flash('Error deleting audio.', 'error')
     
-    return redirect(url_for('.favourites'))
+    return redirect(url_for('.index'))
