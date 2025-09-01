@@ -123,7 +123,6 @@ def youtube_download():
         return {'error': 'Error downloading audio'}, 500
 
 @tubio_api.route('/audio/<int:crc>')
-@limiter.limit("100 per second") # TODO: only 1 should be loaded at a time temporary fix
 @login_required
 def serve_audio(crc: int):
     try:
