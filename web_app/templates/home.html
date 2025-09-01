@@ -5,9 +5,9 @@
 			<div class="card shadow-lg border-0 bg-gradient" style="background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%);">
 				<div class="d-flex flex-column align-items-center mb-4">
 					<h1 class="fw-bold text-center" style="letter-spacing: 2px; color: #2c3e50;">Build Version</h1>
-					<div class="version p-2 rounded bg-light border d-inline-block text-center">
-						<code class="fs-4">{{ commit_hash }}</code>
-					</div>
+                    <div class="version p-2 rounded bg-light border d-inline-block text-center" style="max-width: 90vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        <code class="fs-4" style="max-width: 80vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block;">{{ commit_hash }}</code>
+                    </div>
 				</div>
             </div>
 				<div class="card-body text-center p-5">
