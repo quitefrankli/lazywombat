@@ -3,9 +3,16 @@
 {% set active = '' %}
 
 {% block content %}
-
-<div>
-	{{ plot|safe }}
+<div class="card shadow-sm" style="border: none; border-radius: 12px; overflow: hidden;">
+    <div class="card-header" style="background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);">
+        <h5 class="text-white mb-0">
+            <i class="bi bi-graph-up me-2"></i>Metric Visualization
+        </h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="chart-container">
+            {{ plot|safe }}
+        </div>
+    </div>
 </div>
-
 {% endblock %}

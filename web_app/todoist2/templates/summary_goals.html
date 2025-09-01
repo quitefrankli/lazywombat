@@ -1,148 +1,190 @@
 {% for dated_goal_block in dated_goal_blocks %}
-<div class="container-fluid my-1 p-1" style="background-color: rgb(168, 225, 244)">
-	<h6>{{ dated_goal_block[0] }}</h6>
-	{% for goal in dated_goal_block[1] %}
-	<div class="container-fluid my-1">
-		<div class="row">
-			<div 
-				class="col justify-content-start text-truncate overflow-hidden">
-				<button 
-					class="btn w-100 btn-light truncate-button text-start" 
-					type="button" 
-					data-bs-toggle="collapse" 
-					data-bs-target="#{{goal.id}}" 
-					aria-expanded="false" 
-					aria-controls="{{ goal.id }}"
-					style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">
-						<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">{{ goal.name }}</span>
-				</button>
-			</div>
-			<div class="col-auto d-flex align-items-center justify-content-end">
-				<div class="form-check">
-					<input 
-						class="form-check-input" 
-						type="checkbox" 
-						style="width: 1.5em; height: 1.5em; " 
-						{{ "checked" if goal.state.name == "COMPLETED" else "" }} 
-						onchange="toggleGoalState(this, {{goal.id}})"
-					>
+<div class="mb-4">
+	<div class="d-flex align-items-center mb-3">
+		<i class="bi bi-calendar-event me-2 text-primary"></i>
+		<h5 class="fw-bold text-primary mb-0">{{ dated_goal_block[0] }}</h5>
+	</div>
+	
+	<div class="accordion" id="accordion-{{ loop.index }}">
+		{% for goal in dated_goal_block[1] %}
+		<div class="accordion-item mb-3 border-0 shadow-sm">
+			<h2 class="accordion-header">
+				<div class="d-flex align-items-center">
+					<button class="accordion-button collapsed bg-gradient text-primary fw-semibold flex-grow-1" 
+							type="button" 
+							data-bs-toggle="collapse" 
+							data-bs-target="#collapse-{{ goal.id }}" 
+							aria-expanded="false" 
+							aria-controls="collapse-{{ goal.id }}"
+							style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 10px 0 0 10px;">
+						<i class="bi bi-target me-2"></i>
+						<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ goal.name }}</span>
+					</button>
+					<div class="d-flex align-items-center px-3 py-2 bg-light" style="border-radius: 0 10px 10px 0; border: 1px solid #dee2e6; border-left: none;">
+						<div class="form-check">
+							<input class="form-check-input" 
+								   type="checkbox" 
+								   style="width: 1.25em; height: 1.25em;" 
+								   {{ "checked" if goal.state.name == "COMPLETED" else "" }} 
+								   onchange="toggleGoalState(this, {{ goal.id }})"
+								   title="Mark as {{ 'incomplete' if goal.state.name == 'COMPLETED' else 'complete' }}">
+						</div>
+					</div>
 				</div>
-			</div>
-		</div>
-		<div class="collapse" id="{{goal.id}}">
-			<div class="card" style="width: 100%">
-				<div class="card-body">
-					<div class="row align-items-center">
-						<div class="col d-flex justify-content-start">
-							<h5 class="card-title">{{ goal.name }}</h5>
+			</h2>
+			<div id="collapse-{{ goal.id }}" 
+				 class="accordion-collapse collapse" 
+				 data-bs-parent="#accordion-{{ loop.index0 }}">
+				<div class="accordion-body bg-light">
+					<div class="row align-items-start mb-3">
+						<div class="col">
+							<h6 class="text-primary mb-2">Description:</h6>
+							<div class="text-dark" style="white-space: pre-line; background: white; padding: 12px; border-radius: 8px; border: 1px solid #e9ecef;">
+								{{ goal.description or 'No description provided.' }}
+							</div>
 						</div>
-						<div class="col d-flex justify-content-end">
-							<button 
-								type="button" 
-								class="btn btn-outline-danger me-2" 
+					</div>
+					
+					<div class="d-flex gap-2 flex-wrap justify-content-end">
+						<button type="button" 
+								class="btn btn-outline-success btn-sm" 
 								data-bs-toggle="modal" 
-								data-bs-target="#deleteGoalModal{{ goal.id }}">
-									<img src={{ url_for('.static', filename='trash.svg') }}/>
-							</button>
-							<button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modifyGoalModal{{goal.id}}">
-								Edit
-							</button>
-						</div>
-					</div>
-					<hr class="my-1"/>
-					<div class="card-text" style="white-space: pre-line">
-						{{ goal.description }}
-					</div>
-					<div class="col d-flex justify-content-end">
-						<button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#logGoalModal{{goal.id}}">
-							Log
+								data-bs-target="#logGoalModal{{goal.id}}"
+								title="Log progress">
+							<i class="bi bi-journal-plus me-1"></i>Log Progress
+						</button>
+						<button type="button" 
+								class="btn btn-outline-primary btn-sm" 
+								data-bs-toggle="modal" 
+								data-bs-target="#modifyGoalModal{{goal.id}}"
+								title="Edit goal">
+							<i class="bi bi-pencil me-1"></i>Edit
+						</button>
+						<button type="button" 
+								class="btn btn-outline-danger btn-sm" 
+								data-bs-toggle="modal" 
+								data-bs-target="#deleteGoalModal{{ goal.id }}"
+								title="Delete goal">
+							<i class="bi bi-trash me-1"></i>Delete
 						</button>
 					</div>
 				</div>
 			</div>
 		</div>
+		{% endfor %}
 	</div>
-	{% endfor %}
 </div>
 {% endfor %}
 
-
-<!-- Models -->
+<!-- Modals -->
 {% block actions_modal %}
 {% for dated_goal_block in dated_goal_blocks %}
 	{% for goal in dated_goal_block[1] %}
 	<!-- Edit Goal Modal -->
 	<div class="modal fade" id="modifyGoalModal{{goal.id}}" tabindex="-1" aria-labelledby="modalLabel{{ goal.id }}" aria-hidden="true">
-		<div class="modal-dialog">
-			<div class="modal-content">
-			<div class="modal-header">
-				<h1 class="modal-title fs-5" id="modalLabel{{goal.id}}">Edit Goal</h1>
-				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-			</div>
-			<form action="{{ url_for('.goals_api.edit_goal', goal_id=goal.id) }}" method="post">
-				<div class="modal-body">
-					<div class="form-group">
-						<label for="name" class="col-form-label">Name</label>
-						<input type="text" class="form-control" name="name" id="name" value="{{ goal.name }}">
-						<label for="description" class="col-form-label">Description</label>
-						<textarea class="form-control" name="description" id="description" rows="5" style="min-height: 120px;">{{ goal.description }}</textarea>
+		<div class="modal-dialog modal-lg">
+			<div class="modal-content border-0 shadow">
+				<div class="modal-header bg-primary text-white">
+					<h1 class="modal-title fs-5" id="modalLabel{{goal.id}}">
+						<i class="bi bi-pencil me-2"></i>Edit Goal
+					</h1>
+					<button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+				</div>
+				<form action="{{ url_for('.goals_api.edit_goal', goal_id=goal.id) }}" method="post">
+					<div class="modal-body p-4">
+						<div class="mb-3">
+							<label for="name-{{goal.id}}" class="form-label fw-semibold text-primary">
+								<i class="bi bi-tag me-1"></i>Goal Name
+							</label>
+							<input type="text" class="form-control form-control-lg" name="name" id="name-{{goal.id}}" value="{{ goal.name }}" required>
+						</div>
+						<div class="mb-3">
+							<label for="description-{{goal.id}}" class="form-label fw-semibold text-primary">
+								<i class="bi bi-text-paragraph me-1"></i>Description
+							</label>
+							<textarea class="form-control" name="description" id="description-{{goal.id}}" rows="6" style="min-height: 150px; resize: vertical;" placeholder="Describe your goal in detail...">{{ goal.description }}</textarea>
+						</div>
 					</div>
-				</div>
-				<div class="modal-footer">
-					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-					<button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.value='Submitting...'; this.form.submit();">Save</button>
-				</div>
-			</form>
+					<div class="modal-footer bg-light">
+						<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+							<i class="bi bi-x-circle me-1"></i>Cancel
+						</button>
+						<button type="submit" class="btn btn-primary" onclick="this.disabled=true; this.innerHTML='<i class=&quot;bi bi-hourglass-split me-1&quot;></i>Saving...'; this.form.submit();">
+							<i class="bi bi-check-circle me-1"></i>Save Changes
+						</button>
+					</div>
+				</form>
 			</div>
 		</div>
 	</div>
 
 	<!-- Delete Goal Modal -->
-	<div class="modal fade" id="deleteGoalModal{{goal.id}}" tabindex="-1" aria-labelledby="modalLabel{{goal.id}}" aria-hidden="true">
+	<div class="modal fade" id="deleteGoalModal{{goal.id}}" tabindex="-1" aria-labelledby="deleteModalLabel{{goal.id}}" aria-hidden="true">
 		<div class="modal-dialog">
-			<div class="modal-content">
-			<div class="modal-header">
-				<h1 class="modal-title fs-5" id="modalLabel{{goal.id}}">Confirm Goal Delete</h1>
-				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-			</div>
-				<div class="modal-body">
-					<a href="{{ url_for('.goals_api.delete_goal', goal_id=goal.id) }}" class="btn btn-danger">
-						Delete Goal
-					</a>
-					<a href="{{ url_for('.goals_api.fail_goal', goal_id=goal.id) }}" class="btn btn-warning">
-						Fail Goal Instead
-					</a>
+			<div class="modal-content border-0 shadow">
+				<div class="modal-header bg-danger text-white">
+					<h1 class="modal-title fs-5" id="deleteModalLabel{{goal.id}}">
+						<i class="bi bi-exclamation-triangle me-2"></i>Confirm Action
+					</h1>
+					<button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
 				</div>
-				<div class="modal-footer">
-					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+				<div class="modal-body p-4">
+					<p class="mb-3">What would you like to do with this goal?</p>
+					<div class="alert alert-warning">
+						<strong>{{ goal.name }}</strong>
+					</div>
+					<div class="d-grid gap-2">
+						<a href="{{ url_for('.goals_api.delete_goal', goal_id=goal.id) }}" class="btn btn-danger">
+							<i class="bi bi-trash me-1"></i>Delete Goal Permanently
+						</a>
+						<a href="{{ url_for('.goals_api.fail_goal', goal_id=goal.id) }}" class="btn btn-warning">
+							<i class="bi bi-x-octagon me-1"></i>Mark as Failed
+						</a>
+					</div>
 				</div>
-			</form>
+				<div class="modal-footer bg-light">
+					<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+						<i class="bi bi-arrow-left me-1"></i>Cancel
+					</button>
+				</div>
 			</div>
 		</div>
 	</div>
 
 	<!-- Log Goal Modal -->
-	<div class="modal fade" id="logGoalModal{{goal.id}}" tabindex="-1" aria-labelledby="modalLabel{{goal.id}}" aria-hidden="true">
-		<div class="modal-dialog">
-			<div class="modal-content">
-			<div class="modal-header">
-				<h1 class="modal-title fs-5" id="modalLabel{{goal.id}}">Log Goal Progress</h1>
-				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-			</div>
-			<form action="{{ url_for('.goals_api.log_goal', goal_id=goal.id) }}" method="post">
-				<div class="modal-body">
-					<div class="form-group">
-						<label for="description" class="col-form-label">Description</label>
-						<textarea class="form-control" name="description" id="description" readonly>{{ goal.description }}</textarea>
-						<label for="log" class="col-form-label">New Log</label>
-						<textarea class="form-control" name="log" id="log"></textarea>
+	<div class="modal fade" id="logGoalModal{{goal.id}}" tabindex="-1" aria-labelledby="logModalLabel{{goal.id}}" aria-hidden="true">
+		<div class="modal-dialog modal-lg">
+			<div class="modal-content border-0 shadow">
+				<div class="modal-header bg-success text-white">
+					<h1 class="modal-title fs-5" id="logModalLabel{{goal.id}}">
+						<i class="bi bi-journal-plus me-2"></i>Log Progress
+					</h1>
+					<button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+				</div>
+				<form action="{{ url_for('.goals_api.log_goal', goal_id=goal.id) }}" method="post">
+					<div class="modal-body p-4">
+						<div class="mb-3">
+							<label for="goal-desc-{{goal.id}}" class="form-label fw-semibold text-primary">
+								<i class="bi bi-info-circle me-1"></i>Goal Description
+							</label>
+							<div class="form-control bg-light text-muted" style="min-height: 80px; white-space: pre-line;">{{ goal.description or 'No description provided.' }}</div>
+						</div>
+						<div class="mb-3">
+							<label for="log-{{goal.id}}" class="form-label fw-semibold text-success">
+								<i class="bi bi-pencil-square me-1"></i>Progress Log
+							</label>
+							<textarea class="form-control" name="log" id="log-{{goal.id}}" rows="5" style="min-height: 120px; resize: vertical;" placeholder="Describe the progress you've made on this goal..." required></textarea>
+						</div>
 					</div>
-				</div>
-				<div class="modal-footer">
-					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-					<button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.value='Submitting...'; this.form.submit();">Save</button>
-				</div>
-			</form>
+					<div class="modal-footer bg-light">
+						<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+							<i class="bi bi-x-circle me-1"></i>Cancel
+						</button>
+						<button type="submit" class="btn btn-success" onclick="this.disabled=true; this.innerHTML='<i class=&quot;bi bi-hourglass-split me-1&quot;></i>Logging...'; this.form.submit();">
+							<i class="bi bi-check-circle me-1"></i>Save Log
+						</button>
+					</div>
+				</form>
 			</div>
 		</div>
 	</div>

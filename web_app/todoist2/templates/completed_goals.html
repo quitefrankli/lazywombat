@@ -1,34 +1,46 @@
 {% for dated_goal_block in dated_goal_blocks %}
-<div class="container-fluid my-1 p-1" style="background-color: rgb(168, 225, 244)">
-	<h6>{{ dated_goal_block[0] }}</h6>
-	{% for goal in dated_goal_block[1] %}
-	<div class="container-fluid my-1">
-		<button 
-			class="btn w-100 btn-light truncate-button text-start" 
-			type="button" 
-			data-bs-toggle="collapse" 
-			data-bs-target="#{{goal.id}}" 
-			aria-expanded="false" 
-			aria-controls="{{ goal.id }}"
-			style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">
-			<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">{{ goal.name }}</span>
-		</button>
-		<div class="collapse" id="{{goal.id}}">
-			<div class="card" style="width: 100%">
-				<div class="card-body">
-					<div class="row align-items-center">
-						<div class="col d-flex justify-content-start">
-							<h5 class="card-title">{{ goal.name }}</h5>
-						</div>
-					</div>
-					<hr class="my-1"/>
-					<div class="card-text" style="white-space: pre-line">
-						{{ goal.description }}
-					</div>
-				</div>
-			</div>
-		</div>
-	</div>
-	{% endfor %}
+<div class="card shadow-sm my-3" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border: none; border-radius: 12px;">
+    <div class="card-header" style="background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%); border: none; border-radius: 12px 12px 0 0;">
+        <h5 class="text-white mb-0">
+            <i class="bi bi-calendar-check me-2"></i>{{ dated_goal_block[0] }}
+        </h5>
+    </div>
+    <div class="card-body p-3">
+        {% for goal in dated_goal_block[1] %}
+        <div class="accordion mb-2" id="accordion{{ goal.id }}">
+            <div class="accordion-item" style="border: none; border-radius: 8px; overflow: hidden;">
+                <h2 class="accordion-header" id="heading{{ goal.id }}">
+                    <button 
+                        class="accordion-button collapsed" 
+                        type="button" 
+                        data-bs-toggle="collapse" 
+                        data-bs-target="#collapse{{ goal.id }}" 
+                        aria-expanded="false" 
+                        aria-controls="collapse{{ goal.id }}"
+                        style="background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%); border: none; padding: 12px 16px;">
+                        <div class="d-flex align-items-center w-100">
+                            <i class="bi bi-check-circle-fill text-success me-2"></i>
+                            <span class="fw-medium">{{ goal.name }}</span>
+                        </div>
+                    </button>
+                </h2>
+                <div id="collapse{{ goal.id }}" class="accordion-collapse collapse" aria-labelledby="heading{{ goal.id }}" data-bs-parent="#accordion{{ goal.id }}">
+                    <div class="accordion-body" style="background: #fafafa; padding: 20px;">
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-body">
+                                <h5 class="card-title text-primary mb-3">
+                                    <i class="bi bi-flag-fill me-2"></i>{{ goal.name }}
+                                </h5>
+                                <div class="card-text" style="white-space: pre-line; line-height: 1.6;">
+                                    {{ goal.description or "No description provided." }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
 </div>
 {% endfor %}

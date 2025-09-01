@@ -9,32 +9,47 @@
 {% endblock %}
 
 {% block actions_modal %}
-<!-- Modal -->
-<div class="modal fade" id="newGoalModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-	<div class="modal-content">
-	  <div class="modal-header">
-		<h1 class="modal-title fs-5" id="exampleModalLabel">New Goal</h1>
-		<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-	  </div>
-	  <form action="{{ url_for('.goals_api.new_goal') }}" method="post">
-		<div class="modal-body">
-			<div class="form-group">
-				<label for="name" class="col-form-label">Name</label>
-				<input type="text" class="form-control" name="name" id="name">
-				<label for="description" class="col-form-label">Description</label>
-				<!-- for prefilling the description, we can pass the active as a variable from Flask and then 
-				add it before the /textarea -->
-				<textarea class="form-control" name="description" id="description"></textarea>
-			</div>
-		</div>
-		<div class="modal-footer">
-			<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-			<button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.value='Submitting...'; this.form.submit();">Save</button>
-		</div>
-	  </form>
-	</div>
-  </div>
+<!-- New Goal Modal -->
+<div class="modal fade" id="newGoalModal" tabindex="-1" aria-labelledby="newGoalModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" style="border-radius: 12px; border: none;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%); color: white; border-radius: 12px 12px 0 0;">
+                <h1 class="modal-title fs-5 d-flex align-items-center" id="newGoalModalLabel">
+                    <i class="bi bi-plus-circle me-2"></i>Create New Goal
+                </h1>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('.goals_api.new_goal') }}" method="post">
+                <div class="modal-body" style="padding: 2rem;">
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" name="name" id="name" placeholder="Enter goal name" required style="border-radius: 8px;">
+                        <label for="name">
+                            <i class="bi bi-target me-2"></i>Goal Name
+                        </label>
+                    </div>
+                    <div class="form-floating mb-3">
+                        <textarea 
+                            class="form-control" 
+                            name="description" 
+                            id="description" 
+                            placeholder="Enter goal description"
+                            style="height: 120px; border-radius: 8px;"></textarea>
+                        <label for="description">
+                            <i class="bi bi-text-paragraph me-2"></i>Description
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding: 1.5rem; background: #f8f9fa; border-radius: 0 0 12px 12px;">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i>Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.innerHTML='<i class=&quot;bi bi-hourglass-split me-1&quot;></i>Creating...'; this.form.submit();">
+                        <i class="bi bi-check-circle me-1"></i>Create Goal
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 {% endblock %}
 

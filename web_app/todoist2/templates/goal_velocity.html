@@ -3,9 +3,16 @@
 {% set active = '' %}
 
 {% block content %}
-
-<div>
-	{{ plot|safe }}
+<div class="card shadow-sm" style="border: none; border-radius: 12px; overflow: hidden;">
+    <div class="card-header" style="background: linear-gradient(135deg, #673ab7 0%, #512da8 100%);">
+        <h5 class="text-white mb-0">
+            <i class="bi bi-speedometer2 me-2"></i>Goal Velocity Analysis
+        </h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="chart-container">
+            {{ plot|safe }}
+        </div>
+    </div>
 </div>
-
 {% endblock %}
