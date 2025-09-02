@@ -2,17 +2,27 @@ import flask
 import flask_login
 import logging
 
+from flask import render_template, Blueprint
 from typing import * # type: ignore
-from flask import request, Blueprint, render_template
 from datetime import datetime
 
-from web_app.helpers import limiter, from_req, cur_user
-from web_app.todoist2.app_data import Metric, DataPoint
-from web_app.todoist2.data_interface import DataInterface
-from web_app.todoist2.visualiser import plot_metric
+from web_app.helpers import limiter, cur_user, from_req
+from web_app.users import User
+from web_app.metrics.app_data import Metric, DataPoint
+from web_app.metrics.data_interface import DataInterface
+from web_app.metrics.visualiser import plot_metric
 
 
-metrics_api = Blueprint('metrics_api', __name__, url_prefix='/metrics')
+metrics_api = Blueprint(
+    'metrics_api', 
+    __name__, 
+    template_folder='templates',
+    static_folder='static',
+    url_prefix='/metrics')
+
+@metrics_api.context_processor
+def inject_app_name():
+    return dict(app_name='Metrics')
 
 def get_default_redirect():
     return flask.redirect(flask.url_for('.get_metrics'))
@@ -123,4 +133,3 @@ def visualise_metric(metric_id: int):
         flask.flash('Failed to visualise metric', category='error')
 
         return get_default_redirect()
-

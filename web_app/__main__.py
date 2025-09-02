@@ -17,6 +17,7 @@ from web_app.app import app
 from web_app.crosswords import crosswords_api
 from web_app.todoist2 import todoist2_api
 from web_app.tubio import tubio_api
+from web_app.metrics import metrics_api
 from web_app.account_api import account_api
 from web_app.misc import misc_api
 from web_app.api import api_api
@@ -25,6 +26,7 @@ from web_app.api import api_api
 app.register_blueprint(todoist2_api)
 app.register_blueprint(crosswords_api)
 app.register_blueprint(tubio_api)
+app.register_blueprint(metrics_api)
 app.register_blueprint(account_api)
 app.register_blueprint(misc_api)
 app.register_blueprint(api_api)

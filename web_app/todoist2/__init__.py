@@ -12,7 +12,6 @@ from web_app.todoist2.app_data import GoalState, Goal
 from web_app.todoist2.data_interface import DataInterface
 from web_app.todoist2.visualiser import plot_velocity
 from web_app.todoist2.api.goals_api import goals_api
-from web_app.todoist2.api.metrics_api import metrics_api
 
 
 todoist2_api = Blueprint(
@@ -22,7 +21,6 @@ todoist2_api = Blueprint(
     static_folder='static',
     url_prefix='/todoist2')
 todoist2_api.register_blueprint(goals_api)
-todoist2_api.register_blueprint(metrics_api)
 
 @todoist2_api.context_processor
 def inject_app_name():

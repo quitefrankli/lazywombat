@@ -28,21 +28,5 @@ class Goal(BaseModel):
     children: List[int] = []
     recurrence: Optional[Recurrence] = None
 
-
-class DataPoint(BaseModel):
-    date: datetime
-    value: float
-
-class Metric(BaseModel):
-    id: int
-    name: str
-    data: List[DataPoint]
-    unit: str
-    description: str = ""
-    creation_date: datetime = datetime.now()
-
-
 class TopLevelData(BaseModel):
     goals: Dict[int, Goal] = {}
-    metrics: Dict[int, Metric] = {}
-    edited: datetime = datetime.now()

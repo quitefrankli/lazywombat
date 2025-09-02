@@ -1,0 +1,12 @@
+{% extends "root_base.html" %}
+{% block navbar_items %}
+    <li class="nav-item mx-2">
+        <a class="nav-link {{'active' if active == 'Home' else ''}}" href="/metrics">
+            <i class="bi bi-graph-up me-1"></i>Metrics
+        </a>
+    </li>
+{% endblock %}
+
+{% block scripts %}
+    <script src="/metrics/static/script.js"></script>
+{% endblock %}
