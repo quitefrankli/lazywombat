@@ -81,6 +81,35 @@ def configure_logging(debug: bool) -> None:
                         handlers=[] if debug else [rotating_log_handler],
                         format='%(asctime)s %(levelname)s %(message)s')
 
+
+@app.route('/convert_metrics')
+def convert_metrics():
+    # TODO: delete me
+    # copy old embedded metrics over to new destination
+    import json
+
+    from web_app.todoist2.data_interface import DataInterface as Todoist2DataInterface
+    from web_app.metrics.data_interface import DataInterface as MetricsDataInterface
+
+
+    users = Todoist2DataInterface().load_users()
+    for user in users.values():
+        if not Todoist2DataInterface()._get_data_file(user).exists():
+            continue
+        
+        with open(Todoist2DataInterface()._get_data_file(user), 'r') as file:
+            data = json.load(file)
+        
+        metrics_data = {
+            "metrics": data["metrics"]
+        }
+
+        MetricsDataInterface()._get_data_file(user).parent.mkdir(parents=True, exist_ok=True)
+        with open(MetricsDataInterface()._get_data_file(user), 'w') as file:
+            json.dump(metrics_data, file, indent=4)
+
+    return "Done"
+
 @click.command()
 @click.option('--debug', is_flag=True, help='Run the server in debug mode', default=False)
 @click.option('--port', default=80, help='Port to run the server on', type=int)
