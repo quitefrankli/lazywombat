@@ -24,7 +24,7 @@ need to install:
 
 terraform should output something like
 
-> elastic_ip = "54.79.119.112"
+> elastic_ip = "12.12.123.123"
 
 with the generated ip, the "A Record" would need to be updated via the appropriate domain provider
 
