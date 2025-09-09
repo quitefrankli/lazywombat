@@ -122,6 +122,7 @@ def youtube_download():
         logging.exception("Error downloading audio")
         return {'error': 'Error downloading audio'}, 500
 
+@limiter.limit("100 per second") # TODO: only 1 should be loaded at a time temporary fix
 @tubio_api.route('/audio/<int:crc>')
 @login_required
 def serve_audio(crc: int):
@@ -137,8 +138,17 @@ def serve_audio(crc: int):
     logging.info(f"Serving audio file {file_path} with size {file_size} bytes, Range header: {range_header}")
 
     if not range_header:
-        # only support range requests
-        raise ValueError("Range header not provided, only range requests are supported")
+        # Send a small range response to initialize the audio player
+        response = send_file(
+            file_path,
+            mimetype='audio/mp4',
+            as_attachment=False,
+            download_name=f"{crc}.m4a"
+        )
+        response.headers['Accept-Ranges'] = 'bytes'
+        response.headers['Content-Range'] = f'bytes 0-1/{file_size}'
+        response.headers['Content-Length'] = '2'
+        return response
 
     # Example: "Range: bytes=12345-"
     range_header = range_header.strip()[len("bytes="):]

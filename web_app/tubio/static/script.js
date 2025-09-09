@@ -199,6 +199,24 @@ async function updateContent(data) {
         const playlistsTab = document.getElementById('playlists');
         if (playlistsTab) {
             playlistsTab.innerHTML = renderPlaylists(data.playlists);
+            
+            // After updating the playlist content, force load the latest audio element
+            const allAudioElements = playlistsTab.getElementsByTagName('audio');
+            if (allAudioElements.length > 0) {
+                const lastAudio = allAudioElements[allAudioElements.length - 1];
+                // Force load the audio file
+                lastAudio.load();
+                // Set up range request headers
+                lastAudio.addEventListener('loadstart', function() {
+                    if (!this.played.length) {
+                        // If not played yet, set up initial range request
+                        const xhr = new XMLHttpRequest();
+                        xhr.open('GET', this.currentSrc);
+                        xhr.setRequestHeader('Range', 'bytes=0-1');
+                        xhr.send();
+                    }
+                });
+            }
         }
     }
 }
