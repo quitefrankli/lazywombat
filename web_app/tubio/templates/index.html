@@ -69,4 +69,94 @@
         </div>
     </div>
 </div>
+
+<!-- Add to Playlist Modal -->
+<div class="modal fade" id="addToPlaylistModal" tabindex="-1" aria-labelledby="addToPlaylistModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content" style="border-radius: 12px; border: none;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #198754 0%, #146c43 100%); color: white; border-radius: 12px 12px 0 0;">
+                <h1 class="modal-title fs-5 d-flex align-items-center" id="addToPlaylistModalLabel">
+                    <i class="bi bi-plus-square me-2"></i>Add Selected Songs to Playlist
+                </h1>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="add-to-playlist-form" method="post" action="{{ url_for('.add_songs_to_playlist') }}">
+                <div class="modal-body" style="padding: 2rem;">
+                    <div id="selected-songs-count" class="alert alert-info mb-3">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <span id="add-selected-count">0</span> song(s) selected
+                    </div>
+                    <div class="form-floating mb-3">
+                        <select class="form-select" name="target_playlist" id="add_target_playlist" required style="border-radius: 8px;">
+                            <option value="">Select a playlist...</option>
+                            {% for playlist_name, playlist_data in playlists %}
+                            <option value="{{ playlist_name }}">{{ playlist_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <label for="add_target_playlist">
+                            <i class="bi bi-music-note-list me-2"></i>Target Playlist
+                        </label>
+                    </div>
+                    <input type="hidden" name="song_crcs" id="add_song_crcs">
+                </div>
+                <div class="modal-footer" style="padding: 1.5rem; background: #f8f9fa; border-radius: 0 0 12px 12px;">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i>Cancel
+                    </button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-circle me-1"></i>Add to Playlist
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Remove from Playlist Modal -->
+<div class="modal fade" id="removeFromPlaylistModal" tabindex="-1" aria-labelledby="removeFromPlaylistModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content" style="border-radius: 12px; border: none;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #dc3545 0%, #b02a37 100%); color: white; border-radius: 12px 12px 0 0;">
+                <h1 class="modal-title fs-5 d-flex align-items-center" id="removeFromPlaylistModalLabel">
+                    <i class="bi bi-dash-square me-2"></i>Remove Selected Songs from Playlist
+                </h1>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="remove-from-playlist-form" method="post" action="{{ url_for('.remove_songs_from_playlist') }}">
+                <div class="modal-body" style="padding: 2rem;">
+                    <div id="selected-songs-count" class="alert alert-warning mb-3">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <span id="remove-selected-count">0</span> song(s) selected
+                    </div>
+                    <div class="form-floating mb-3">
+                        <select class="form-select" name="source_playlist" id="remove_source_playlist" required style="border-radius: 8px;">
+                            <option value="">Select a playlist...</option>
+                            {% for playlist_name, playlist_data in playlists %}
+                            {% if playlist_name != "Favourites" %}
+                            <option value="{{ playlist_name }}">{{ playlist_name }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </select>
+                        <label for="remove_source_playlist">
+                            <i class="bi bi-music-note-list me-2"></i>Source Playlist
+                        </label>
+                    </div>
+                    <input type="hidden" name="song_crcs" id="remove_song_crcs">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Songs will remain in Favourites and other playlists.
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding: 1.5rem; background: #f8f9fa; border-radius: 0 0 12px 12px;">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i>Cancel
+                    </button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-check-circle me-1"></i>Remove from Playlist
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}

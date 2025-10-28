@@ -22,4 +22,15 @@
         <i class="bi bi-plus-circle me-1"></i>New Playlist
     </button>
 </li>
+<li><hr class="dropdown-divider"></li>
+<li>
+    <button type="button" class="btn btn-outline-success w-100" data-bs-toggle="modal" data-bs-target="#addToPlaylistModal" onclick="preparePlaylistModal()">
+        <i class="bi bi-plus-square me-1"></i>Add Selected to Playlist
+    </button>
+</li>
+<li>
+    <button type="button" class="btn btn-outline-danger w-100" data-bs-toggle="modal" data-bs-target="#removeFromPlaylistModal" onclick="preparePlaylistModal()">
+        <i class="bi bi-dash-square me-1"></i>Remove Selected from Playlist
+    </button>
+</li>
 {% endblock %}

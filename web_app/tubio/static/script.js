@@ -427,3 +427,44 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+
+// Playlist management functions
+function getSelectedSongs() {
+    const checkboxes = document.querySelectorAll('.song-checkbox:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+function preparePlaylistModal() {
+    const selectedSongs = getSelectedSongs();
+    const count = selectedSongs.length;
+    
+    // Update count displays
+    document.getElementById('add-selected-count').textContent = count;
+    document.getElementById('remove-selected-count').textContent = count;
+    
+    // Set hidden inputs
+    document.getElementById('add_song_crcs').value = selectedSongs.join(',');
+    document.getElementById('remove_song_crcs').value = selectedSongs.join(',');
+    
+    // Disable submit if no songs selected
+    const addBtn = document.querySelector('#add-to-playlist-form button[type="submit"]');
+    const removeBtn = document.querySelector('#remove-from-playlist-form button[type="submit"]');
+    
+    if (addBtn) addBtn.disabled = (count === 0);
+    if (removeBtn) removeBtn.disabled = (count === 0);
+}
+
+// Select/deselect all checkboxes in a playlist
+function togglePlaylistSelection(playlistName, checked) {
+    const accordionId = `audioAccordion-${playlistName.replace(/ /g, '-')}`;
+    const accordion = document.getElementById(accordionId);
+    if (accordion) {
+        const checkboxes = accordion.querySelectorAll('.song-checkbox');
+        checkboxes.forEach(cb => cb.checked = checked);
+    }
+}
+
+// Clear all selections
+function clearAllSelections() {
+    document.querySelectorAll('.song-checkbox').forEach(cb => cb.checked = false);
+}

@@ -83,3 +83,35 @@ h1 {
         opacity: 1;
     }
 }
+
+/* Song checkbox styling */
+.song-checkbox {
+    width: 1.2em;
+    height: 1.2em;
+    cursor: pointer;
+    border: 2px solid #0dcaf0;
+}
+
+.song-checkbox:checked {
+    background-color: #0dcaf0;
+    border-color: #0dcaf0;
+}
+
+.song-checkbox:hover {
+    border-color: #0a9ec7;
+}
+
+.form-check {
+    display: flex;
+    align-items: center;
+}
+
+/* Adjust accordion button when checkbox is present */
+.accordion-header .d-flex {
+    width: 100%;
+}
+
+.accordion-header .accordion-button {
+    border-top-left-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+}
