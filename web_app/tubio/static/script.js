@@ -408,3 +408,22 @@ function showNotification(message, type = 'info') {
         }
     }, 5000);
 }
+
+// Handle playlist collapse chevron rotation
+document.addEventListener('DOMContentLoaded', function() {
+    // Update chevron rotation when collapse events occur
+    document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(button => {
+        const targetId = button.getAttribute('data-bs-target');
+        if (targetId) {
+            const target = document.querySelector(targetId);
+            if (target) {
+                target.addEventListener('shown.bs.collapse', function() {
+                    button.setAttribute('aria-expanded', 'true');
+                });
+                target.addEventListener('hidden.bs.collapse', function() {
+                    button.setAttribute('aria-expanded', 'false');
+                });
+            }
+        }
+    });
+});

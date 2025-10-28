@@ -225,3 +225,70 @@ def delete_audio(crc: int):
         flash('Error deleting audio.', 'error')
     
     return redirect(url_for('.index'))
+
+@tubio_api.route('/create_playlist', methods=['POST'])
+@login_required
+@limiter.limit("10 per minute")
+def create_playlist():
+    try:
+        playlist_name = request.form.get('playlist_name', '').strip()
+        
+        if not playlist_name:
+            flash('Playlist name cannot be empty.', 'error')
+            return redirect(url_for('.index'))
+        
+        user = cur_user()
+        user_metadata = DataInterface().get_user_metadata(user)
+        
+        # Check if playlist already exists
+        if playlist_name in user_metadata.playlists:
+            flash(f'Playlist "{playlist_name}" already exists.', 'warning')
+            return redirect(url_for('.index'))
+        
+        # Create new playlist
+        user_metadata.get_playlist(playlist_name)
+        DataInterface().save_user_metadata(user, user_metadata)
+        
+        flash(f'Playlist "{playlist_name}" created successfully!', 'success')
+        
+    except Exception as e:
+        logging.exception("Error creating playlist")
+        flash('Error creating playlist.', 'error')
+    
+    return redirect(url_for('.index'))
+
+@tubio_api.route('/delete_playlist', methods=['POST'])
+@login_required
+@limiter.limit("10 per minute")
+def delete_playlist():
+    try:
+        playlist_name = request.form.get('playlist_name', '').strip()
+        
+        if not playlist_name:
+            flash('Playlist name cannot be empty.', 'error')
+            return redirect(url_for('.index'))
+        
+        # Prevent deletion of Favourites playlist
+        if playlist_name == "Favourites":
+            flash('Cannot delete the Favourites playlist.', 'error')
+            return redirect(url_for('.index'))
+        
+        user = cur_user()
+        user_metadata = DataInterface().get_user_metadata(user)
+        
+        # Check if playlist exists
+        if playlist_name not in user_metadata.playlists:
+            flash(f'Playlist "{playlist_name}" does not exist.', 'warning')
+            return redirect(url_for('.index'))
+        
+        # Delete the playlist
+        del user_metadata.playlists[playlist_name]
+        DataInterface().save_user_metadata(user, user_metadata)
+        
+        flash(f'Playlist "{playlist_name}" deleted successfully!', 'success')
+        
+    except Exception as e:
+        logging.exception("Error deleting playlist")
+        flash('Error deleting playlist.', 'error')
+    
+    return redirect(url_for('.index'))

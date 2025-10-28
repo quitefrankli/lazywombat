@@ -2,6 +2,44 @@
 
 {% set active = 'Home' %}
 
+{% block actions_modal %}
+<!-- New Playlist Modal -->
+<div class="modal fade" id="newPlaylistModal" tabindex="-1" aria-labelledby="newPlaylistModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content" style="border-radius: 12px; border: none;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #0dcaf0 0%, #0a9ec7 100%); color: white; border-radius: 12px 12px 0 0;">
+                <h1 class="modal-title fs-5 d-flex align-items-center" id="newPlaylistModalLabel">
+                    <i class="bi bi-plus-circle me-2"></i>Create New Playlist
+                </h1>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="new-playlist-form" method="post" action="{{ url_for('.create_playlist') }}">
+                <div class="modal-body" style="padding: 2rem;">
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" name="playlist_name" id="playlist_name" placeholder="Enter playlist name" required style="border-radius: 8px;">
+                        <label for="playlist_name">
+                            <i class="bi bi-music-note-list me-2"></i>Playlist Name
+                        </label>
+                    </div>
+                    <div class="alert alert-info" role="alert">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Create a new playlist to organize your music collection.
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding: 1.5rem; background: #f8f9fa; border-radius: 0 0 12px 12px;">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i>Cancel
+                    </button>
+                    <button type="submit" class="btn btn-info">
+                        <i class="bi bi-check-circle me-1"></i>Create Playlist
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid mt-3">
     <div class="row justify-content-center">
