@@ -359,6 +359,65 @@ def remove_songs_from_playlist():
     
     return redirect(url_for('.index'))
 
+@tubio_api.route('/delete_selected_songs', methods=['POST'])
+@login_required
+@limiter.limit("10 per minute")
+def delete_selected_songs():
+    try:
+        song_crcs_str = request.form.get('song_crcs', '')
+        
+        if not song_crcs_str:
+            flash('No songs selected.', 'warning')
+            return redirect(url_for('.index'))
+        
+        # Parse CRCs
+        try:
+            song_crcs = [int(crc) for crc in song_crcs_str.split(',') if crc.strip()]
+        except ValueError:
+            flash('Invalid song data.', 'error')
+            return redirect(url_for('.index'))
+        
+        if not song_crcs:
+            flash('No valid songs selected.', 'warning')
+            return redirect(url_for('.index'))
+        
+        user = cur_user()
+        user_metadata = DataInterface().get_user_metadata(user)
+        metadata = DataInterface().get_metadata()
+        
+        deleted_count = 0
+        for crc in song_crcs:
+            try:
+                # Remove from user's playlists first
+                for playlist in user_metadata.playlists.values():
+                    if crc in playlist.audio_crcs:
+                        playlist.audio_crcs.remove(crc)
+                
+                # Check if any other users have this audio
+                other_users_have_audio = any(
+                    crc in other_user_metadata.get_playlist().audio_crcs 
+                    for user_id, other_user_metadata in metadata.users.items()
+                    if user_id != user.folder
+                )
+                
+                # Only delete the file if no other users have it
+                if not other_users_have_audio:
+                    DataInterface().delete_audio(crc)
+                
+                deleted_count += 1
+            except Exception as e:
+                logging.warning(f"Failed to delete song {crc}: {e}")
+        
+        DataInterface().save_user_metadata(user, user_metadata)
+        
+        flash(f'Deleted {deleted_count} song(s) successfully.', 'success')
+        
+    except Exception as e:
+        logging.exception("Error deleting selected songs")
+        flash('Error deleting songs.', 'error')
+    
+    return redirect(url_for('.index'))
+
 @tubio_api.route('/delete_playlist', methods=['POST'])
 @login_required
 @limiter.limit("10 per minute")

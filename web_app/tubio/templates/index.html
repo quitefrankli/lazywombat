@@ -76,7 +76,7 @@
         <div class="modal-content" style="border-radius: 12px; border: none;">
             <div class="modal-header" style="background: linear-gradient(135deg, #198754 0%, #146c43 100%); color: white; border-radius: 12px 12px 0 0;">
                 <h1 class="modal-title fs-5 d-flex align-items-center" id="addToPlaylistModalLabel">
-                    <i class="bi bi-plus-square me-2"></i>Add Selected Songs to Playlist
+                    <i class="bi bi-plus-square me-2"></i>Add to Playlist
                 </h1>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -118,7 +118,7 @@
         <div class="modal-content" style="border-radius: 12px; border: none;">
             <div class="modal-header" style="background: linear-gradient(135deg, #dc3545 0%, #b02a37 100%); color: white; border-radius: 12px 12px 0 0;">
                 <h1 class="modal-title fs-5 d-flex align-items-center" id="removeFromPlaylistModalLabel">
-                    <i class="bi bi-dash-square me-2"></i>Remove Selected Songs from Playlist
+                    <i class="bi bi-dash-square me-2"></i>Remove from Playlist
                 </h1>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -153,6 +153,41 @@
                     </button>
                     <button type="submit" class="btn btn-danger">
                         <i class="bi bi-check-circle me-1"></i>Remove from Playlist
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Selected Songs Modal -->
+<div class="modal fade" id="deleteSelectedSongsModal" tabindex="-1" aria-labelledby="deleteSelectedSongsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content" style="border-radius: 12px; border: none;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #dc3545 0%, #b02a37 100%); color: white; border-radius: 12px 12px 0 0;">
+                <h1 class="modal-title fs-5 d-flex align-items-center" id="deleteSelectedSongsModalLabel">
+                    <i class="bi bi-trash me-2"></i>Delete Tracks
+                </h1>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="delete-selected-songs-form" method="post" action="{{ url_for('.delete_selected_songs') }}">
+                <div class="modal-body" style="padding: 2rem;">
+                    <div class="alert alert-danger mb-3">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Warning:</strong> <span id="delete-selected-count">0</span> song(s) will be permanently deleted!
+                    </div>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-info-circle me-2"></i>
+                        This will delete the audio files from the server. This action cannot be undone.
+                    </div>
+                    <input type="hidden" name="song_crcs" id="delete_song_crcs">
+                </div>
+                <div class="modal-footer" style="padding: 1.5rem; background: #f8f9fa; border-radius: 0 0 12px 12px;">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i>Cancel
+                    </button>
+                    <button type="submit" class="btn btn-danger" onclick="return confirm('Are you ABSOLUTELY SURE you want to delete these songs? This cannot be undone!');">
+                        <i class="bi bi-trash me-1"></i>Delete Permanently
                     </button>
                 </div>
             </form>

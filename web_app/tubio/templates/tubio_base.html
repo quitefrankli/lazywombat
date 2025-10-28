@@ -25,12 +25,17 @@
 <li><hr class="dropdown-divider"></li>
 <li>
     <button type="button" class="btn btn-outline-success w-100" data-bs-toggle="modal" data-bs-target="#addToPlaylistModal" onclick="preparePlaylistModal()">
-        <i class="bi bi-plus-square me-1"></i>Add Selected to Playlist
+        <i class="bi bi-plus-square me-1"></i>Add to Playlist
     </button>
 </li>
 <li>
-    <button type="button" class="btn btn-outline-danger w-100" data-bs-toggle="modal" data-bs-target="#removeFromPlaylistModal" onclick="preparePlaylistModal()">
-        <i class="bi bi-dash-square me-1"></i>Remove Selected from Playlist
+    <button type="button" class="btn btn-outline-warning w-100" data-bs-toggle="modal" data-bs-target="#removeFromPlaylistModal" onclick="preparePlaylistModal()">
+        <i class="bi bi-dash-square me-1"></i>Remove from Playlist
+    </button>
+</li>
+<li>
+    <button type="button" class="btn btn-outline-danger w-100" data-bs-toggle="modal" data-bs-target="#deleteSelectedSongsModal" onclick="preparePlaylistModal()">
+        <i class="bi bi-trash me-1"></i>Delete Tracks
     </button>
 </li>
 {% endblock %}
