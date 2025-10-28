@@ -346,6 +346,28 @@ function playAllInPlaylist(playlistName) {
         return;
     }
     
+    // Stop any currently playing track first
+    document.querySelectorAll('audio').forEach(audio => {
+        if (!audio.paused) {
+            const crc = audio.id.replace('audio-', '');
+            // Use the same system as the play button to stop the track
+            const playButton = document.getElementById(`play-btn-${crc}`);
+            const trackItem = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
+            
+            audio.pause();
+            
+            if (playButton) {
+                playButton.innerHTML = '<i class="bi bi-play-fill"></i>';
+                playButton.classList.remove('btn-success');
+                playButton.classList.add('btn-outline-primary');
+            }
+            
+            if (trackItem) {
+                trackItem.classList.remove('track-playing');
+            }
+        }
+    });
+    
     // Build queue of audio CRCs
     currentPlaylistQueue = Array.from(audioItems).map(item => item.dataset.audioCrc);
     currentPlaylistIndex = 0;
@@ -368,6 +390,8 @@ function playNextInQueue() {
     
     const crc = currentPlaylistQueue[currentPlaylistIndex];
     const audioElement = document.getElementById(`audio-${crc}`);
+    const playButton = document.getElementById(`play-btn-${crc}`);
+    const trackItem = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
     
     if (!audioElement) {
         console.error(`Audio element not found: audio-${crc}`);
@@ -376,27 +400,13 @@ function playNextInQueue() {
         return;
     }
     
-    // Expand the accordion for this song
-    const collapseElement = document.getElementById(`collapse-${crc}`);
-    if (collapseElement && !collapseElement.classList.contains('show')) {
-        const bsCollapse = new bootstrap.Collapse(collapseElement, {
-            toggle: true
-        });
-    }
-    
     // Scroll to the song
-    audioElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    
-    // Remove previous ended event listeners to avoid duplicates
-    const oldAudio = document.querySelector('audio[data-playlist-playing="true"]');
-    if (oldAudio) {
-        oldAudio.removeAttribute('data-playlist-playing');
+    const accordionItem = audioElement.closest('.accordion-item');
+    if (accordionItem) {
+        accordionItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
     
-    // Mark this audio as playing from playlist
-    audioElement.setAttribute('data-playlist-playing', 'true');
-    
-    // Play the audio
+    // Play the audio using the same system as the play button
     audioElement.currentTime = 0;
     audioElement.play().catch(err => {
         console.error('Error playing audio:', err);
@@ -404,24 +414,47 @@ function playNextInQueue() {
         playNextInQueue();
     });
     
+    // Update button to show pause icon (same as togglePlayTrack)
+    if (playButton) {
+        playButton.innerHTML = '<i class="bi bi-pause-fill"></i>';
+        playButton.classList.remove('btn-outline-primary');
+        playButton.classList.add('btn-success');
+    }
+    
+    // Highlight this track (same as togglePlayTrack)
+    if (trackItem) {
+        trackItem.classList.add('track-playing');
+    }
+    
     // Set up event listener for when song ends
     audioElement.addEventListener('ended', function onEnded() {
         // Remove this event listener
         audioElement.removeEventListener('ended', onEnded);
-        audioElement.removeAttribute('data-playlist-playing');
+        
+        // Reset button and highlight (same as togglePlayTrack)
+        if (playButton && !audioElement.loop) {
+            playButton.innerHTML = '<i class="bi bi-play-fill"></i>';
+            playButton.classList.remove('btn-success');
+            playButton.classList.add('btn-outline-primary');
+        }
+        
+        if (trackItem && !audioElement.loop) {
+            trackItem.classList.remove('track-playing');
+        }
         
         // Move to next song
-        if (isPlayingPlaylist) {
+        if (isPlayingPlaylist && !audioElement.loop) {
             currentPlaylistIndex++;
             setTimeout(() => playNextInQueue(), 500); // Small delay between songs
         }
     }, { once: true });
 }
 
-// Stop playlist playback if user manually interacts with audio controls
-document.addEventListener('play', function(e) {
-    if (e.target.tagName === 'AUDIO' && !e.target.hasAttribute('data-playlist-playing')) {
-        // User manually started playing a different song
+// Stop playlist playback if user manually interacts with play button
+document.addEventListener('click', function(e) {
+    // Check if a play button was clicked
+    if (e.target.closest('.track-play-btn')) {
+        // User manually interacted with a track, stop playlist mode
         isPlayingPlaylist = false;
     }
 }, true);
