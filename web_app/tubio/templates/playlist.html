@@ -43,10 +43,16 @@
                 {% for crc, title in playlist_data %}
                 <div class="accordion-item mb-3 border-0 shadow-sm" data-audio-crc="{{ crc }}" data-playlist="{{ playlist_name }}">
                     <h2 class="accordion-header">
-                        <div class="d-flex align-items-center">
-                            <div class="form-check ms-2 me-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="form-check ms-2">
                                 <input class="form-check-input song-checkbox" type="checkbox" value="{{ crc }}" id="checkbox-{{ crc }}-{{ playlist_name|replace(' ', '-') }}" data-song-crc="{{ crc }}">
                             </div>
+                            <button class="btn btn-sm btn-outline-primary track-play-btn" id="play-btn-{{ crc }}" onclick="togglePlayTrack('{{ crc }}')" title="Play/Pause track" style="min-width: 40px;">
+                                <i class="bi bi-play-fill"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary track-loop-btn" id="loop-btn-{{ crc }}" onclick="toggleLoopTrack('{{ crc }}')" title="Toggle loop" style="min-width: 40px;">
+                                <i class="bi bi-arrow-repeat"></i>
+                            </button>
                             <button class="accordion-button collapsed bg-gradient text-primary fw-semibold flex-grow-1" 
                                     type="button" 
                                     data-bs-toggle="collapse" 
@@ -73,12 +79,6 @@
                                     <source src="{{ url_for('.serve_audio', crc=crc) }}" type="audio/mp4">
                                     Your browser does not support the audio element.
                                 </audio>
-                                <div class="d-flex gap-3 mt-3 align-items-center">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" id="loop-{{ crc }}" onchange="document.getElementById('audio-{{ crc }}').loop = this.checked">
-                                        <label class="form-check-label" for="loop-{{ crc }}">Loop</label>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </div>

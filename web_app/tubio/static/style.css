@@ -90,6 +90,8 @@ h1 {
     height: 1.2em;
     cursor: pointer;
     border: 2px solid #0dcaf0;
+    margin: 0;
+    vertical-align: middle;
 }
 
 .song-checkbox:checked {
@@ -104,14 +106,95 @@ h1 {
 .form-check {
     display: flex;
     align-items: center;
+    margin-bottom: 0;
+    padding: 0;
+    min-height: 40px;
+}
+
+.accordion-header .form-check {
+    justify-content: center;
 }
 
 /* Adjust accordion button when checkbox is present */
 .accordion-header .d-flex {
     width: 100%;
+    align-items: center;
+}
+
+.accordion-header h2 {
+    margin-bottom: 0;
+}
+
+.accordion-item .accordion-header {
+    display: flex;
+    align-items: center;
 }
 
 .accordion-header .accordion-button {
     border-top-left-radius: 0 !important;
     border-bottom-left-radius: 0 !important;
+    padding: 0.75rem 1rem;
+    min-height: 48px;
+}
+
+/* Ensure all track control buttons have same height */
+.accordion-header .track-play-btn,
+.accordion-header .track-loop-btn {
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Inline track controls styling */
+.accordion-header .btn-outline-primary,
+.accordion-header .btn-outline-secondary {
+    border-radius: 6px;
+    padding: 0.25rem 0.5rem;
+    transition: all 0.2s ease;
+}
+
+.accordion-header .btn-outline-primary:hover,
+.accordion-header .btn-outline-secondary:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(13, 110, 253, 0.3);
+}
+
+/* Play button states */
+.track-play-btn.btn-success {
+    background-color: #198754;
+    border-color: #198754;
+    color: white;
+}
+
+.track-play-btn.btn-success:hover {
+    background-color: #157347;
+    border-color: #146c43;
+    transform: scale(1.05);
+}
+
+/* Loop button states */
+.track-loop-btn.btn-warning {
+    background-color: #ffc107;
+    border-color: #ffc107;
+    color: #000;
+    font-weight: bold;
+    box-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
+}
+
+.track-loop-btn.btn-warning:hover {
+    background-color: #ffca2c;
+    border-color: #ffc720;
+    transform: scale(1.1);
+    box-shadow: 0 0 15px rgba(255, 193, 7, 0.7);
+}
+
+.track-loop-btn.btn-outline-secondary {
+    color: #6c757d;
+    border-color: #6c757d;
+}
+
+.track-loop-btn.btn-outline-secondary:hover {
+    background-color: #6c757d;
+    color: white;
 }

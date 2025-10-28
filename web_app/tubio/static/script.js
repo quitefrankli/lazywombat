@@ -240,6 +240,88 @@ async function updateContent(data) {
     }
 }
 
+// Individual track playback controls
+function togglePlayTrack(crc) {
+    const audioElement = document.getElementById(`audio-${crc}`);
+    const playButton = document.getElementById(`play-btn-${crc}`);
+    
+    if (!audioElement || !playButton) {
+        console.error(`Audio element or button not found for crc: ${crc}`);
+        return;
+    }
+    
+    if (audioElement.paused) {
+        // Pause all other audio elements and reset their buttons
+        document.querySelectorAll('audio').forEach(audio => {
+            if (audio.id !== `audio-${crc}` && !audio.paused) {
+                audio.pause();
+                // Reset the other play button
+                const otherCrc = audio.id.replace('audio-', '');
+                const otherButton = document.getElementById(`play-btn-${otherCrc}`);
+                if (otherButton) {
+                    otherButton.innerHTML = '<i class="bi bi-play-fill"></i>';
+                    otherButton.classList.remove('btn-success');
+                    otherButton.classList.add('btn-outline-primary');
+                }
+            }
+        });
+        
+        // Play this track
+        audioElement.play().catch(err => {
+            console.error('Error playing audio:', err);
+            showNotification('Error playing audio. Please try again.', 'error');
+        });
+        
+        // Update button to show pause icon
+        playButton.innerHTML = '<i class="bi bi-pause-fill"></i>';
+        playButton.classList.remove('btn-outline-primary');
+        playButton.classList.add('btn-success');
+    } else {
+        // Pause this track
+        audioElement.pause();
+        
+        // Update button to show play icon
+        playButton.innerHTML = '<i class="bi bi-play-fill"></i>';
+        playButton.classList.remove('btn-success');
+        playButton.classList.add('btn-outline-primary');
+    }
+    
+    // Add event listener to reset button when track ends naturally
+    audioElement.onended = function() {
+        if (!audioElement.loop) {
+            playButton.innerHTML = '<i class="bi bi-play-fill"></i>';
+            playButton.classList.remove('btn-success');
+            playButton.classList.add('btn-outline-primary');
+        }
+    };
+}
+
+function toggleLoopTrack(crc) {
+    const audioElement = document.getElementById(`audio-${crc}`);
+    const loopButton = document.getElementById(`loop-btn-${crc}`);
+    
+    if (!audioElement || !loopButton) {
+        console.error(`Audio element or loop button not found for crc: ${crc}`);
+        return;
+    }
+    
+    // Toggle loop state
+    audioElement.loop = !audioElement.loop;
+    
+    // Update button visual state
+    if (audioElement.loop) {
+        loopButton.classList.remove('btn-outline-secondary');
+        loopButton.classList.add('btn-warning');
+        loopButton.innerHTML = '<i class="bi bi-arrow-repeat" style="font-weight: bold;"></i>';
+        loopButton.title = 'Loop enabled - Click to disable';
+    } else {
+        loopButton.classList.remove('btn-warning');
+        loopButton.classList.add('btn-outline-secondary');
+        loopButton.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+        loopButton.title = 'Loop disabled - Click to enable';
+    }
+}
+
 // Playlist playback functionality
 let currentPlaylistQueue = [];
 let currentPlaylistIndex = 0;
