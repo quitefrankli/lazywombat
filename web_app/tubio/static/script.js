@@ -194,153 +194,50 @@ async function downloadVideo(videoId, title, buttonElement) {
 }
 
 async function updateContent(data) {
-    // Update playlists tab if data is provided
-    if (data.playlists) {
-        const playlistsTab = document.getElementById('playlists');
-        if (playlistsTab) {
-            playlistsTab.innerHTML = renderPlaylists(data.playlists);
+    // Instead of rendering HTML in JavaScript, fetch server-rendered HTML
+    try {
+        const response = await fetch('/tubio/', {
+            method: 'GET',
+            headers: {
+                'Accept': 'text/html',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        if (response.ok) {
+            const html = await response.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
             
-            // Re-attach collapse event listeners for chevron animation
-            playlistsTab.querySelectorAll('[data-bs-toggle="collapse"]').forEach(button => {
-                const targetId = button.getAttribute('data-bs-target');
-                if (targetId) {
-                    const target = document.querySelector(targetId);
-                    if (target) {
-                        target.addEventListener('shown.bs.collapse', function() {
-                            button.setAttribute('aria-expanded', 'true');
-                        });
-                        target.addEventListener('hidden.bs.collapse', function() {
-                            button.setAttribute('aria-expanded', 'false');
-                        });
+            // Extract the playlists tab content from the response
+            const newPlaylistsContent = doc.getElementById('playlists');
+            const currentPlaylistsTab = document.getElementById('playlists');
+            
+            if (newPlaylistsContent && currentPlaylistsTab) {
+                currentPlaylistsTab.innerHTML = newPlaylistsContent.innerHTML;
+                
+                // Re-attach collapse event listeners for chevron animation
+                currentPlaylistsTab.querySelectorAll('[data-bs-toggle="collapse"]').forEach(button => {
+                    const targetId = button.getAttribute('data-bs-target');
+                    if (targetId) {
+                        const target = document.querySelector(targetId);
+                        if (target) {
+                            target.addEventListener('shown.bs.collapse', function() {
+                                button.setAttribute('aria-expanded', 'true');
+                            });
+                            target.addEventListener('hidden.bs.collapse', function() {
+                                button.setAttribute('aria-expanded', 'false');
+                            });
+                        }
                     }
-                }
-            });
+                });
+            }
         }
+    } catch (error) {
+        console.error('Error updating content:', error);
+        // Fallback: just reload the page
+        window.location.reload();
     }
-}
-
-function renderPlaylists(playlists) {
-    let html = '';
-    
-    playlists.forEach(([playlistName, playlistData]) => {
-        html += `
-            <div class="card mb-4 shadow-sm" style="border: none; border-radius: 12px; overflow: hidden;">
-                <div class="card-header" style="background: linear-gradient(135deg, #0dcaf0 0%, #0a9ec7 100%); padding: 0;">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <button class="btn btn-link text-white text-decoration-none flex-grow-1 text-start py-3 px-3 playlist-collapse-btn" 
-                                type="button" 
-                                data-bs-toggle="collapse" 
-                                data-bs-target="#playlist-${playlistName.replace(/\s+/g, '-')}" 
-                                aria-expanded="true" 
-                                aria-controls="playlist-${playlistName.replace(/\s+/g, '-')}"
-                                title="Click to collapse/expand playlist"
-                                style="font-size: 1.25rem; font-weight: bold;">
-                            <i class="bi bi-chevron-down me-3 playlist-chevron" style="font-size: 1.5rem; font-weight: bold;"></i>
-                            <i class="bi bi-music-note-list me-2"></i>${playlistName}
-                            <span class="badge bg-light text-info ms-2">${playlistData.length} songs</span>
-                        </button>
-                        <div class="d-flex gap-2 pe-3">
-        `;
-        
-        if (playlistData.length > 0) {
-            html += `
-                            <button class="btn btn-light btn-sm btn-play-all" onclick="playAllInPlaylist('${playlistName.replace(/'/g, "\\'")}')">
-                                <i class="bi bi-play-circle me-1"></i>Play All
-                            </button>
-            `;
-        }
-        
-        if (playlistName !== "Favourites") {
-            html += `
-                            <form method="post" action="/tubio/delete_playlist" style="display:inline;" 
-                                  onsubmit="return confirm('Are you sure you want to delete the playlist &quot;${playlistName}&quot;? All songs will remain in your Favourites.');">
-                                <input type="hidden" name="playlist_name" value="${playlistName}">
-                                <button type="submit" class="btn btn-outline-light btn-sm">
-                                    <i class="bi bi-trash me-1"></i>Delete
-                                </button>
-                            </form>
-            `;
-        }
-        
-        html += `
-                        </div>
-                    </div>
-                </div>
-                <div id="playlist-${playlistName.replace(/\s+/g, '-')}" class="collapse show">
-                    <div class="card-body p-3">
-        `;
-        
-        if (playlistData.length === 0) {
-            html += `
-                        <div class="text-center py-4 text-muted">
-                            <i class="bi bi-music-note-beamed" style="font-size: 3rem; opacity: 0.3;"></i>
-                            <p class="mt-2">No songs in this playlist yet.</p>
-                        </div>
-            `;
-        } else {
-            html += `
-                        <div class="accordion" id="audioAccordion-${playlistName.replace(/\s+/g, '-')}" data-playlist-name="${playlistName}">
-            `;
-            
-            playlistData.forEach(([crc, title]) => {
-                html += `
-                            <div class="accordion-item mb-3 border-0 shadow-sm" data-audio-crc="${crc}" data-playlist="${playlistName}">
-                                <h2 class="accordion-header">
-                                    <div class="d-flex align-items-center">
-                                        <div class="form-check ms-2 me-2">
-                                            <input class="form-check-input song-checkbox" type="checkbox" value="${crc}" id="checkbox-${crc}-${playlistName.replace(/\s+/g, '-')}" data-song-crc="${crc}">
-                                        </div>
-                                        <button class="accordion-button collapsed bg-gradient text-primary fw-semibold flex-grow-1" 
-                                                type="button" 
-                                                data-bs-toggle="collapse" 
-                                                data-bs-target="#collapse-${crc}" 
-                                                aria-expanded="false" 
-                                                aria-controls="collapse-${crc}"
-                                                style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
-                                            <i class="bi bi-musical-note me-2"></i>
-                                            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${title}</span>
-                                        </button>
-                                    </div>
-                                </h2>
-                                <div id="collapse-${crc}" 
-                                     class="accordion-collapse collapse" 
-                                     data-bs-parent="#audioAccordion-${playlistName.replace(/\s+/g, '-')}">
-                                    <div class="accordion-body bg-light">
-                                        <div class="mb-3">
-                                            <h6 class="text-primary mb-2">Full Title:</h6>
-                                            <p class="text-dark fw-medium">${title}</p>
-                                        </div>
-                                        <div class="d-flex flex-column align-items-center">
-                                            <audio controls preload="none" id="audio-${crc}" style="max-width: 300px;">
-                                                <source src="/tubio/audio/${crc}" type="audio/mp4">
-                                                Your browser does not support the audio element.
-                                            </audio>
-                                            <div class="d-flex gap-3 mt-3 align-items-center">
-                                                <div class="form-check">
-                                                    <input class="form-check-input" type="checkbox" id="loop-${crc}" onchange="document.getElementById('audio-${crc}').loop = this.checked">
-                                                    <label class="form-check-label" for="loop-${crc}">Loop</label>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                `;
-            });
-            
-            html += `
-                        </div>
-            `;
-        }
-        
-        html += `
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-    
-    return html;
 }
 
 // Playlist playback functionality
