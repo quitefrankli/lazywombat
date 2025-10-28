@@ -234,7 +234,7 @@ function renderPlaylists(playlists) {
         
         playlistData.forEach(([crc, title]) => {
             html += `
-                <div class="accordion-item mb-3 border-0 shadow-sm">
+                <div class="accordion-item mb-3 border-0 shadow-sm" data-audio-crc="${crc}">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed bg-gradient text-primary fw-semibold" 
                                 type="button" 
@@ -284,6 +284,110 @@ function renderPlaylists(playlists) {
     
     return html;
 }
+
+// Playlist playback functionality
+let currentPlaylistQueue = [];
+let currentPlaylistIndex = 0;
+let isPlayingPlaylist = false;
+
+function playAllInPlaylist(playlistName) {
+    // Find all audio items in this playlist
+    const accordionId = `audioAccordion-${playlistName.replace(/ /g, '-')}`;
+    const accordion = document.getElementById(accordionId);
+    
+    if (!accordion) {
+        console.error(`Playlist accordion not found: ${accordionId}`);
+        showNotification('Error: Playlist not found', 'error');
+        return;
+    }
+    
+    // Get all audio elements in this playlist
+    const audioItems = accordion.querySelectorAll('.accordion-item[data-audio-crc]');
+    
+    if (audioItems.length === 0) {
+        showNotification('No songs in this playlist', 'info');
+        return;
+    }
+    
+    // Build queue of audio CRCs
+    currentPlaylistQueue = Array.from(audioItems).map(item => item.dataset.audioCrc);
+    currentPlaylistIndex = 0;
+    isPlayingPlaylist = true;
+    
+    // Show notification
+    showNotification(`Playing all ${currentPlaylistQueue.length} songs in "${playlistName}"`, 'success');
+    
+    // Start playing first song
+    playNextInQueue();
+}
+
+function playNextInQueue() {
+    if (!isPlayingPlaylist || currentPlaylistIndex >= currentPlaylistQueue.length) {
+        // Playlist finished
+        isPlayingPlaylist = false;
+        showNotification('Playlist finished', 'info');
+        return;
+    }
+    
+    const crc = currentPlaylistQueue[currentPlaylistIndex];
+    const audioElement = document.getElementById(`audio-${crc}`);
+    
+    if (!audioElement) {
+        console.error(`Audio element not found: audio-${crc}`);
+        currentPlaylistIndex++;
+        playNextInQueue();
+        return;
+    }
+    
+    // Expand the accordion for this song
+    const collapseElement = document.getElementById(`collapse-${crc}`);
+    if (collapseElement && !collapseElement.classList.contains('show')) {
+        const bsCollapse = new bootstrap.Collapse(collapseElement, {
+            toggle: true
+        });
+    }
+    
+    // Scroll to the song
+    audioElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // Remove previous ended event listeners to avoid duplicates
+    const oldAudio = document.querySelector('audio[data-playlist-playing="true"]');
+    if (oldAudio) {
+        oldAudio.removeAttribute('data-playlist-playing');
+    }
+    
+    // Mark this audio as playing from playlist
+    audioElement.setAttribute('data-playlist-playing', 'true');
+    
+    // Play the audio
+    audioElement.currentTime = 0;
+    audioElement.play().catch(err => {
+        console.error('Error playing audio:', err);
+        currentPlaylistIndex++;
+        playNextInQueue();
+    });
+    
+    // Set up event listener for when song ends
+    audioElement.addEventListener('ended', function onEnded() {
+        // Remove this event listener
+        audioElement.removeEventListener('ended', onEnded);
+        audioElement.removeAttribute('data-playlist-playing');
+        
+        // Move to next song
+        if (isPlayingPlaylist) {
+            currentPlaylistIndex++;
+            setTimeout(() => playNextInQueue(), 500); // Small delay between songs
+        }
+    }, { once: true });
+}
+
+// Stop playlist playback if user manually interacts with audio controls
+document.addEventListener('play', function(e) {
+    if (e.target.tagName === 'AUDIO' && !e.target.hasAttribute('data-playlist-playing')) {
+        // User manually started playing a different song
+        isPlayingPlaylist = false;
+    }
+}, true);
 
 function showNotification(message, type = 'info') {
     // Create notification element
