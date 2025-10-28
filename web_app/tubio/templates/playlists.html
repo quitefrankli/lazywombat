@@ -1,3 +1,37 @@
-{% for playlist_name, playlist_data in playlists %}
-{% include 'playlist.html' with context %}
-{% endfor %}
+{% if playlists %}
+    {% for playlist_name, playlist_data in playlists %}
+        {% include 'playlist.html' with context %}
+    {% endfor %}
+{% else %}
+    <!-- Empty state when no playlists exist -->
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8 col-lg-6">
+                <div class="card shadow-lg border-0" style="border-radius: 16px; background: linear-gradient(135deg, #e7f5ff 0%, #d0ebff 100%);">
+                    <div class="card-body text-center p-5">
+                        <div class="mb-4">
+                            <i class="bi bi-music-note-list" style="font-size: 5rem; color: #0dcaf0; opacity: 0.7;"></i>
+                        </div>
+                        <h3 class="mb-3" style="color: #0a9ec7; font-weight: bold;">No Music Yet!</h3>
+                        <p class="lead mb-4" style="color: #495057;">
+                            Your music library is empty. Get started by downloading your first song!
+                        </p>
+                        <div class="alert alert-info border-0 mb-4" style="background-color: rgba(255, 255, 255, 0.7);">
+                            <i class="bi bi-lightbulb me-2"></i>
+                            <strong>How to get started:</strong>
+                            <ol class="text-start mt-2 mb-0">
+                                <li>Switch to the <strong>Search</strong> tab</li>
+                                <li>Search for a YouTube video or song</li>
+                                <li>Click <strong>"Add To Favourites"</strong></li>
+                                <li>Return here to see your music!</li>
+                            </ol>
+                        </div>
+                        <button class="btn btn-info btn-lg shadow" onclick="switchTab('search')" style="border-radius: 10px; padding: 0.75rem 2rem;">
+                            <i class="bi bi-search me-2"></i>Go to Search
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endif %}
