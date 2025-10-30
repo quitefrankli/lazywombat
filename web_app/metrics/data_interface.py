@@ -1,4 +1,5 @@
 import json
+import shutil
 
 from pathlib import Path
 from datetime import datetime
@@ -29,6 +30,9 @@ class DataInterface(BaseDataInterface):
     def save_data(self, data: Metrics, user: User) -> None:
         data_file = self._get_data_file(user)
         self.atomic_write(data_file, data=data.model_dump_json(indent=4), mode="w", encoding='utf-8')
+
+    def backup_data(self, backup_dir: Path) -> None:
+        shutil.copytree(self.metrics_data_directory, backup_dir / "metrics")
 
     def _get_data_file(self, user: User) -> Path:
         return self.metrics_data_directory / user.folder / "data.json"

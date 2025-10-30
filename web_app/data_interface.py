@@ -84,7 +84,7 @@ class DataInterface:
         self.data_syncer = DataSyncer.instance()
         self.backups_directory = ConfigManager().save_data_path.parent / "backups"
         self.users_file = ConfigManager().save_data_path / "users.json"
-        self.metadata_file = ConfigManager().save_data_path / "metadata.json"
+        self.metadata_filename = "metadata.json"
     
     def load_users(self) -> Dict[str, User]:
         self.data_syncer.download_file(self.users_file)
@@ -118,24 +118,27 @@ class DataInterface:
                 return User(username, password, folder)
         raise RuntimeError("Could not generate unique folder")
     
-    def generate_metadata_file(self) -> None:
+    def generate_metadata_file(self, backup_dir: Path) -> None:
         repo = Repo(".")
         commit_hash = repo.head.commit.hexsha
         data = {
             "commit_hash": commit_hash,
         }
-        self.atomic_write(self.metadata_file, 
+        self.atomic_write(backup_dir / self.metadata_filename, 
                           data=json.dumps(data, indent=4), 
                           mode='w', 
                           encoding='utf-8')
 
-    def backup_data(self) -> None:
+    def generate_backup_dir(self) -> Path:
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         new_backup = self.backups_directory / timestamp
-        self.generate_metadata_file()
-        shutil.copytree(ConfigManager().save_data_path, new_backup)
-        # TODO: zip the backup and upload to s3
-        # self.data_syncer.upload_file(new_backup)
+        new_backup.mkdir(parents=True, exist_ok=True)
+        return new_backup
+
+    def backup_data(self, backup_dir: Path) -> None:
+        self.generate_metadata_file(backup_dir)
+        shutil.copy2(self.users_file, backup_dir / "users.json")
+        # shutil.copytree(ConfigManager().save_data_path, new_backup)
 
     def atomic_write(self, file_path: Path, data: bytes|str|None=None, stream: IO|None=None, **kwargs) -> None:
         if stream is None and data is None:

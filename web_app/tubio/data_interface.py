@@ -1,9 +1,9 @@
-import binascii
 import json
+import shutil
 
-from werkzeug.datastructures import FileStorage
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from copy import deepcopy
 
 from web_app.data_interface import DataInterface as BaseDataInterface
 from web_app.users import User
@@ -118,11 +118,28 @@ class DataInterface(BaseDataInterface):
                           mode="w", 
                           encoding='utf-8')
 
-    def get_audio_path(self, crc: int) -> Path:
+    def get_audio_path(self, crc: int, metadata: Metadata|None = None) -> Path:
         """DEPRECATED want to stream eventually"""
 
-        metadata = self.get_metadata()
+        metadata = self.get_metadata() if metadata is None else metadata
         if crc not in metadata.audios:
             raise ValueError(f"Audio with crc {crc} does not exist.")
         
         return self.app_audio_dir / f"{crc}.m4a"
+    
+    def backup_data(self, backup_dir: Path) -> None:
+        audio_backup_dir = backup_dir / "audio"
+        audio_backup_dir.mkdir(parents=True, exist_ok=True)
+        metadata = deepcopy(self.get_metadata())
+        for audio in metadata.audios.values():
+            if audio.yt_video_id:
+                audio.is_cached = False
+            else:
+                # only copy files that cannot be easily redownloaded from yt
+                shutil.copy2(self.get_audio_path(audio.crc, metadata), 
+                             audio_backup_dir / f"{audio.crc}.m4a")
+
+        self.atomic_write(backup_dir / "metadata.json", 
+                          data=metadata.model_dump_json(indent=4), 
+                          mode="w", 
+                          encoding='utf-8')

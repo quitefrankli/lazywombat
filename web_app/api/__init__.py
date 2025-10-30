@@ -8,6 +8,9 @@ from flask import request, jsonify, Blueprint
 
 from web_app.data_interface import DataInterface
 from web_app.api.data_interface import DataInterface as APIDataInterface
+from web_app.todoist2.data_interface import DataInterface as Todoist2DataInterface
+from web_app.metrics.data_interface import DataInterface as MetricsDataInterface
+from web_app.tubio.data_interface import DataInterface as TubioDataInterface
 from web_app.helpers import get_ip, parse_request, authenticate_user
 from web_app.config import ConfigManager
 from web_app.errors import *
@@ -103,7 +106,15 @@ def api_backup():
         logging.exception("Error processing request")
         return jsonify({"error": str(e)}), 400
 
-    DataInterface().backup_data()
+    # TODO: zip the backup and upload to s3
+    # self.data_syncer.upload_file(new_backup)
+    backup_dir = DataInterface().generate_backup_dir()
+    DataInterface().backup_data(backup_dir)
+    Todoist2DataInterface().backup_data(backup_dir)
+    MetricsDataInterface().backup_data(backup_dir)
+    TubioDataInterface().backup_data(backup_dir)
+    APIDataInterface().backup_data(backup_dir)
+
     logging.info("Backup complete")
 
     return jsonify({"success": True, "message": "Backup complete"})

@@ -1,4 +1,5 @@
 import json
+import shutil
 
 from pathlib import Path
 from datetime import datetime
@@ -38,6 +39,9 @@ class DataInterface(BaseDataInterface):
                           data=data.model_dump_json(indent=4, exclude_none=True), 
                           mode="w", 
                           encoding='utf-8')
+        
+    def backup_data(self, backup_dir: Path) -> None:
+        shutil.copytree(self.todoist2_data_directory, backup_dir / "todoist2")
 
     def _get_data_file(self, user: User) -> Path:
         return self.todoist2_data_directory / user.folder / "data.json"
