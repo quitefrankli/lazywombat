@@ -62,6 +62,7 @@ def log_goal():
     today_date = datetime.now().date()
     today_date = today_date.strftime("%d/%m/%Y")
     goal.description += f"\n\n{'-'*10}\n{today_date}\n{from_req('log')}\n{'-'*10}"
+    goal.last_modified = datetime.now()
     DataInterface().save_data(tld, cur_user())
 
     return get_default_redirect()
@@ -103,6 +104,7 @@ def edit_goal():
     goal = tld.goals[goal_id]
     goal.name = name
     goal.description = description
+    goal.last_modified = datetime.now()
     DataInterface().save_data(tld, cur_user())
 
     return get_default_redirect()

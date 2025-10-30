@@ -24,9 +24,10 @@ class Goal(BaseModel):
     creation_date: datetime = datetime.now()
     completion_date: Optional[datetime] = None
     planned_completion_date: Optional[datetime] = None
+    last_modified: datetime = None
     parent: Optional[int] = None
     children: List[int] = []
     recurrence: Optional[Recurrence] = None
 
-class TopLevelData(BaseModel):
+class Goals(BaseModel):
     goals: Dict[int, Goal] = {}

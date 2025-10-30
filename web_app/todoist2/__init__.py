@@ -50,17 +50,17 @@ def get_summary_goals(user: User) -> List[Tuple[str, List[Goal]]]:
     
     goals = list(DataInterface().load_data(user).goals.values())
     goals = [goal for goal in goals if should_render(goal)]
-    goals.sort(key=lambda goal: goal.creation_date.timestamp(), reverse=True)
+    goals.sort(key=lambda goal: goal.last_modified.timestamp(), reverse=True)
 
     goal_blocks = []
     last_date_label: date | None = None
     for goal in goals:
-        goal_date = goal.creation_date.date()
+        goal_date = goal.last_modified.date()
         if last_date_label != goal_date:
             last_date_label = goal_date
             goal_blocks.append((last_date_label.strftime("%d/%m/%Y"), [goal]))
         else:
-            goal_blocks[-1] = (goal_blocks[-1][0], [goal] + goal_blocks[-1][1])
+            goal_blocks[-1] = (goal_blocks[-1][0], goal_blocks[-1][1] + [goal])
 
     return goal_blocks
 

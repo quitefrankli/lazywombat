@@ -16,5 +16,5 @@ class Metric(BaseModel):
     creation_date: datetime = datetime.now()
 
 
-class TopLevelData(BaseModel):
+class Metrics(BaseModel):
     metrics: Dict[int, Metric] = {}
