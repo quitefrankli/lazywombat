@@ -90,7 +90,7 @@ class AudioDownloader:
         return results
 
     @staticmethod
-    def download_youtube_audio(video_id: str, title: str, user: User) -> None:
+    def download_youtube_audio(video_id: str, title: str, user: User, crc: int|None = None) -> None:
         logging.info(f"Tubio downloading video_id:={video_id}")
         url = f"https://www.youtube.com/watch?v={video_id}"
         temp_file = DataInterface().find_avail_temp_file_path(ext=".%(ext)s")
@@ -120,9 +120,10 @@ class AudioDownloader:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
         temp_file = temp_file.with_suffix('.m4a')
-        with open(temp_file, 'rb') as f:
-            crc = binascii.crc32(f.read())
-        DataInterface().save_audio_metadata(AudioMetadata(crc=crc, title=title, yt_video_id=video_id))
+        if not crc:
+            with open(temp_file, 'rb') as f:
+                crc = binascii.crc32(f.read())
+        DataInterface().save_audio_metadata(AudioMetadata(crc=crc, title=title, yt_video_id=video_id, is_cached=True))
         user_metadata = DataInterface().get_user_metadata(user)
         user_metadata.add_to_playlist(crc)
         DataInterface().save_user_metadata(user, user_metadata)

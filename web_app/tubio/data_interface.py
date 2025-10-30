@@ -49,6 +49,7 @@ class AudioMetadata(BaseModel):
     crc: int
     title: str
     yt_video_id: str = ''  # optional, if the audio is from YouTube
+    is_cached: bool = False
 
 class Metadata(BaseModel):
     # username -> UserMetadata
@@ -62,15 +63,6 @@ class DataInterface(BaseDataInterface):
         self.app_dir = ConfigManager().save_data_path / "tubio"
         self.app_audio_dir = self.app_dir / "audio"
         self.app_metadata_file = self.app_dir / "metadata.json"
-
-    def save_audio(self, title: str, data: bytes, yt_video_id: str = "") -> None:
-        crc = binascii.crc32(data)
-        metadata = self.get_metadata()
-        if crc in metadata.audios:
-            raise ValueError(f"Audio with crc {crc} already exists.")
-        metadata.audios[crc] = AudioMetadata(crc=crc, title=title, yt_video_id=yt_video_id)
-        self.save_metadata(metadata)
-        self.atomic_write(self.app_audio_dir / f"{crc}.m4a", data=data, mode='wb')
 
     def delete_audio(self, crc: int) -> None:
         metadata = self.get_metadata()

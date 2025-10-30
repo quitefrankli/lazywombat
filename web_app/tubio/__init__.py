@@ -4,7 +4,7 @@ from typing import *
 from flask import Blueprint, render_template, request, send_file, redirect, url_for, flash, Response
 from flask_login import login_required
 
-from web_app.tubio.data_interface import DataInterface
+from web_app.tubio.data_interface import DataInterface, AudioMetadata
 from web_app.tubio.audio_downloader import AudioDownloader
 from web_app.config import ConfigManager
 from web_app.helpers import cur_user, parse_request
@@ -122,17 +122,45 @@ def youtube_download():
         logging.exception("Error downloading audio")
         return {'error': 'Error downloading audio'}, 500
 
+def redownload_audio(audio_metadata: AudioMetadata) -> None:
+    # TODO: redownload might take sometime so it could be jarring for end user
+    # make it more obvious what is going on in the background
+
+    file_path = DataInterface().get_audio_path(audio_metadata.crc)
+
+    if file_path.exists():
+        logging.warning(f"Audio file {file_path} exists but metadata indicates not cached. Updating metadata.")
+        audio_metadata.is_cached = True
+        DataInterface().save_audio_metadata(audio_metadata)
+        return
+    
+    if not audio_metadata.yt_video_id:
+        logging.error(f"Cannot redownload audio with crc {audio_metadata.crc} as it has no associated YouTube video ID.")
+        raise ValueError("No YouTube video ID associated with this audio.")
+
+    logging.info(f"Redownloading audio for YT video ID: {audio_metadata.yt_video_id}")
+    AudioDownloader.download_youtube_audio(audio_metadata.yt_video_id,
+                                           audio_metadata.title,
+                                           cur_user(),
+                                           crc=audio_metadata.crc)
+    
+    logging.info(f"Redownloaded audio for YT video ID: {audio_metadata.yt_video_id}")
+
 @limiter.limit("100 per second") # TODO: only 1 should be loaded at a time temporary fix
 @tubio_api.route('/audio/<int:crc>')
 @login_required
 def serve_audio(crc: int):
     try:
-        file_path = DataInterface().get_audio_path(crc)
+        metadata = DataInterface().get_audio_metadata(crc=crc)
     except ValueError:
-        flash(f'Error: no such audio file: {crc: int}', 'error')
-        logging.exception("Error serving audio file")
+        flash(f'Error: no such audio: {crc: int}', 'error')
+        logging.exception("Error serving audio")
         return redirect(url_for('.index'))
-    
+
+    if not metadata.is_cached:
+        redownload_audio(metadata)
+
+    file_path = DataInterface().get_audio_path(crc)
     file_size = file_path.stat().st_size
     range_header = request.headers.get("Range", None)
     logging.info(f"Serving audio file {file_path} with size {file_size} bytes, Range header: {range_header}")
