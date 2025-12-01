@@ -65,3 +65,11 @@ Simply push from main branch, force push also works too
 ## Helper Scripts
 
 The above can be automated, check out `python scripts/api_helper.py`
+
+## Renewing Cert
+
+```bash
+sudo systemctl nginx stop
+sudo $(which certbot) renew
+sudo systemctl nginx start
+```
