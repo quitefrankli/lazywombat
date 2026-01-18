@@ -188,6 +188,64 @@ def update() -> None:
         print(f"Failed to apply update: {response.status_code} - {response.text}")
 
 @cli.command()
+def upload_commit_patches() -> None:
+    """
+    Generates and uploads commit patches for all commits between the most recent pushed commit and HEAD (inclusive)
+    """
+    
+    repo = Repo(".")
+    if repo.is_dirty(untracked_files=True):
+        print("Repository has uncommitted changes. Please commit or stash them before generating patches.")
+        return
+
+    origin = repo.remotes.origin
+    origin.fetch()
+    local_commit = repo.head.commit
+    remote_commit = origin.refs.main.commit
+
+    ahead_commits = list(repo.iter_commits(f'{remote_commit.hexsha}..{local_commit.hexsha}'))
+    if len(ahead_commits) <= 0:
+        print("No commits ahead of remote. Nothing to generate.")
+        return
+
+    # Generate patches in memory
+    print(f"Generating {len(ahead_commits)} patches in memory...")
+    
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file_obj:
+        # Iterate through commits in reverse chronological order
+        for i, commit in enumerate(reversed(ahead_commits)):
+            patch_data = repo.git.format_patch('-1', commit.hexsha, stdout=True)
+            # Name patches with leading zeros (0001-msg, 0002-msg, etc.)
+            patch_filename = f"{i+1:04d}-{commit.hexsha[:7]}.patch"
+            zip_file_obj.writestr(patch_filename, patch_data)
+    
+    zip_buffer.seek(0)
+    zip_data = zip_buffer.read()
+    total_size = len(zip_data) / 1024
+    
+    print(f"Generated {len(ahead_commits)} patches ({total_size:.2f} KB)")
+    
+    # Confirm upload
+    if input(f"Upload {len(ahead_commits)} patches? (y/n): ").strip().lower() != 'y':
+        print("Upload cancelled.")
+        return
+    
+    # Compress and encode
+    compressed_patches = compress_and_encode(zip_data)
+    
+    # Send via API
+    response = send_request("api/push", {
+        "name": "commit_patches.zip",
+        "data": compressed_patches
+    })
+    
+    if response.status_code == 200:
+        print("Patches uploaded successfully.")
+    else:
+        print(f"Failed to upload patches: {response.status_code} - {response.text}")
+
+@cli.command()
 @click.argument("file", type=str)
 def delete_file(file: str) -> None:
     """
