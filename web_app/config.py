@@ -23,6 +23,7 @@ class ConfigManager:
         self.tudio_search_prefix = "" # helps narrow down search results
         self.tudio_max_results = 10
         self.tudio_max_video_length = timedelta(minutes=10)
+        self.todoist2_default_page_size = 8
 
     @property
     def project_name(self) -> str:
