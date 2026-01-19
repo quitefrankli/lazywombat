@@ -1,3 +1,4 @@
+import subprocess
 import requests
 import click
 import base64
@@ -190,7 +191,7 @@ def update() -> None:
 @cli.command()
 def upload_commit_patches() -> None:
     """
-    Generates and uploads commit patches for all commits between the most recent pushed commit and HEAD (inclusive)
+    Generates and uploads commit patches for all commits between the tracking branch and current branch (assuming current is ahead)
     """
     
     repo = Repo(".")
@@ -200,12 +201,20 @@ def upload_commit_patches() -> None:
 
     origin = repo.remotes.origin
     origin.fetch()
+    
+    current_branch = repo.active_branch
+    tracking_branch = current_branch.tracking_branch()
+    
+    if tracking_branch is None:
+        print(f"Current branch '{current_branch.name}' has no tracking branch set.")
+        return
+
     local_commit = repo.head.commit
-    remote_commit = origin.refs.main.commit
+    remote_commit = tracking_branch.commit
 
     ahead_commits = list(repo.iter_commits(f'{remote_commit.hexsha}..{local_commit.hexsha}'))
     if len(ahead_commits) <= 0:
-        print("No commits ahead of remote. Nothing to generate.")
+        print("No commits ahead of tracking branch. Nothing to generate.")
         return
 
     # Generate patches in memory
@@ -236,7 +245,7 @@ def upload_commit_patches() -> None:
     
     # Send via API
     response = send_request("api/push", {
-        "name": "commit_patches.zip",
+        "name": "_commit_patches.zip",
         "data": compressed_patches
     })
     
@@ -244,6 +253,78 @@ def upload_commit_patches() -> None:
         print("Patches uploaded successfully.")
     else:
         print(f"Failed to upload patches: {response.status_code} - {response.text}")
+
+@cli.command()
+def apply_remote_patches() -> None:
+    """
+    Downloads patch file from the server and applies it to the current repo
+    """
+    
+    repo = Repo(".")
+    if repo.is_dirty(untracked_files=True):
+        print("Repository has uncommitted changes. Please commit or stash them before applying patches.")
+        return
+
+    # Download the patch file from server
+    response = send_request("api/pull", { "name": "_commit_patches.zip" })
+
+    if response.status_code != 200:
+        print(f"Failed to download patches: {response.status_code} - {response.text}")
+        return
+
+    compressed_data = response.json().get("data")
+    if not compressed_data:
+        print("No patch data received.")
+        return
+
+    # Decompress and decode
+    decoded_data = base64.b64decode(compressed_data)
+    decompressed_data = gzip.decompress(decoded_data)
+
+    # Extract patches from zip
+    zip_buffer = io.BytesIO(decompressed_data)
+    patch_files = []
+    try:
+        with zipfile.ZipFile(zip_buffer, 'r') as zip_file_obj:
+            patch_files = sorted(zip_file_obj.namelist())
+            print(f"Found {len(patch_files)} patches to apply.")
+            
+            if len(patch_files) == 0:
+                print("No patches found in archive.")
+                return
+            
+            # Confirm before applying
+            if input(f"Apply {len(patch_files)} patches? (y/n): ").strip().lower() != 'y':
+                print("Apply cancelled.")
+                return
+            
+            # Apply each patch
+            for patch_filename in patch_files:
+                patch_data = zip_file_obj.read(patch_filename).decode('utf-8')
+                try:
+                    run_result = subprocess.run(['git', 'am'], 
+                                   input=patch_data, 
+                                   check=True, 
+                                   capture_output=True,
+                                   text=True)
+                    print(run_result.stderr, run_result.stdout)
+                    print(f"✓ Applied {patch_filename}")
+                except Exception as e:
+                    print(f"✗ Failed to apply {patch_filename}: {e}")
+                    # Optionally abort the am process on first failure
+                    try:
+                        repo.git.am(abort=True)
+                    except:
+                        pass
+                    return
+            
+            print(f"Successfully applied all {len(patch_files)} patches.")
+    except zipfile.BadZipFile:
+        print("Failed to extract patch archive: Invalid zip file.")
+        return
+    except Exception as e:
+        print(f"Error processing patches: {e}")
+        return
 
 @cli.command()
 @click.argument("file", type=str)
