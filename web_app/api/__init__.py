@@ -47,9 +47,11 @@ def handle_github_webhook():
     try:
         username, password = decoded_credentials.split(":", 1)
     except ValueError:
+        logging.error("Error parsing credentials from Authorization header")
         return jsonify({"error": "Invalid credentials format"}), 400
     
     if not authenticate_user(username, password):
+        logging.error("Invalid credentials for GitHub webhook, update rejected")
         return jsonify({"error": "Invalid credentials"}), 401
     
     logging.info(f"Applying GitHub push webhook update")
