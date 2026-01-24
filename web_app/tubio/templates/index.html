@@ -3,6 +3,52 @@
 {% set active = 'Home' %}
 
 {% block actions_modal %}
+<!-- Upload Audio Modal -->
+<div class="modal fade" id="uploadAudioModal" tabindex="-1" aria-labelledby="uploadAudioModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content" style="border-radius: 12px; border: none;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%); color: white; border-radius: 12px 12px 0 0;">
+                <h1 class="modal-title fs-5 d-flex align-items-center" id="uploadAudioModalLabel">
+                    <i class="bi bi-cloud-upload me-2"></i>Upload Audio File
+                </h1>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="upload-audio-form" method="post" action="{{ url_for('.upload_audio') }}" enctype="multipart/form-data">
+                <div class="modal-body" style="padding: 2rem;">
+                    <div class="form-floating mb-3">
+                        <input type="file" class="form-control" name="audio_file" id="audio_file" 
+                               accept=".mp3,.mp4,.m4a,audio/mpeg,audio/mp4,audio/x-m4a" 
+                               required style="border-radius: 8px;">
+                        <label for="audio_file">
+                            <i class="bi bi-file-music me-2"></i>Audio File (mp3, mp4, m4a)
+                        </label>
+                    </div>
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" name="audio_title" id="audio_title" 
+                               placeholder="Enter audio title (optional)" style="border-radius: 8px;">
+                        <label for="audio_title">
+                            <i class="bi bi-pencil me-2"></i>Audio Title (Optional)
+                        </label>
+                    </div>
+                    <div class="alert alert-info" role="alert">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Supported formats:</strong> MP3, MP4, M4A<br>
+                        <small>If no title is provided, the filename will be used.</small>
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding: 1.5rem; background: #f8f9fa; border-radius: 0 0 12px 12px;">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i>Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-cloud-upload me-1"></i>Upload
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- New Playlist Modal -->
 <div class="modal fade" id="newPlaylistModal" tabindex="-1" aria-labelledby="newPlaylistModalLabel" aria-hidden="true">
     <div class="modal-dialog">

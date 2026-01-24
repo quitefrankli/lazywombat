@@ -1,4 +1,6 @@
+import binascii
 import json
+import logging
 import shutil
 
 from pathlib import Path
@@ -102,6 +104,22 @@ class DataInterface(BaseDataInterface):
                     return audio
             raise ValueError(f"Audio with yt_video_id {yt_video_id} does not exist.")
         
+    def save_audio(self, title: str, audio_data: bytes) -> int:
+        crc = binascii.crc32(audio_data)
+
+        if crc in self.get_metadata().audios:
+            logging.warning(f"Audio with crc {crc} already exists, skipping save.")
+            return crc  # already exists
+
+        audio_path = self.app_audio_dir / f"{crc}.m4a"
+        audio_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(audio_path, 'wb') as f:
+            f.write(audio_data)
+        audio_metadata = AudioMetadata(crc=crc, title=title, is_cached=True)
+        self.save_audio_metadata(audio_metadata)
+
+        return crc
+
     def save_audio_metadata(self, audio_metadata: AudioMetadata) -> None:
         metadata = self.get_metadata()
         metadata.audios[audio_metadata.crc] = audio_metadata

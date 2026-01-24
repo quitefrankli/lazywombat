@@ -1,6 +1,7 @@
 import logging
 
 from typing import *
+from pathlib import Path
 from flask import Blueprint, render_template, request, send_file, redirect, url_for, flash, Response
 from flask_login import login_required
 
@@ -121,6 +122,51 @@ def youtube_download():
     except Exception:
         logging.exception("Error downloading audio")
         return {'error': 'Error downloading audio'}, 500
+
+@tubio_api.route('/upload', methods=['POST'])
+@login_required
+@limiter.limit("20 per minute")
+def upload_audio():
+    """Handle manual audio file uploads (mp3, mp4, m4a)"""
+    try:
+        # Check if file is in the request
+        if 'audio_file' not in request.files:
+            flash('No file provided.', 'error')
+            return redirect(url_for('.index'))
+        
+        file = request.files['audio_file']
+        
+        if file.filename == '':
+            flash('No file selected.', 'error')
+            return redirect(url_for('.index'))
+        
+        # Get the custom title or use filename
+        title = request.form.get('audio_title', '').strip()
+        if not title:
+            # Use filename without extension as title
+            title = Path(file.filename).stem
+        
+        # Validate file extension
+        allowed_extensions = {'.mp3', '.mp4', '.m4a'}
+        file_ext = Path(file.filename).suffix.lower()
+        
+        if file_ext not in allowed_extensions:
+            flash(f"Unsupported file format: {file_ext}. Allowed: {', '.join(allowed_extensions)}", "error")
+            return redirect(url_for('.index'))
+        
+        crc = DataInterface().save_audio(title, file.read())
+        audio_metadata = DataInterface().get_audio_metadata(crc=crc)
+        user_metadata = DataInterface().get_user_metadata(cur_user())
+        user_metadata.add_to_playlist(audio_metadata.crc)
+        DataInterface().save_user_metadata(cur_user(), user_metadata)
+        
+        flash(f'Successfully uploaded: {title}', 'success')
+        
+    except Exception as e:
+        logging.exception("Error uploading audio", exc_info=e)
+        flash('Error uploading audio. Please try again.', 'error')
+    
+    return redirect(url_for('.index'))
 
 def redownload_audio(audio_metadata: AudioMetadata) -> None:
     # TODO: redownload might take sometime so it could be jarring for end user
