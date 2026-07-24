@@ -261,8 +261,9 @@ def configure_logging(debug: bool) -> None:
                                                    backupCount=config.dev.log_rotation_backup_count)
     logging.basicConfig(level=logging.DEBUG if debug else logging.INFO,
                         handlers=[] if debug else [rotating_log_handler],
-                        format='%(asctime)s %(levelname)s %(message)s')
+                        format=config.log_format)
     logging.getLogger("markdown_it").setLevel(logging.INFO)
+    logging.getLogger("apscheduler.scheduler").setLevel(logging.WARNING)
 
 @click.command()
 @click.option('--debug', is_flag=True, default=False)
@@ -288,7 +289,7 @@ def prod_entry():
     ConfigManager().debug_mode = False
     app.config["DEPLOY_COMMIT"] = Repo(".").head.commit.hexsha
 
-    logging.info("Starting server")
+    logging.info("Starting gunicorn worker")
     if not ConfigManager().deployment_canary:
         start_scheduler()
     return app

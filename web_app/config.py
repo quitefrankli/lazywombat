@@ -381,6 +381,10 @@ class ConfigManager:
         self.deployment_health_interval_s = 1
         self.deployment_lock_path = Path.home() / ".nabicat" / "update.lock"
         self.deployment_canary = getenv("NABICAT_DEPLOYMENT_CANARY") == "1"
+        self.log_format = (
+            "%(asctime)s %(levelname)s worker=%(process)d "
+            "thread=%(thread)d %(message)s"
+        )
         # TTL for the per-job exactly-once lock guarding scheduled cron jobs so
         # they run once across gunicorn workers. Must exceed the longest job
         # runtime and matches the jobs' misfire_grace_time.

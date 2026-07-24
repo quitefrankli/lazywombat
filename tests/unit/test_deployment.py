@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import patch
 
 from web_app.config import ConfigManager
@@ -46,3 +47,39 @@ def test_canary_worker_does_not_start_scheduler():
         config.deployment_canary = previous
 
     start_scheduler.assert_not_called()
+
+
+def test_production_logging_identifies_worker_and_thread():
+    import web_app.__main__ as web_main
+
+    with (
+        patch.object(web_main, "RotatingFileHandler"),
+        patch.object(web_main.logging, "basicConfig") as basic_config,
+    ):
+        web_main.configure_logging(debug=False)
+
+    log_format = basic_config.call_args.kwargs["format"]
+    assert "worker=%(process)d" in log_format
+    assert "thread=%(thread)d" in log_format
+    assert logging.getLogger("apscheduler.scheduler").level == logging.WARNING
+
+
+def test_prod_entry_logs_gunicorn_worker_start(caplog):
+    import web_app.__main__ as web_main
+
+    config = ConfigManager()
+    previous = config.deployment_canary
+    config.deployment_canary = True
+    try:
+        with (
+            patch.object(web_main, "configure_logging"),
+            patch.object(web_main, "Repo") as repo,
+            caplog.at_level(logging.INFO),
+        ):
+            repo.return_value.head.commit.hexsha = "candidate-sha"
+            web_main.prod_entry()
+    finally:
+        config.deployment_canary = previous
+
+    assert "Starting gunicorn worker" in caplog.text
+    assert "Starting server" not in caplog.text

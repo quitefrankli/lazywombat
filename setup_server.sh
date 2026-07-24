@@ -76,7 +76,7 @@ function run_server_side()
 	}
 
 	sudo apt update
-	sudo apt install -y nginx gunicorn ffmpeg nodejs npm
+	sudo apt install -y nginx gunicorn ffmpeg nodejs npm redis-server
 	sudo npm install -g @rynfar/meridian @anthropic-ai/claude-code
 	setup_conda
 	source "$HOME/miniforge3/bin/activate"
