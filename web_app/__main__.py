@@ -286,9 +286,11 @@ def prod_entry():
     configure_logging(debug=False)
     app.secret_key = ConfigManager().flask_secret_key
     ConfigManager().debug_mode = False
+    app.config["DEPLOY_COMMIT"] = Repo(".").head.commit.hexsha
 
     logging.info("Starting server")
-    start_scheduler()
+    if not ConfigManager().deployment_canary:
+        start_scheduler()
     return app
 
 

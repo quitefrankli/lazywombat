@@ -1,0 +1,48 @@
+from unittest.mock import patch
+
+from web_app.config import ConfigManager
+
+
+def test_health_reports_commit_loaded_by_worker(client, app):
+    import web_app.__main__  # noqa: F401
+
+    app.config["DEPLOY_COMMIT"] = "candidate-sha"
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.get_json()["commit"] == "candidate-sha"
+    assert isinstance(response.get_json()["pid"], int)
+
+
+@patch("web_app.api.subprocess.Popen")
+@patch("web_app.api.uuid.uuid4", return_value="delivery-id")
+def test_update_server_starts_detached_systemd_deployment(_uuid, popen):
+    from web_app.api import update_server
+
+    update_server()
+
+    command = popen.call_args.args[0]
+    assert command[:3] == ["sudo", "systemd-run", "--quiet"]
+    assert "--unit=nabicat-update-delivery-id" in command
+    assert command[-2:] == ["bash", "update_server.sh"]
+    popen.assert_called_once()
+
+
+def test_canary_worker_does_not_start_scheduler():
+    import web_app.__main__ as web_main
+
+    config = ConfigManager()
+    previous = config.deployment_canary
+    config.deployment_canary = True
+    try:
+        with (
+            patch.object(web_main, "configure_logging"),
+            patch.object(web_main, "start_scheduler") as start_scheduler,
+            patch.object(web_main, "Repo") as repo,
+        ):
+            repo.return_value.head.commit.hexsha = "candidate-sha"
+            web_main.prod_entry()
+    finally:
+        config.deployment_canary = previous
+
+    start_scheduler.assert_not_called()

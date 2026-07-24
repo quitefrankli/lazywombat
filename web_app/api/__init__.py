@@ -2,9 +2,12 @@ import base64
 import gzip
 import subprocess
 import logging
+import os
+import uuid
 from functools import wraps
+from pathlib import Path
 
-from flask import request, jsonify, Blueprint
+from flask import request, jsonify, Blueprint, current_app
 
 from web_app.data_interface import DataInterface
 from web_app.helpers import get_ip, parse_request, authenticate_user, \
@@ -42,8 +45,26 @@ def _get_required_field(request_body: dict, field: str) -> str:
         raise APIError(f"Missing required field: {field}")
 
 def update_server():
-    logging.info(f"Updating server...")
-    subprocess.Popen("bash update_server.sh", shell=True, close_fds=True)
+    logging.info("Updating server...")
+    project_dir = Path(__file__).resolve().parents[2]
+    unit = f"nabicat-update-{uuid.uuid4()}"
+    subprocess.Popen([
+        "sudo", "systemd-run", "--quiet", "--collect",
+        f"--unit={unit}",
+        f"--uid={os.getuid()}",
+        f"--working-directory={project_dir}",
+        f"--setenv=HOME={Path.home()}",
+        "bash", "update_server.sh",
+    ], close_fds=True)
+
+
+@api_api.route("/health", methods=["GET"])
+def health():
+    return jsonify({
+        "status": "ok",
+        "commit": current_app.config.get("DEPLOY_COMMIT", "unknown"),
+        "pid": os.getpid(),
+    })
 
 def handle_github_webhook():
     # for the webhook, login creds are supplied in the authorization header

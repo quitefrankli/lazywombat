@@ -373,6 +373,14 @@ class ConfigManager:
         self.debug_mode = False
         self.site_url = getenv("SITE_URL") or "https://nabicat.site"
         self.redis_url = getenv("REDIS_URL") or "redis://127.0.0.1:6379/0"
+        self.gunicorn_workers = 4
+        self.gunicorn_request_timeout_s = 300
+        self.gunicorn_graceful_timeout_s = 300
+        self.deployment_canary_port = 5001
+        self.deployment_health_attempts = 30
+        self.deployment_health_interval_s = 1
+        self.deployment_lock_path = Path.home() / ".nabicat" / "update.lock"
+        self.deployment_canary = getenv("NABICAT_DEPLOYMENT_CANARY") == "1"
         # TTL for the per-job exactly-once lock guarding scheduled cron jobs so
         # they run once across gunicorn workers. Must exceed the longest job
         # runtime and matches the jobs' misfire_grace_time.
