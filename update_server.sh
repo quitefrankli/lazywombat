@@ -10,9 +10,20 @@ PROJECT_DIR=$(pwd)
 LOG_FILE="${PROJECT_DIR}/logs/web_app.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
+write_deploy_log() {
+    local level="$1"
+    local message="$2"
+    printf '%s %s deployment: %s\n' "$(date '+%Y-%m-%d %H:%M:%S,%3N')" "$level" "$message" | tee -a "$LOG_FILE"
+}
+
 deploy_log() {
     local message="$1"
-    printf '%s INFO deployment: %s\n' "$(date '+%Y-%m-%d %H:%M:%S,%3N')" "$message" | tee -a "$LOG_FILE"
+    write_deploy_log INFO "$message"
+}
+
+deploy_error() {
+    local message="$1"
+    write_deploy_log ERROR "$message"
 }
 
 LOCK_PATH=$(python -c 'from web_app.config import ConfigManager; print(ConfigManager().deployment_lock_path)')
@@ -34,7 +45,7 @@ do
             exit 0
             ;;
         \?)
-            deploy_log "invalid option: -${OPTARG}"
+            deploy_error "invalid option: -${OPTARG}"
             exit 1
             ;;
     esac
@@ -117,7 +128,7 @@ rollback() {
     trap - ERR
     set +e
     if [[ "$ROLLBACK_ARMED" -eq 1 ]]; then
-        deploy_log "candidate ${CANDIDATE_COMMIT} failed (exit ${exit_code}); rolling back to ${PREVIOUS_COMMIT}"
+        deploy_error "candidate ${CANDIDATE_COMMIT} failed (exit ${exit_code}); rolling back to ${PREVIOUS_COMMIT}"
         if [[ -n "$CANARY_PID" ]]; then
             kill "$CANARY_PID" 2>/dev/null
             wait "$CANARY_PID" 2>/dev/null
@@ -135,10 +146,10 @@ rollback() {
         if wait_for_commit "http://127.0.0.1:5000/api/health" "$PREVIOUS_COMMIT"; then
             deploy_log "rollback recovered ${PREVIOUS_COMMIT}"
         else
-            deploy_log "rollback to ${PREVIOUS_COMMIT} did not pass its health check"
+            deploy_error "rollback to ${PREVIOUS_COMMIT} did not pass its health check"
         fi
     else
-        deploy_log "deployment failed before the checkout changed (exit ${exit_code})"
+        deploy_error "deployment failed before the checkout changed (exit ${exit_code})"
     fi
     cleanup
     exit "$exit_code"
@@ -171,7 +182,7 @@ NABICAT_DEPLOYMENT_CANARY=1 "$GUNICORN_BIN" \
 CANARY_PID=$!
 
 if ! wait_for_commit "http://127.0.0.1:${CANARY_PORT}/api/health" "$CANDIDATE_COMMIT"; then
-    deploy_log "canary health check failed for ${CANDIDATE_COMMIT}"
+    deploy_error "canary health check failed for ${CANDIDATE_COMMIT}"
     false
 fi
 deploy_log "canary passed for ${CANDIDATE_COMMIT}"
@@ -252,7 +263,7 @@ else
 fi
 
 if ! wait_for_commit "http://127.0.0.1:5000/api/health" "$CANDIDATE_COMMIT"; then
-    deploy_log "production health check failed for ${CANDIDATE_COMMIT}"
+    deploy_error "production health check failed for ${CANDIDATE_COMMIT}"
     false
 fi
 
