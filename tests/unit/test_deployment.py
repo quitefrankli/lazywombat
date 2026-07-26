@@ -1,7 +1,14 @@
 import logging
+from pathlib import Path
 from unittest.mock import patch
 
 from web_app.config import ConfigManager
+
+
+def test_nginx_forwards_original_https_scheme():
+    nginx_config = Path("nabicat.conf").read_text()
+
+    assert nginx_config.count("proxy_set_header X-Forwarded-Proto $scheme;") == 2
 
 
 def test_health_reports_commit_loaded_by_worker(client, app):
