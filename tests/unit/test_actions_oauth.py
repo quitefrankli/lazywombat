@@ -1,5 +1,6 @@
 import base64
 from datetime import datetime
+from urllib.parse import quote_plus
 from unittest.mock import patch
 
 import flask_login
@@ -135,6 +136,28 @@ def test_code_is_one_time_and_redirect_bound(client, oauth_config, oauth_user):
     reused = _exchange(client, code)
     assert reused.status_code == 400
     assert reused.get_json()["error"] == "invalid_grant"
+
+
+def test_token_accepts_form_encoded_basic_client_secret(
+        client, oauth_config, oauth_user, monkeypatch):
+    secret = "secret:/+ with%symbols"
+    monkeypatch.setenv("OAUTH_CLIENT_SECRET", secret)
+    response = _authorize(client, oauth_user)
+    code = response.location.split("code=", 1)[1].split("&", 1)[0]
+    credentials = f"{quote_plus('chatgpt')}:{quote_plus(secret)}".encode()
+    auth = base64.b64encode(credentials).decode()
+
+    token_response = client.post(
+        "/oauth/token",
+        headers={"Authorization": f"Basic {auth}"},
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": "https://chat.openai.com/aip/callback",
+        },
+    )
+
+    assert token_response.status_code == 200
 
 
 def test_refresh_rotates_and_revoke_invalidates(client, oauth_config, oauth_user):

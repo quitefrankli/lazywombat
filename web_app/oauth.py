@@ -5,7 +5,7 @@ import hmac
 import json
 import secrets
 from functools import wraps
-from urllib.parse import urlencode
+from urllib.parse import unquote_plus, urlencode
 
 import flask
 import flask_login
@@ -83,6 +83,8 @@ def _client_authenticated():
         try:
             decoded = base64.b64decode(header[6:], validate=True).decode()
             client_id, client_secret = decoded.split(":", 1)
+            client_id = unquote_plus(client_id)
+            client_secret = unquote_plus(client_secret)
         except (binascii.Error, ValueError, UnicodeDecodeError):
             return False
     if not hmac.compare_digest(client_id, actions.client_id):
