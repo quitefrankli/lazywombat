@@ -6,6 +6,15 @@
 {% block actions_menu %}
   {% if current_user.is_authenticated %}
   <li>
+    <form action="/account/oauth/revoke" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="dropdown-item d-flex align-items-center gap-2" type="submit">
+        <i class="bi bi-shield-x"></i>
+        <span>Revoke ChatGPT Access</span>
+      </button>
+    </form>
+  </li>
+  <li>
     <a class="dropdown-item d-flex align-items-center gap-2 text-danger" href="/account/delete">
       <i class="bi bi-person-x"></i>
       <span>Delete Account</span>

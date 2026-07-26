@@ -251,7 +251,7 @@ class TestGoalReparenting:
     """Tests for changing goal hierarchy"""
 
     def test_reparent_goal_between_parent_and_root(self):
-        from web_app.todoist.api.goals_api import reparent_goal_in_tree
+        from web_app.todoist.goals import reparent_goal_in_tree
 
         parent = Goal(id=1, name='Parent', state=GoalState.ACTIVE,
                       last_modified=datetime(2026, 1, 1), children=[2])
@@ -273,7 +273,7 @@ class TestGoalReparenting:
         assert new_parent.children == []
 
     def test_reparent_goal_rejects_self_and_descendant_parent(self):
-        from web_app.todoist.api.goals_api import reparent_goal_in_tree
+        from web_app.todoist.goals import reparent_goal_in_tree
 
         parent = Goal(id=1, name='Parent', state=GoalState.ACTIVE,
                       last_modified=datetime(2026, 1, 1), children=[2])

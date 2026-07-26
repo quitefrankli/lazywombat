@@ -42,6 +42,14 @@ def logout():
     flask.flash('You have been logged out', category='info')
     return flask.redirect(flask.url_for('home'))
 
+@account_api.route('/oauth/revoke', methods=["POST"])
+@flask_login.login_required
+def revoke_oauth():
+    from web_app.oauth import revoke_user_tokens
+    revoke_user_tokens(flask_login.current_user.id)
+    flask.flash('ChatGPT access has been revoked', category='info')
+    return flask.redirect(flask.url_for('home'))
+
 @account_api.route('/delete', methods=["GET", "POST"])
 @flask_login.login_required
 @limiter.limit("2/second", key_func=lambda: flask_login.current_user.id)
@@ -72,6 +80,8 @@ def delete_account():
 
     for data_interface_class in get_all_data_interfaces():
         data_interface_class().delete_user_data(user)
+    from web_app.oauth import revoke_user_tokens
+    revoke_user_tokens(current_user_id)
 
     flask_login.logout_user()
     flask.flash('Your account has been deleted', category='info')
