@@ -59,6 +59,8 @@ def register_all_blueprints(app):
     from web_app.dev import dev_api
     from web_app.simulations import simulations_api
     from web_app.sentinel import sentinel_api
+    from web_app.oauth import oauth_api
+    from web_app.todoist.api import actions_api
 
     blueprints = [
         todoist_api,
@@ -73,6 +75,8 @@ def register_all_blueprints(app):
         dev_api,
         simulations_api,
         sentinel_api,
+        oauth_api,
+        actions_api,
     ]
 
     for blueprint in blueprints:

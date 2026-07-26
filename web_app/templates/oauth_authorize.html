@@ -1,0 +1,25 @@
+{% extends "root_base.html" %}
+{% block page_title %}Authorize ChatGPT{% endblock %}
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+      <div class="card p-4">
+        <h1>Authorize ChatGPT</h1>
+        <p>ChatGPT is requesting permission to read your Todoist goals.</p>
+        <p class="text-muted">It will not be able to create, edit, or delete goals.</p>
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% for key, value in oauth_request.items() %}
+          <input type="hidden" name="{{ key }}" value="{{ value }}">
+          {% endfor %}
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary" name="decision" value="approve">Authorize</button>
+            <button class="btn btn-outline-secondary" name="decision" value="deny">Deny</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

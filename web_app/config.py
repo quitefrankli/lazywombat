@@ -109,6 +109,37 @@ class TodoistConfig:
 
 
 @dataclass
+class GPTActionsConfig:
+    authorization_code_ttl_s: int = 600
+    access_token_ttl_s: int = 3600
+    refresh_token_ttl_s: int = 30 * 24 * 60 * 60
+    consent_ttl_s: int = 365 * 24 * 60 * 60
+    read_scope: str = "todoist.goals.read"
+    default_page_size: int = 50
+    max_page_size: int = 100
+
+    @property
+    def client_id(self) -> str:
+        return getenv("OAUTH_CLIENT_ID", "")
+
+    @property
+    def client_secret(self) -> str:
+        return getenv("OAUTH_CLIENT_SECRET", "")
+
+    @property
+    def client_secret_hash(self) -> str:
+        return getenv("OAUTH_CLIENT_SECRET_HASH", "")
+
+    @property
+    def redirect_uris(self) -> tuple[str, ...]:
+        return tuple(
+            uri.strip()
+            for uri in getenv("OAUTH_REDIRECT_URIS", "").split(",")
+            if uri.strip()
+        )
+
+
+@dataclass
 class DevConfig:
     terminal_shell: str = "/bin/bash"
     terminal_max_sessions: int = 4
@@ -424,10 +455,10 @@ class ConfigManager:
         # TTL for the ephemeral RSA keypair minted during the encrypted-request
         # handshake. Surfaced to clients as `expires_in` in /api/handshake.
         self.ephemeral_key_ttl_s = 300
-
         self.llm = LLMConfig()
         self.tubio = TubioConfig(lambda: self.save_data_path)
         self.todoist = TodoistConfig()
+        self.gpt_actions = GPTActionsConfig()
         self.dev = DevConfig()
         self.crosswords = CrosswordsConfig()
         self.sentinel = SentinelConfig()

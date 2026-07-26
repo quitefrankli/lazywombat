@@ -9,15 +9,15 @@ from web_app.helpers import limiter, from_req, cur_user
 from web_app.todoist.data_interface import DataInterface, GoalState, Goal, Goals
 
 
-goals_api = Blueprint('goals_api', __name__, url_prefix='/goal')
+goals = Blueprint('goals', __name__, url_prefix='/goal')
 
 
-@goals_api.before_request
+@goals.before_request
 @flask_login.login_required
 def require_login():
     pass
 
-def get_default_redirect():
+def _default_redirect():
     return flask.redirect(flask.url_for('todoist_api.summary_goals'))
 
 def reparent_goal_in_tree(tld: Goals, goal_id: int, parent_id: Optional[int]) -> bool:
@@ -65,13 +65,13 @@ def reparent_goal_in_tree(tld: Goals, goal_id: int, parent_id: Optional[int]) ->
 
     return changed
 
-@goals_api.route('/new', methods=["POST"])
+@goals.route('/new', methods=["POST"])
 @limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
 def new_goal():
     name = from_req('name')
     if not name:
         flask.flash('Goal name cannot be empty', category='error')
-        return get_default_redirect()
+        return _default_redirect()
 
     description = from_req('description')
     parent_id = request.form.get('parent_id')
@@ -89,9 +89,9 @@ def new_goal():
         if parent_id:
             tld.goals[int(parent_id)].children.append(goal_id)
 
-    return get_default_redirect()
+    return _default_redirect()
 
-@goals_api.route('/fail', methods=["GET"])
+@goals.route('/fail', methods=["GET"])
 @limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
 def fail_goal():
     req_data = request.args
@@ -100,9 +100,9 @@ def fail_goal():
     with DataInterface().edit_goals(cur_user()) as tld:
         tld.goals[goal_id].state = GoalState.FAILED
 
-    return get_default_redirect()
+    return _default_redirect()
 
-@goals_api.route('/log', methods=["POST"])
+@goals.route('/log', methods=["POST"])
 @limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
 def log_goal():
     goal_id = int(request.args['goal_id'])
@@ -114,9 +114,9 @@ def log_goal():
         goal.description += f"\n\n{'-'*10}\n{today_date}\n{from_req('log')}\n{'-'*10}"
         goal.last_modified = datetime.now()
 
-    return get_default_redirect()
+    return _default_redirect()
 
-@goals_api.route('/toggle_state', methods=['POST'])
+@goals.route('/toggle_state', methods=['POST'])
 @limiter.limit("2/second", key_func=lambda: flask_login.current_user.id)
 def toggle_goal_state():
     req_data = request.get_json()
@@ -134,7 +134,7 @@ def toggle_goal_state():
 
     return flask.jsonify(success=True)
 
-@goals_api.route('/reparent', methods=['POST'])
+@goals.route('/reparent', methods=['POST'])
 @limiter.limit("2/second", key_func=lambda: flask_login.current_user.id)
 def reparent_goal():
     req_data = request.get_json(silent=True) or {}
@@ -155,13 +155,13 @@ def reparent_goal():
 
     return flask.jsonify(success=True, changed=changed)
 
-@goals_api.route('/edit', methods=["POST"])
+@goals.route('/edit', methods=["POST"])
 @limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
 def edit_goal():
     name = from_req('name')
     if not name:
         flask.flash('Goal name cannot be empty', category='error')
-        return get_default_redirect()
+        return _default_redirect()
     description = from_req('description')
 
     goal_id = int(request.args['goal_id'])
@@ -172,9 +172,9 @@ def edit_goal():
         goal.description = description
         goal.last_modified = datetime.now()
 
-    return get_default_redirect()
+    return _default_redirect()
 
-@goals_api.route('/delete', methods=["GET"])
+@goals.route('/delete', methods=["GET"])
 @limiter.limit("1/second", key_func=lambda: flask_login.current_user.id)
 def delete_goal():
     req_data = request.args
@@ -199,4 +199,4 @@ def delete_goal():
 
         delete_descendants(goal_id)
 
-    return get_default_redirect()
+    return _default_redirect()

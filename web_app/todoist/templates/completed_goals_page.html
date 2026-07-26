@@ -19,7 +19,7 @@
                 </h1>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form action="{{ url_for('.goals_api.new_goal') }}" method="post">
+            <form action="{{ url_for('.goals.new_goal') }}" method="post">
                 <div class="modal-body p-4">
                     <div class="form-floating mb-3">
                         <input type="text" class="form-control" name="name" id="name" placeholder="Enter goal name" required>

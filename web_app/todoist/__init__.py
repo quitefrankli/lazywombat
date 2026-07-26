@@ -11,7 +11,7 @@ from web_app.helpers import limiter, cur_user, require_login_blueprint
 from web_app.users import User
 from web_app.todoist.data_interface import DataInterface, GoalState, Goal
 from web_app.todoist.visualiser import plot_velocity
-from web_app.todoist.api.goals_api import goals_api
+from web_app.todoist.goals import goals
 
 
 PAGE_SIZE = ConfigManager().todoist.default_page_size
@@ -22,7 +22,7 @@ todoist_api = Blueprint(
     template_folder='templates',
     static_folder='static',
     url_prefix='/todoist')
-todoist_api.register_blueprint(goals_api)
+todoist_api.register_blueprint(goals)
 
 @todoist_api.context_processor
 def inject_app_name():
