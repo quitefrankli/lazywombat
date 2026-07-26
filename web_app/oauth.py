@@ -3,6 +3,7 @@ import binascii
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 from functools import wraps
 from urllib.parse import unquote_plus, urlencode
@@ -18,6 +19,7 @@ from web_app.data_interface import DataInterface
 from web_app.redis_client import get_redis
 
 
+logger = logging.getLogger(__name__)
 oauth_api = Blueprint("oauth_api", __name__, url_prefix="/oauth")
 _CODE_PREFIX = "nabicat:oauth:code:"
 _ACCESS_PREFIX = "nabicat:oauth:access:"
@@ -72,13 +74,21 @@ def _valid_authorize_request(values):
 def _client_authenticated():
     config = ConfigManager()
     actions = config.gpt_actions
+    header = request.headers.get("Authorization", "")
+    method = "basic" if header.startswith("Basic ") else "post"
     if not actions.client_id or not (
         actions.client_secret or actions.client_secret_hash
     ):
+        logger.error(
+            "OAuth client authentication failed method=%s reason=server_not_configured "
+            "client_id_configured=%s secret_configured=%s",
+            method,
+            bool(actions.client_id),
+            bool(actions.client_secret or actions.client_secret_hash),
+        )
         return False
     client_id = request.form.get("client_id", "")
     client_secret = request.form.get("client_secret", "")
-    header = request.headers.get("Authorization", "")
     if header.startswith("Basic "):
         try:
             decoded = base64.b64decode(header[6:], validate=True).decode()
@@ -86,15 +96,50 @@ def _client_authenticated():
             client_id = unquote_plus(client_id)
             client_secret = unquote_plus(client_secret)
         except (binascii.Error, ValueError, UnicodeDecodeError):
+            logger.warning(
+                "OAuth client authentication failed method=basic "
+                "reason=malformed_authorization_header"
+            )
             return False
-    if not hmac.compare_digest(client_id, actions.client_id):
+    client_id_match = hmac.compare_digest(client_id, actions.client_id)
+    if not client_id_match:
+        logger.warning(
+            "OAuth client authentication failed method=%s "
+            "reason=client_id_mismatch client_id_match=False",
+            method,
+        )
         return False
+    credential_source = "hash" if actions.client_secret_hash else "plaintext"
     if actions.client_secret_hash:
         try:
-            return check_password_hash(actions.client_secret_hash, client_secret)
+            authenticated = check_password_hash(
+                actions.client_secret_hash, client_secret
+            )
         except ValueError:
+            logger.error(
+                "OAuth client authentication failed method=%s "
+                "reason=invalid_server_secret_hash client_id_match=True",
+                method,
+            )
             return False
-    return hmac.compare_digest(client_secret, actions.client_secret)
+    else:
+        authenticated = hmac.compare_digest(
+            client_secret, actions.client_secret
+        )
+    if not authenticated:
+        logger.warning(
+            "OAuth client authentication failed method=%s "
+            "reason=secret_mismatch client_id_match=True credential_source=%s",
+            method,
+            credential_source,
+        )
+        return False
+    logger.info(
+        "OAuth client authenticated method=%s credential_source=%s",
+        method,
+        credential_source,
+    )
+    return True
 
 
 def _store_token(prefix: str, token: str, metadata: dict, ttl: int):
@@ -176,6 +221,7 @@ def authorize():
     values = request.args if request.method == "GET" else request.form
     error = _valid_authorize_request(values)
     if error:
+        logger.warning("OAuth authorization rejected reason=%s", error)
         return _json_error("invalid_request", error, 400)
 
     if not flask_login.current_user.is_authenticated:
@@ -201,12 +247,14 @@ def authorize():
         )
 
     if values.get("decision") != "approve":
+        logger.info("OAuth consent denied user=%s", flask_login.current_user.id)
         return _redirect(redirect_uri, error="access_denied", state=state)
     get_redis().set(
         _CONSENT_PREFIX + flask_login.current_user.id,
         ConfigManager().gpt_actions.read_scope,
         ex=ConfigManager().gpt_actions.consent_ttl_s,
     )
+    logger.info("OAuth consent granted user=%s", flask_login.current_user.id)
     return _create_authorization_redirect(redirect_uri, state)
 
 
@@ -228,23 +276,31 @@ def _create_authorization_redirect(redirect_uri: str, state: str):
 
 @oauth_api.route("/token", methods=["POST"])
 def token():
+    grant_type = request.form.get("grant_type")
     if not _client_authenticated():
         response = _json_error("invalid_client", "Client authentication failed", 401)
         response.headers["WWW-Authenticate"] = "Basic"
         return response
 
-    grant_type = request.form.get("grant_type")
     if grant_type == "authorization_code":
         code = request.form.get("code", "")
         key = _CODE_PREFIX + _digest(code)
         raw = get_redis().get(key)
         if not raw:
+            logger.warning(
+                "OAuth token exchange rejected grant_type=authorization_code "
+                "reason=invalid_or_expired_code"
+            )
             return _json_error("invalid_grant", "Code is invalid or expired", 400)
         metadata = json.loads(raw)
         if (
             metadata["client_id"] != ConfigManager().gpt_actions.client_id
             or metadata["redirect_uri"] != request.form.get("redirect_uri")
         ):
+            logger.warning(
+                "OAuth token exchange rejected grant_type=authorization_code "
+                "reason=code_binding_mismatch"
+            )
             return _json_error("invalid_grant", "Code binding does not match", 400)
         metadata = _consume(key)
     elif grant_type == "refresh_token":
@@ -252,10 +308,24 @@ def token():
             _REFRESH_PREFIX + _digest(request.form.get("refresh_token", ""))
         )
         if not metadata or metadata["client_id"] != ConfigManager().gpt_actions.client_id:
+            logger.warning(
+                "OAuth token exchange rejected grant_type=refresh_token "
+                "reason=invalid_or_expired_refresh_token"
+            )
             return _json_error("invalid_grant", "Refresh token is invalid or expired", 400)
     else:
+        logger.warning(
+            "OAuth token exchange rejected grant_type=%s "
+            "reason=unsupported_grant_type",
+            grant_type or "missing",
+        )
         return _json_error("unsupported_grant_type", "Unsupported grant type", 400)
 
+    logger.info(
+        "OAuth tokens issued grant_type=%s user=%s",
+        grant_type,
+        metadata["username"],
+    )
     response = flask.jsonify(_issue_tokens(metadata["username"], metadata["scope"]))
     response.headers["Cache-Control"] = "no-store"
     return response

@@ -1,5 +1,6 @@
 import base64
 from datetime import datetime
+import logging
 from urllib.parse import quote_plus
 from unittest.mock import patch
 
@@ -158,6 +159,28 @@ def test_token_accepts_form_encoded_basic_client_secret(
     )
 
     assert token_response.status_code == 200
+
+
+def test_invalid_client_logs_safe_diagnostics(
+        client, oauth_config, caplog):
+    supplied_secret = "do-not-log-this-secret"
+    auth = base64.b64encode(
+        f"chatgpt:{supplied_secret}".encode()
+    ).decode()
+
+    with caplog.at_level(logging.WARNING, logger="web_app.oauth"):
+        response = client.post(
+            "/oauth/token",
+            headers={"Authorization": f"Basic {auth}"},
+            data={"grant_type": "authorization_code", "code": "do-not-log-code"},
+        )
+
+    assert response.status_code == 401
+    assert "method=basic" in caplog.text
+    assert "reason=secret_mismatch" in caplog.text
+    assert "client_id_match=True" in caplog.text
+    assert supplied_secret not in caplog.text
+    assert "do-not-log-code" not in caplog.text
 
 
 def test_refresh_rotates_and_revoke_invalidates(client, oauth_config, oauth_user):
