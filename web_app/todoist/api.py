@@ -100,6 +100,19 @@ def openapi_schema():
     config = ConfigManager()
     actions = config.gpt_actions
     read_scope = actions.read_scope
+    child_goal_schema = {
+        "type": "object",
+        "description": "A nested goal. Its children use the same goal shape.",
+        "properties": {
+            "id": {"type": "integer"},
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "state": {"type": "string", "enum": list(_STATE_NAMES)},
+            "parent_id": {"type": ["integer", "null"]},
+            "children": {"type": "array", "items": {"type": "object"}},
+        },
+        "required": ["id", "name", "description", "state", "children"],
+    }
     goal_schema = {
         "type": "object",
         "properties": {
@@ -112,7 +125,7 @@ def openapi_schema():
             "planned_completion_date": {"type": ["string", "null"], "format": "date-time"},
             "last_modified": {"type": "string", "format": "date-time"},
             "parent_id": {"type": ["integer", "null"]},
-            "children": {"type": "array", "items": {"$ref": "#/components/schemas/Goal"}},
+            "children": {"type": "array", "items": child_goal_schema},
         },
         "required": ["id", "name", "description", "state", "children"],
     }

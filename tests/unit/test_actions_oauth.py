@@ -205,6 +205,8 @@ def test_actions_errors_and_openapi(client, oauth_config):
     document = schema.get_json()
     assert document["openapi"].startswith("3.")
     assert document["paths"]["/actions/todoist/goals"]["get"]["operationId"] == "listGoals"
+    goal_children = document["components"]["schemas"]["Goal"]["properties"]["children"]
+    assert "$ref" not in goal_children["items"]
 
 
 def test_actions_validate_filters_pagination_scope_and_missing_goal(
