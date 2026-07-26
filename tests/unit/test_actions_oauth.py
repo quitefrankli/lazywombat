@@ -1,4 +1,5 @@
 import base64
+from contextlib import contextmanager
 from datetime import datetime
 import logging
 from urllib.parse import quote_plus
@@ -250,9 +251,25 @@ def test_actions_errors_and_openapi(client, oauth_config):
     assert schema.status_code == 200
     document = schema.get_json()
     assert document["openapi"].startswith("3.")
+    assert document["info"]["x-privacyPolicyUrl"] == "https://nabicat.site/privacy"
     assert document["paths"]["/actions/todoist/goals"]["get"]["operationId"] == "listGoals"
+    assert document["paths"]["/actions/todoist/goals"]["post"]["operationId"] == "createGoal"
+    assert document["paths"]["/actions/todoist/goals/{goal_id}"]["patch"]["operationId"] == "updateGoal"
+    assert document["paths"]["/actions/todoist/goals/{goal_id}/complete"]["post"][
+        "operationId"
+    ] == "completeGoal"
+    assert document["paths"]["/actions/todoist/goals/{goal_id}/log"]["post"][
+        "operationId"
+    ] == "logGoalProgress"
     goal_children = document["components"]["schemas"]["Goal"]["properties"]["children"]
     assert "$ref" not in goal_children["items"]
+
+
+def test_privacy_policy_is_public(client, oauth_config):
+    response = client.get("/privacy")
+
+    assert response.status_code == 200
+    assert b"Privacy Policy" in response.data
 
 
 def test_actions_validate_filters_pagination_scope_and_missing_goal(
@@ -291,6 +308,114 @@ def test_actions_validate_filters_pagination_scope_and_missing_goal(
         headers={"Authorization": "Bearer wrong-scope"},
     )
     assert forbidden.status_code == 403
+
+
+def test_actions_create_update_complete_and_log_are_idempotent(
+        client, oauth_config, oauth_user):
+    response = _authorize(client, oauth_user)
+    code = response.location.split("code=", 1)[1].split("&", 1)[0]
+    access_token = _exchange(client, code).get_json()["access_token"]
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Idempotency-Key": "request-1",
+    }
+    stored = Goals(goals={})
+
+    @contextmanager
+    def edit_goals(_user):
+        yield stored
+
+    with patch("web_app.todoist.api.DataInterface") as data_interface:
+        data_interface.return_value.edit_goals.side_effect = edit_goals
+        created = client.post(
+            "/actions/todoist/goals",
+            headers=headers,
+            json={
+                "name": "Ship API",
+                "description": "Initial scope",
+                "planned_completion_date": "2026-08-01T09:30:00",
+            },
+        )
+        replayed = client.post(
+            "/actions/todoist/goals",
+            headers=headers,
+            json={
+                "name": "Ship API",
+                "description": "Initial scope",
+                "planned_completion_date": "2026-08-01T09:30:00",
+            },
+        )
+        headers["Idempotency-Key"] = "request-2"
+        updated = client.patch(
+            "/actions/todoist/goals/0",
+            headers=headers,
+            json={"name": "Ship actions API", "state": "backlogged"},
+        )
+        headers["Idempotency-Key"] = "request-3"
+        completed = client.post(
+            "/actions/todoist/goals/0/complete", headers=headers
+        )
+        headers["Idempotency-Key"] = "request-4"
+        logged = client.post(
+            "/actions/todoist/goals/0/log",
+            headers=headers,
+            json={"log": "Implemented the write endpoints"},
+        )
+
+    assert created.status_code == 201
+    assert created.get_json()["goal"]["name"] == "Ship API"
+    assert replayed.status_code == 201
+    assert len(stored.goals) == 1
+    assert updated.get_json()["goal"]["state"] == "backlogged"
+    assert completed.get_json()["goal"]["state"] == "completed"
+    assert logged.get_json()["goal"]["description"].endswith(
+        "Implemented the write endpoints\n----------"
+    )
+
+
+def test_action_writes_return_structured_validation_and_idempotency_errors(
+        client, oauth_config, oauth_user):
+    response = _authorize(client, oauth_user)
+    code = response.location.split("code=", 1)[1].split("&", 1)[0]
+    access_token = _exchange(client, code).get_json()["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    missing_key = client.post(
+        "/actions/todoist/goals", headers=headers, json={"name": "Goal"}
+    )
+    headers["Idempotency-Key"] = "same-key"
+    invalid = client.post(
+        "/actions/todoist/goals", headers=headers, json={"name": ""}
+    )
+
+    stored = Goals(goals={})
+
+    @contextmanager
+    def edit_goals(_user):
+        yield stored
+
+    with patch("web_app.todoist.api.DataInterface") as data_interface:
+        data_interface.return_value.edit_goals.side_effect = edit_goals
+        first = client.post(
+            "/actions/todoist/goals", headers=headers, json={"name": "One"}
+        )
+        conflict = client.post(
+            "/actions/todoist/goals", headers=headers, json={"name": "Two"}
+        )
+        headers["Idempotency-Key"] = "missing-goal"
+        missing = client.patch(
+            "/actions/todoist/goals/999", headers=headers, json={"name": "Nope"}
+        )
+
+    assert missing_key.status_code == 400
+    assert missing_key.get_json()["error"] == "missing_idempotency_key"
+    assert invalid.status_code == 400
+    assert invalid.get_json()["error"] == "invalid_request"
+    assert first.status_code == 201
+    assert conflict.status_code == 409
+    assert conflict.get_json()["error"] == "idempotency_conflict"
+    assert missing.status_code == 404
+    assert missing.get_json()["error"] == "not_found"
 
 
 def test_account_revocation_removes_all_user_tokens(client, oauth_config, oauth_user):

@@ -117,6 +117,9 @@ class GPTActionsConfig:
     read_scope: str = "todoist.goals.read"
     default_page_size: int = 50
     max_page_size: int = 100
+    idempotency_ttl_s: int = 24 * 60 * 60
+    idempotency_pending_ttl_s: int = 60
+    idempotency_key_max_length: int = 200
 
     @property
     def client_id(self) -> str:

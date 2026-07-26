@@ -219,6 +219,12 @@ def home():
     commit_hash = Repo(".").head.commit.hexsha
     return render_template('home.html', commit_hash=commit_hash)
 
+
+@app.route('/privacy')
+def privacy():
+    return render_template('privacy.html')
+
+
 @app.route('/service-worker.js')
 def service_worker():
     """Serve service worker from root for proper scope"""
@@ -230,6 +236,7 @@ def sitemap():
     base_url = cfg.site_url.rstrip("/")
     urls = [
         url_for('home'),
+        url_for('privacy'),
         url_for('hammock.index'),
         url_for('crosswords.index'),
         url_for('simulations_api.index'),
