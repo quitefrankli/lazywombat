@@ -192,19 +192,33 @@ document.addEventListener("DOMContentLoaded", function() {
         syncSoundButton(video);
         const container = video.closest(".hammock-gallery-video, .hammock-edit-tile");
         const button = container && container.querySelector("[data-video-sound]");
-        if (!button) return;
-        button.addEventListener("click", () => {
-            const shouldUnmute = video.muted;
-            videos.forEach(other => {
-                other.muted = true;
-                syncSoundButton(other);
+        if (button) {
+            button.addEventListener("click", () => {
+                const shouldUnmute = video.muted;
+                videos.forEach(other => {
+                    other.muted = true;
+                    syncSoundButton(other);
+                });
+                if (shouldUnmute) {
+                    video.muted = false;
+                    video.play().catch(() => {});
+                }
+                syncSoundButton(video);
             });
-            if (shouldUnmute) {
-                video.muted = false;
-                video.play().catch(() => {});
-            }
-            syncSoundButton(video);
-        });
+        }
+        if (video.hasAttribute("data-video-expand")) {
+            video.addEventListener("click", () => {
+                const expanded = container.classList.toggle("is-expanded");
+                document.body.classList.toggle("hammock-video-expanded", expanded);
+            });
+        }
+    });
+    document.addEventListener("keydown", event => {
+        if (event.key !== "Escape") return;
+        const expanded = document.querySelector(".hammock-gallery-video.is-expanded");
+        if (!expanded) return;
+        expanded.classList.remove("is-expanded");
+        document.body.classList.remove("hammock-video-expanded");
     });
 
     const reorderGrid = document.querySelector("[data-reorder-grid]");
@@ -235,37 +249,6 @@ document.addEventListener("DOMContentLoaded", function() {
             button.focus();
         });
 
-        reorderGrid.querySelectorAll("[data-reorder-handle]").forEach(handle => {
-            let dragged = null;
-            handle.addEventListener("pointerdown", event => {
-                if (event.button !== 0) return;
-                dragged = handle.closest("[data-media-item]");
-                dragged.classList.add("is-reordering");
-                handle.setPointerCapture(event.pointerId);
-                event.preventDefault();
-            });
-            handle.addEventListener("pointermove", event => {
-                if (!dragged) return;
-                const target = document.elementFromPoint(event.clientX, event.clientY);
-                const targetTile = target && target.closest("[data-media-item]");
-                if (!targetTile || targetTile === dragged || targetTile.parentElement !== reorderGrid) return;
-                const rect = targetTile.getBoundingClientRect();
-                const after = event.clientY > rect.top + rect.height / 2
-                    || (
-                        Math.abs(event.clientY - (rect.top + rect.height / 2)) < rect.height / 4
-                        && event.clientX > rect.left + rect.width / 2
-                    );
-                reorderGrid.insertBefore(dragged, after ? targetTile.nextSibling : targetTile);
-            });
-            const finish = () => {
-                if (!dragged) return;
-                dragged.classList.remove("is-reordering");
-                dragged = null;
-                syncOrder();
-            };
-            handle.addEventListener("pointerup", finish);
-            handle.addEventListener("pointercancel", finish);
-        });
         syncOrder();
     }
 

@@ -761,7 +761,8 @@ class DataInterface(BaseDataInterface):
                     )
                 media_html.append(
                     f'<figure class="hammock-gallery-photo hammock-gallery-video">'
-                    f'<video data-hammock-video autoplay loop muted playsinline preload="metadata">'
+                    f'<video data-hammock-video data-video-expand '
+                    f'autoplay loop muted playsinline preload="metadata">'
                     f'<source src="{name}" type="video/mp4">'
                     f'</video>'
                     f'{sound_control}'

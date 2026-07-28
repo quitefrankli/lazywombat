@@ -308,7 +308,10 @@ class TestGalleryUploadAndDelete:
         ]
 
         rendered = di.get_post_content(proj, post)
-        assert '<video data-hammock-video autoplay loop muted playsinline preload="metadata">' in rendered
+        assert (
+            '<video data-hammock-video data-video-expand '
+            'autoplay loop muted playsinline preload="metadata">'
+        ) in rendered
         assert "controls" not in rendered
         assert "hammock-video-sound" not in rendered
         assert '<source src="clip.mp4" type="video/mp4">' in rendered
@@ -707,7 +710,9 @@ class TestGalleryEditRoute:
 
         edit_response = client.get(f"/hammock/{proj}/{post}/edit")
         assert b"data-reorder-grid" in edit_response.data
-        assert b"data-reorder-handle" in edit_response.data
+        assert b"data-reorder-handle" not in edit_response.data
+        assert b"data-reorder-previous" in edit_response.data
+        assert b"data-reorder-next" in edit_response.data
         assert b"data-video-sound" in edit_response.data
 
         response = client.post(

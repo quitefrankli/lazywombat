@@ -63,10 +63,6 @@
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="hammock-tile-delete" aria-label="Delete media">×</button>
                         </form>
-                        <button type="button" class="hammock-reorder-drag" data-reorder-handle
-                                aria-label="Drag {{ filename }} to reorder">
-                            <i class="bi bi-grip-vertical" aria-hidden="true"></i>
-                        </button>
                         <div class="hammock-reorder-buttons">
                             <button type="button" data-reorder-previous
                                     aria-label="Move {{ filename }} earlier">
