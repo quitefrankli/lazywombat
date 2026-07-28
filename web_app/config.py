@@ -104,6 +104,9 @@ class TubioConfig:
     autocomplete_debounce_ms: int = 200
     autocomplete_suggest_url: str = "https://suggestqueries.google.com/complete/search"
     autocomplete_request_timeout_s: float = 3.0
+    discover_seed_count: int = 5
+    discover_entries_per_seed: int = 15
+    discover_max_results: int = 20
 
     @property
     def cookie_path(self) -> Path:

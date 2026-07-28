@@ -311,7 +311,7 @@ function updateTrackbarTitleOverflow() {
 
 function switchTab(tabName) {
     // Remove active class from all navbar tabs
-    document.querySelectorAll('#search-nav-tab, #playlists-nav-tab').forEach(tab => {
+    document.querySelectorAll('#search-nav-tab, #playlists-nav-tab, #discover-nav-tab').forEach(tab => {
         tab.classList.remove('active');
     });
 
@@ -332,23 +332,29 @@ function switchTab(tabName) {
         targetPane.classList.add('show', 'active');
     }
 
-    // Search tab has no contextual actions — hide the Actions dropdown entirely.
+    // Only the Playlists tab has contextual actions (Upload / Move) — hide the
+    // Actions dropdown on Search and Discover.
     const actionsDropdown = document.querySelector('.actions-dropdown');
     const actionsContainer = actionsDropdown ? actionsDropdown.closest('.dropdown') : null;
     if (actionsContainer) {
-        actionsContainer.classList.toggle('d-none', tabName === 'search');
+        actionsContainer.classList.toggle('d-none', tabName !== 'playlists');
     }
 
     // Hide the trackbar in search mode.
     const trackbar = document.getElementById('tubio-trackbar');
     if (trackbar) trackbar.classList.toggle('d-none', tabName === 'search');
 
+    // Lazily load discoveries the first time the tab is opened.
+    if (tabName === 'discover' && !discoverLoaded) {
+        runDiscover();
+    }
+
     // Update URL hash
     window.location.hash = '#' + tabName;
 }
 
-function displaySearchResults(data) {
-    const resultsDiv = document.getElementById('search-results');
+function displaySearchResults(data, { targetId = 'search-results', paginate = true, emptyMessage = 'No results found' } = {}) {
+    const resultsDiv = document.getElementById(targetId);
     if (!resultsDiv) return;
 
     const results = Array.isArray(data) ? data : (data && data.results) || [];
@@ -365,11 +371,12 @@ function displaySearchResults(data) {
         : '';
 
     if (!results || results.length === 0) {
-        resultsDiv.innerHTML = `${filterNotice}<div class="text-center py-5"><h5 class="text-muted">No results found</h5></div>`;
+        resultsDiv.innerHTML = `${filterNotice}<div class="text-center py-5"><h5 class="text-muted">${escapeHtml(emptyMessage)}</h5></div>`;
         return;
     }
 
-    let html = filterNotice + '<div class="accordion" id="searchResultsAccordion">';
+    const accordionId = `${targetId}-accordion`;
+    let html = filterNotice + `<div class="accordion" id="${accordionId}">`;
 
     results.forEach((video, index) => {
         const isDisabled = video.cached ? 'disabled style="background-color: #adb5bd; border-color: #adb5bd;"' : '';
@@ -388,18 +395,18 @@ function displaySearchResults(data) {
                     <button class="accordion-button collapsed bg-gradient text-primary fw-semibold search-result-btn"
                             type="button"
                             data-bs-toggle="collapse"
-                            data-bs-target="#collapse-search-${index}"
+                            data-bs-target="#collapse-${targetId}-${index}"
                             aria-expanded="false"
-                            aria-controls="collapse-search-${index}"
+                            aria-controls="collapse-${targetId}-${index}"
                             style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
                         <i class="bi bi-youtube me-2 flex-shrink-0"></i>
                         <span class="search-result-title">${truncatedTitle}</span>
                         <small class="badge bg-secondary ms-2 flex-shrink-0">${safeLength}</small>
                     </button>
                 </h2>
-                <div id="collapse-search-${index}"
+                <div id="collapse-${targetId}-${index}"
                      class="accordion-collapse collapse"
-                     data-bs-parent="#searchResultsAccordion">
+                     data-bs-parent="#${accordionId}">
                     <div class="accordion-body bg-light">
                         <div class="row">
                             <div class="col-md-4 mb-3 text-center">
@@ -447,7 +454,7 @@ function displaySearchResults(data) {
     
     html += '</div>';
 
-    if (totalPages > 1) {
+    if (paginate && totalPages > 1) {
         let buttons = '';
         for (let i = 0; i < totalPages; i++) {
             const isActive = i === page;
@@ -616,6 +623,36 @@ async function runSearch(page, { scrollToResults = false } = {}) {
     } catch (error) {
         console.error('Error during search:', error);
         renderSearchError('Error occurred while searching.');
+    }
+}
+
+let discoverLoaded = false;
+
+async function runDiscover() {
+    const resultsDiv = document.getElementById('discover-results');
+    if (!resultsDiv) return;
+
+    discoverLoaded = true;
+    resultsDiv.innerHTML = `
+        <div class="text-center py-5 text-muted">
+            <div class="spinner-border text-sage mb-3" role="status"><span class="visually-hidden">Loading...</span></div>
+            <div>Finding music you might like…</div>
+        </div>`;
+
+    try {
+        const response = await jsonPost('/tubio/discover', {});
+        const data = await response.json();
+        if (response.ok) {
+            const empty = data.empty_reason === 'no_library'
+                ? 'Add some songs to your library first — discoveries are based on what you already have.'
+                : 'No recommendations right now. Try refreshing.';
+            displaySearchResults(data, { targetId: 'discover-results', paginate: false, emptyMessage: empty });
+        } else {
+            resultsDiv.innerHTML = `<div class="text-center py-5"><h5 class="text-danger">${escapeHtml(data.error || 'Discovery failed.')}</h5></div>`;
+        }
+    } catch (error) {
+        console.error('Error during discovery:', error);
+        resultsDiv.innerHTML = '<div class="text-center py-5"><h5 class="text-danger">Error occurred while finding recommendations.</h5></div>';
     }
 }
 

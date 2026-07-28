@@ -2,9 +2,11 @@ import logging
 import json
 import math
 import time
+import random
 
 from typing import *
 from pathlib import Path
+from datetime import timedelta
 from flask import Blueprint, render_template, request, send_file, redirect, url_for, flash, Response
 from flask_login import login_required
 
@@ -123,6 +125,37 @@ def suggest():
     if len(query) < ConfigManager().tubio.autocomplete_min_query_len:
         return {'suggestions': []}
     return {'suggestions': AudioDownloader.suggest_queries(query)}
+
+@tubio_api.route('/discover', methods=['GET', 'POST'])
+def discover():
+    cfg = ConfigManager().tubio
+    try:
+        owned_ids = {vid for vid in get_cached_yt_vid_ids(cur_user()) if vid}
+        if not owned_ids:
+            return {'results': [], 'empty_reason': 'no_library', 'query': 'Discover'}
+
+        seeds = random.sample(list(owned_ids), min(cfg.discover_seed_count, len(owned_ids)))
+        max_length = cfg.max_video_length
+
+        seen = set()
+        results = []
+        for seed in seeds:
+            for rec in AudioDownloader.get_mix_related(seed):
+                vid = rec['video_id']
+                if vid in owned_ids or vid in seen:
+                    continue
+                if timedelta(seconds=rec.get('duration_s', 0)) > max_length:
+                    continue
+                seen.add(vid)
+                results.append(rec)
+
+        random.shuffle(results)
+        results = results[:cfg.discover_max_results]
+        return {'results': results, 'query': 'Discover'}
+
+    except Exception:
+        logging.exception("Error generating discovery recommendations")
+        return {'error': 'Discovery failed. Please try again.', 'query': 'Discover'}, 500
 
 @tubio_api.route('/youtube_download', methods=['POST'])
 def youtube_download():

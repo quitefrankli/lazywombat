@@ -119,6 +119,27 @@
             </div>
         </div>
     </div>
+
+    <!-- Discover Tab -->
+    <div class="tab-pane fade" id="discover" role="tabpanel" aria-labelledby="discover-tab">
+        <div class="container-fluid mt-3">
+            <div class="row justify-content-center">
+                <div class="col-lg-10">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4"
+                         style="max-width: 800px; margin: 0 auto;">
+                        <div class="text-secondary">
+                            <i class="bi bi-stars me-1 text-sage"></i>
+                            Fresh picks based on your library.
+                        </div>
+                        <button class="btn btn-outline-primary" type="button" onclick="runDiscover()">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                        </button>
+                    </div>
+                    <div id="discover-results"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Persistent bottom trackbar -->

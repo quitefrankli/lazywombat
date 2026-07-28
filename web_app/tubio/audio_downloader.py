@@ -131,13 +131,7 @@ class AudioDownloader:
                 if vid_length > max_length:
                     raise VideoTooLongError(video_id, vid_length, max_length)
 
-                # Format duration as MM:SS or HH:MM:SS
-                hours, remainder = divmod(duration, 3600)
-                minutes, seconds = divmod(remainder, 60)
-                if hours > 0:
-                    length_txt = f"{hours}:{minutes:02d}:{seconds:02d}"
-                else:
-                    length_txt = f"{minutes}:{seconds:02d}"
+                length_txt = AudioDownloader._format_duration(duration)
 
                 cached = video_id in cached_yt_vid_ids
                 view_count = info.get('view_count', 0)
@@ -167,6 +161,71 @@ class AudioDownloader:
         except Exception:
             logging.exception(f"Failed to get video info for {video_id}")
             return None
+
+    @staticmethod
+    def _format_duration(seconds) -> str:
+        """Format a duration in seconds as MM:SS or HH:MM:SS."""
+        seconds = int(seconds or 0)
+        hours, remainder = divmod(seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+        if hours > 0:
+            return f"{hours}:{minutes:02d}:{secs:02d}"
+        return f"{minutes}:{secs:02d}"
+
+    @staticmethod
+    def get_mix_related(video_id: str) -> List[dict]:
+        """Fetch YouTube's Mix (radio) recommendations seeded by a video.
+
+        Returns search-card-shaped dicts (same shape as search_youtube results).
+        Best-effort: returns [] on any failure so discovery never breaks the page.
+        Each result carries an integer `duration_s` so the caller can apply the
+        length cap; `cached` is left False for the caller (route) to stamp.
+        """
+        cfg = ConfigManager().tubio
+        url = f"https://www.youtube.com/watch?v={video_id}&list=RD{video_id}"
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'skip_download': True,
+            'extract_flat': True,
+            'playlist_items': f"1-{cfg.discover_entries_per_seed}",
+        }
+        if cfg.cookie_path.exists():
+            ydl_opts['cookiefile'] = str(cfg.cookie_path)
+        if ConfigManager().debug_mode:
+            ydl_opts['nocheckcertificate'] = True
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            entries = (info or {}).get('entries') or []
+        except Exception:
+            logging.exception(f"Failed to fetch mix for {video_id}")
+            return []
+
+        results = []
+        for entry in entries:
+            if not entry:
+                continue
+            vid = entry.get('id')
+            if not vid:
+                continue
+            duration = entry.get('duration') or 0
+            thumbnails = entry.get('thumbnails') or []
+            thumbnail_url = thumbnails[-1].get('url', '') if thumbnails else ''
+            results.append({
+                "video_id": vid,
+                "url": f"https://www.youtube.com/watch?v={vid}",
+                "title": entry.get('title', ''),
+                "description": entry.get('channel') or entry.get('uploader') or '',
+                "view_count": '',
+                "published": '',
+                "length": AudioDownloader._format_duration(duration),
+                "duration_s": int(duration),
+                "cached": False,
+                "thumbnail_url": thumbnail_url,
+            })
+        return results
 
     @staticmethod
     def get_vid_length(text: str) -> timedelta:
