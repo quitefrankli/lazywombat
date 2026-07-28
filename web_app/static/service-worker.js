@@ -1,227 +1,208 @@
 /**
- * Service Worker for client-side caching
- * Handles Cache API for heavy downloads and resources
+ * Service worker for client-side caching.
+ * Handles Cache API for heavy downloads and static resources.
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `nabicat-cache-${CACHE_VERSION}`;
-const MAX_CACHE_SIZE = 10 * 1024 * 1024 * 1024; // 10GB limit
+const CACHE_PREFIX = 'nabicat-cache-';
+const MAX_CACHE_SIZE = 10 * 1024 * 1024 * 1024;
+const EVICTION_TARGET_RATIO = 0.9;
+const CACHE_TIMESTAMP_HEADER = 'x-nabicat-cached-at';
 
-// URLs that should be cached
 const CACHE_STRATEGIES = {
-    // Network-first with cache fallback (default)
-    networkFirst: /\/(api|account)\//,
-
-    // Cache-first for truly immutable assets (fonts, etc.)
-    cacheFirst: /\/(fonts)\//,
-
-    // Cache with network update — used for app static assets (JS/CSS/images)
-    // and for heavy media (audio, downloads, thumbnails). Stale-while-revalidate
-    // means updates always reach the browser on the next visit without manual
-    // cache clears, while large files still load instantly from cache.
-    cacheWithUpdate: /\/(static|download|thumbnail|audio)\//,
+  networkFirst: /\/(api|account)\//,
+  cacheFirst: /\/(fonts)\//,
+  cacheWithUpdate: /\/(static|download|thumbnail|audio)\//,
 };
 
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing service worker...');
-    self.skipWaiting(); // Activate immediately
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating service worker...');
-    event.waitUntil(
-        caches.keys().then((cacheNames) => {
-            return Promise.all(
-                cacheNames
-                    .filter((name) => name.startsWith('nabicat-cache-') && name !== CACHE_NAME)
-                    .map((name) => caches.delete(name))
-            );
-        }).then(() => self.clients.claim())
-    );
+  event.waitUntil(
+    caches.keys()
+      .then((cacheNames) => Promise.all(
+        cacheNames
+          .filter((name) => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME)
+          .map((name) => caches.delete(name)),
+      ))
+      .then(() => self.clients.claim()),
+  );
 });
 
 self.addEventListener('fetch', (event) => {
-    const { request } = event;
-    const url = new URL(request.url);
+  const { request } = event;
+  const url = new URL(request.url);
 
-    // Only handle same-origin GET requests (Cache API doesn't support POST)
-    if (url.origin !== location.origin || request.method !== 'GET') {
-        return;
-    }
+  if (url.origin !== self.location.origin || request.method !== 'GET') return;
+  if (url.pathname.startsWith('/file_store/download/')) return;
+  if (url.pathname.includes('/download_progress/')) return;
+  if (url.pathname.includes('/audio/') && request.headers.has('Range')) return;
 
-    // File Store downloads are private and may be too large for Cache Storage.
-    if (url.pathname.startsWith('/file_store/download/')) {
-        return;
-    }
+  let strategy = 'networkFirst';
+  if (CACHE_STRATEGIES.cacheFirst.test(url.pathname)) {
+    strategy = 'cacheFirst';
+  } else if (CACHE_STRATEGIES.cacheWithUpdate.test(url.pathname)) {
+    strategy = 'cacheWithUpdate';
+  }
 
-    // Skip SSE endpoints (text/event-stream)
-    if (url.pathname.includes('/download_progress/')) {
-        return;
-    }
-
-    // Skip audio requests with Range headers (206 partial responses can't be cached)
-    if (url.pathname.includes('/audio/') && request.headers.has('Range')) {
-        return;
-    }
-
-    // Determine strategy
-    let strategy = 'networkFirst';
-
-    if (CACHE_STRATEGIES.cacheFirst.test(url.pathname)) {
-        strategy = 'cacheFirst';
-    } else if (CACHE_STRATEGIES.cacheWithUpdate.test(url.pathname)) {
-        strategy = 'cacheWithUpdate';
-    }
-
-    event.respondWith(handleFetch(request, strategy));
+  event.respondWith(handleFetch(request, strategy));
 });
 
 async function handleFetch(request, strategy) {
-    const cache = await caches.open(CACHE_NAME);
+  const cache = await caches.open(CACHE_NAME);
 
-    switch (strategy) {
-        case 'cacheFirst':
-            return cacheFirst(request, cache);
-
-        case 'cacheWithUpdate':
-            return cacheWithUpdate(request, cache);
-
-        case 'networkFirst':
-        default:
-            return networkFirst(request, cache);
-    }
+  switch (strategy) {
+    case 'cacheFirst':
+      return cacheFirst(request, cache);
+    case 'cacheWithUpdate':
+      return cacheWithUpdate(request, cache);
+    default:
+      return networkFirst(request, cache);
+  }
 }
 
-// Check and enforce cache size limit
-async function enforceCacheSizeLimit(cache) {
-    const estimate = await navigator.storage.estimate();
-    const currentUsage = estimate.usage || 0;
-
-    if (currentUsage <= MAX_CACHE_SIZE) {
-        return; // Under limit
-    }
-
-    console.log(`[SW] Cache size ${currentUsage} exceeds limit ${MAX_CACHE_SIZE}, evicting oldest entries`);
-
-    // Get all cached requests and sort by date
-    const requests = await cache.keys();
-    const entries = await Promise.all(
-        requests.map(async (request) => {
-            const response = await cache.match(request);
-            const date = response.headers.get('date');
-            return { request, date: date ? new Date(date) : new Date(0) };
-        })
-    );
-
-    // Sort by date (oldest first)
-    entries.sort((a, b) => a.date - b.date);
-
-    // Delete oldest 10% of entries
-    const toDelete = Math.ceil(entries.length * 0.1);
-    for (let i = 0; i < toDelete; i++) {
-        await cache.delete(entries[i].request);
-    }
+function canCache(response) {
+  return response && response.ok && response.status === 200 && response.type !== 'opaque';
 }
 
-// Cache-first: Check cache, fallback to network
+async function responseSize(response) {
+  const contentLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength >= 0) return contentLength;
+  return (await response.clone().arrayBuffer()).byteLength;
+}
+
+async function cacheEntries(cache) {
+  const requests = await cache.keys();
+  return Promise.all(requests.map(async (request) => {
+    const response = await cache.match(request);
+    if (!response) return null;
+
+    const cachedAt = Number(response.headers.get(CACHE_TIMESTAMP_HEADER)) || 0;
+    return {
+      request,
+      size: await responseSize(response),
+      cachedAt,
+    };
+  })).then((entries) => entries.filter(Boolean));
+}
+
+async function enforceCacheSizeLimit(cache, incomingSize = 0) {
+  const entries = await cacheEntries(cache);
+  let usage = entries.reduce((total, entry) => total + entry.size, 0);
+
+  if (usage + incomingSize <= MAX_CACHE_SIZE) return;
+
+  const targetSize = Math.floor(MAX_CACHE_SIZE * EVICTION_TARGET_RATIO);
+  entries.sort((a, b) => a.cachedAt - b.cachedAt);
+
+  for (const entry of entries) {
+    if (usage + incomingSize <= targetSize) break;
+    if (await cache.delete(entry.request)) usage -= entry.size;
+  }
+}
+
+async function stampResponse(response) {
+  const body = await response.clone().blob();
+  const headers = new Headers(response.headers);
+  headers.set(CACHE_TIMESTAMP_HEADER, String(Date.now()));
+
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+async function putInCache(cache, request, response) {
+  if (!canCache(response)) return;
+
+  const stamped = await stampResponse(response);
+  const size = await responseSize(stamped);
+  await enforceCacheSizeLimit(cache, size);
+  await cache.put(request, stamped);
+}
+
 async function cacheFirst(request, cache) {
-    const cached = await cache.match(request);
-    if (cached) {
-        return cached;
-    }
+  const cached = await cache.match(request);
+  if (cached) return cached;
 
-    try {
-        const response = await fetch(request);
-        // Only cache full 200 responses (not 206 partial)
-        if (response.ok && response.status === 200) {
-            await enforceCacheSizeLimit(cache);
-            cache.put(request, response.clone());
-        }
-        return response;
-    } catch (error) {
-        console.error('[SW] Network fetch failed:', error);
-        throw error;
-    }
+  const response = await fetch(request);
+  await putInCache(cache, request, response.clone());
+  return response;
 }
 
-// Network-first: Try network, fallback to cache
 async function networkFirst(request, cache) {
-    try {
-        const response = await fetch(request);
-        // Only cache full 200 responses (not 206 partial)
-        if (response.ok && response.status === 200) {
-            await enforceCacheSizeLimit(cache);
-            cache.put(request, response.clone());
-        }
-        return response;
-    } catch (error) {
-        const cached = await cache.match(request);
-        if (cached) {
-            return cached;
-        }
-        throw error;
-    }
+  try {
+    const response = await fetch(request);
+    await putInCache(cache, request, response.clone());
+    return response;
+  } catch (error) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    throw error;
+  }
 }
 
-// Cache with update: Serve from cache, update in background
 async function cacheWithUpdate(request, cache) {
-    const cached = await cache.match(request);
-
-    // Fetch and update cache in background
-    const fetchPromise = fetch(request).then(async (response) => {
-        // Only cache full 200 responses (not 206 partial)
-        if (response.ok && response.status === 200) {
-            await enforceCacheSizeLimit(cache);
-            cache.put(request, response.clone());
-        }
-        return response;
-    }).catch((error) => {
-        console.error('[SW] Background fetch failed:', error);
+  const cached = await cache.match(request);
+  const networkUpdate = fetch(request)
+    .then(async (response) => {
+      await putInCache(cache, request, response.clone());
+      return response;
+    })
+    .catch((error) => {
+      console.error('[SW] Background fetch failed:', error);
+      if (!cached) throw error;
+      return null;
     });
 
-    // Return cached immediately if available, otherwise wait for network
-    if (cached) {
-        return cached;
-    }
-
-    return fetchPromise;
+  return cached || networkUpdate;
 }
 
-// Listen for cache control messages from clients
-self.addEventListener('message', async (event) => {
-    const { action, url } = event.data;
+function reply(event, payload) {
+  if (event.ports && event.ports[0]) event.ports[0].postMessage(payload);
+}
 
-    switch (action) {
-        case 'clearCache':
-            await caches.delete(CACHE_NAME);
-            event.ports[0].postMessage({ success: true });
-            break;
-
-        case 'removeFromCache':
-            const cache = await caches.open(CACHE_NAME);
-            await cache.delete(url);
-            event.ports[0].postMessage({ success: true });
-            break;
-
-        case 'getCacheSize':
-            const cacheForSize = await caches.open(CACHE_NAME);
-            const cacheKeys = await cacheForSize.keys();
-            let totalSize = 0;
-            for (const req of cacheKeys) {
-                const res = await cacheForSize.match(req);
-                if (res) {
-                    const buf = await res.clone().arrayBuffer();
-                    totalSize += buf.byteLength;
-                }
-            }
-            const storageEstimate = await navigator.storage.estimate();
-            event.ports[0].postMessage({
-                usage: totalSize,
-                quota: storageEstimate.quota,
-            });
-            break;
-
-        default:
-            event.ports[0].postMessage({ error: 'Unknown action' });
-    }
+self.addEventListener('message', (event) => {
+  event.waitUntil(handleMessage(event));
 });
+
+async function handleMessage(event) {
+  const { action, url } = event.data || {};
+
+  try {
+    switch (action) {
+      case 'clearCache':
+        await caches.delete(CACHE_NAME);
+        reply(event, { success: true });
+        return;
+
+      case 'removeFromCache': {
+        const cache = await caches.open(CACHE_NAME);
+        const removed = await cache.delete(url);
+        reply(event, { success: true, removed });
+        return;
+      }
+
+      case 'getCacheSize': {
+        const cache = await caches.open(CACHE_NAME);
+        const entries = await cacheEntries(cache);
+        const storageEstimate = await navigator.storage.estimate();
+        reply(event, {
+          usage: entries.reduce((total, entry) => total + entry.size, 0),
+          quota: storageEstimate.quota || null,
+        });
+        return;
+      }
+
+      default:
+        reply(event, { error: 'Unknown action' });
+    }
+  } catch (error) {
+    console.error('[SW] Message handling failed:', error);
+    reply(event, { error: error.message || 'Service worker operation failed' });
+  }
+}
