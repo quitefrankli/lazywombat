@@ -216,8 +216,15 @@ def before_request():
 
 @app.route('/')
 def home():
-    commit_hash = Repo(".").head.commit.hexsha
-    return render_template('home.html', commit_hash=commit_hash)
+    repo = Repo(".")
+    commit_hash = repo.head.commit.hexsha
+    tags = repo.git.tag("--points-at", commit_hash).splitlines()
+    build_version = tags[0].strip() if tags else commit_hash
+    return render_template(
+        'home.html',
+        build_version=build_version,
+        build_version_is_tag=bool(tags),
+    )
 
 
 @app.route('/privacy')

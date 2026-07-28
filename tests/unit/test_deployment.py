@@ -22,6 +22,36 @@ def test_health_reports_commit_loaded_by_worker(client, app):
     assert isinstance(response.get_json()["pid"], int)
 
 
+@patch("web_app.__main__.Repo")
+def test_home_build_version_prefers_tag_on_head(repo_cls, client):
+    import web_app.__main__  # noqa: F401
+
+    repo = repo_cls.return_value
+    repo.head.commit.hexsha = "abc123def456789"
+    repo.git.tag.return_value = "release-2026.07.29\n"
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.data.count(b"release-2026.07.29") == 2
+    assert b"abc123def456" not in response.data
+
+
+@patch("web_app.__main__.Repo")
+def test_home_build_version_falls_back_to_abbreviated_commit(repo_cls, client):
+    import web_app.__main__  # noqa: F401
+
+    repo = repo_cls.return_value
+    repo.head.commit.hexsha = "abc123def456789"
+    repo.git.tag.return_value = ""
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"abc123def456" in response.data
+    assert b"abc123d" in response.data
+
+
 @patch("web_app.api.subprocess.Popen")
 @patch("web_app.api.uuid.uuid4", return_value="delivery-id")
 def test_update_server_starts_detached_systemd_deployment(_uuid, popen):
@@ -34,6 +64,34 @@ def test_update_server_starts_detached_systemd_deployment(_uuid, popen):
     assert "--unit=nabicat-update-delivery-id" in command
     assert command[-2:] == ["bash", "update_server.sh"]
     popen.assert_called_once()
+
+
+@patch("web_app.api.subprocess.Popen")
+@patch("web_app.api.uuid.uuid4", return_value="delivery-id")
+def test_update_server_pipes_patch_to_detached_systemd_deployment(_uuid, popen):
+    from web_app.api import update_server
+
+    update_server("patch contents")
+
+    command = popen.call_args.args[0]
+    assert command[:3] == ["sudo", "systemd-run", "--quiet"]
+    assert "--pipe" in command
+    assert command[-2:] == ["update_server.sh", "-p"]
+    assert popen.call_args.kwargs["stdin"] is not None
+    popen.return_value.stdin.write.assert_called_once_with(b"patch contents")
+    popen.return_value.stdin.close.assert_called_once()
+
+
+@patch("web_app.api.update_server")
+@patch("web_app.api.parse_request", return_value={"patch": "patch contents"})
+def test_api_update_queues_patch_through_update_server(_parse_request, update, client):
+    import web_app.__main__  # noqa: F401
+
+    response = client.post("/api/update", json={})
+
+    assert response.status_code == 200
+    assert response.get_json()["patch_size"] == "0.01 kB"
+    update.assert_called_once_with("patch contents")
 
 
 def test_canary_worker_does_not_start_scheduler():

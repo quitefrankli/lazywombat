@@ -44,18 +44,31 @@ def _get_required_field(request_body: dict, field: str) -> str:
         logging.exception("Request rejected: missing required field(s)")
         raise APIError(f"Missing required field: {field}")
 
-def update_server():
+def update_server(patch: str | None = None):
     logging.info("Updating server...")
     project_dir = Path(__file__).resolve().parents[2]
     unit = f"nabicat-update-{uuid.uuid4()}"
-    subprocess.Popen([
+    command = [
         "sudo", "systemd-run", "--quiet", "--collect",
         f"--unit={unit}",
         f"--uid={os.getuid()}",
         f"--working-directory={project_dir}",
         f"--setenv=HOME={Path.home()}",
         "bash", "update_server.sh",
-    ], close_fds=True)
+    ]
+    if patch is not None:
+        command.insert(3, "--pipe")
+        command.append("-p")
+    proc = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE if patch is not None else None,
+        close_fds=True,
+    )
+    if patch is not None:
+        # The worker stays attached until git am consumes stdin. Deployment-lock
+        # contention can therefore hold this request open up to the HTTP timeout.
+        proc.stdin.write(patch.encode("utf-8"))
+        proc.stdin.close()
 
 
 @api_api.route("/health", methods=["GET"])
@@ -125,12 +138,7 @@ def api_update():
     size_kb = len(patch) / 1e3
     logging.info(f"Updating with patch of size {size_kb:.2f} kB")
 
-    proc = subprocess.Popen("bash update_server.sh -p",
-                            shell=True,
-                            stdin=subprocess.PIPE,
-                            close_fds=True)
-    proc.stdin.write(patch.encode('utf-8'))
-    proc.stdin.close()
+    update_server(patch)
     
     return jsonify({
         "success": True, 

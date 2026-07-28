@@ -44,8 +44,8 @@
             <div class="col-6 text-center info-col-divider">
               <div class="d-inline-flex version-badge">
                 <code class="text-forest commit-hash">
-                  <span class="hash-long">{{ commit_hash[:12] if commit_hash else 'unknown' }}</span>
-                  <span class="hash-short">{{ commit_hash[:7] if commit_hash else 'unknown' }}</span>
+                  <span class="hash-long">{{ build_version if build_version_is_tag else build_version[:12] }}</span>
+                  <span class="hash-short">{{ build_version if build_version_is_tag else build_version[:7] }}</span>
                 </code>
               </div>
               <p class="text-muted mb-0 mt-1 small">

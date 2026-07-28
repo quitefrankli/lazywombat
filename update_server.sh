@@ -33,16 +33,23 @@ flock 9
 
 git checkout main
 git fetch origin main
+PREVIOUS_COMMIT=$(git rev-parse HEAD)
+
+cleanup_failed_patch() {
+    git am --abort >/dev/null 2>&1 || true
+}
 
 while getopts ":p" opt
 do
     case "$opt" in
         p)
+            trap cleanup_failed_patch EXIT
             git reset --hard origin/main
             deploy_log "applying API patch"
             git am
+            trap - EXIT
             git push
-            exit 0
+            git fetch origin main
             ;;
         \?)
             deploy_error "invalid option: -${OPTARG}"
@@ -70,7 +77,6 @@ CANARY_PORT="${DEPLOY_CONFIG[3]}"
 HEALTH_ATTEMPTS="${DEPLOY_CONFIG[4]}"
 HEALTH_INTERVAL="${DEPLOY_CONFIG[5]}"
 
-PREVIOUS_COMMIT=$(git rev-parse HEAD)
 CANDIDATE_COMMIT=$(git rev-parse origin/main)
 if [[ "$PREVIOUS_COMMIT" == "$CANDIDATE_COMMIT" ]]; then
     deploy_log "already running ${CANDIDATE_COMMIT}; nothing to deploy"

@@ -1,76 +1,119 @@
 # NabiCat
 
-NabiCat is a Flask application containing a collection of small, independently
-scoped web apps.
+![cat ico](web_app/static/nabicat.png)
 
-## GPT Actions
+A cozy collection of misc web apps [visit](https://nabicat.site)
 
-NabiCat exposes a read-only Todoist integration for custom GPTs. After a user
-signs in and grants access, ChatGPT can list their goals or retrieve a goal by
-ID. Tokens are scoped to `todoist.goals.read`; the Action cannot create, edit,
-complete, or delete goals.
+## Setup
 
-### Server configuration
+### Env
 
-Configure one confidential OAuth client:
+create a `.env` file in the root of the project with the following content:
 
-```dotenv
-SITE_URL=https://nabicat.example.com
-OAUTH_CLIENT_ID=chatgpt
-OAUTH_CLIENT_SECRET=replace-with-a-random-secret
-OAUTH_REDIRECT_URIS=https://chatgpt.com/example/oauth/callback
-```
+* `FLASK_SECRET_KEY` - can be any random 24 char str
 
-Use the exact callback URL displayed by the GPT editor. Multiple permitted
-callbacks can be supplied as a comma-separated list. In production, prefer
-`OAUTH_CLIENT_SECRET_HASH` over `OAUTH_CLIENT_SECRET`; it accepts a Werkzeug
-password hash of the client secret.
+### Conda + Other Misc Reqs
 
-The integration provides:
+* setup conda env - see `setup_server.sh:setup_conda`
+* install `ffmpeg`
+* install `terraform`
 
-- OAuth authorization: `/oauth/authorize`
-- OAuth token exchange and refresh: `/oauth/token`
-- OAuth token revocation: `/oauth/revoke`
-- OpenAPI schema: `/actions/openapi.json`
-- Goal listing: `/actions/todoist/goals`
-- Goal retrieval: `/actions/todoist/goals/{goal_id}`
-
-OAuth endpoints require HTTPS outside debug and test environments. OAuth
-authorization codes expire after 10 minutes, access tokens after one hour, and
-rotating refresh tokens after 30 days. These settings and Action pagination
-limits live in `ConfigManager().gpt_actions`.
-
-### Configure the custom GPT
-
-1. Create an Action in the GPT editor and import
-   `https://nabicat.example.com/actions/openapi.json`.
-2. Select OAuth authentication and enter the configured client ID and secret.
-3. Set the authorization URL to
-   `https://nabicat.example.com/oauth/authorize`.
-4. Set the token URL to `https://nabicat.example.com/oauth/token`.
-5. Set the scope to `todoist.goals.read`.
-6. Copy the callback URL supplied by ChatGPT into `OAUTH_REDIRECT_URIS`, restart
-   NabiCat, and test the Action in GPT Preview.
-
-Users can revoke all ChatGPT access from the home-page Actions menu. Deleting
-an account also revokes its OAuth tokens.
-
-### Test with a local server
-
-ChatGPT cannot connect directly to `127.0.0.1`, so expose the debug server
-through a temporary HTTPS tunnel:
+## Running
 
 ```bash
-python -m web_app --debug --port 12345
-cloudflared tunnel --url http://127.0.0.1:12345
+pip install -r requirements.txt
+python -m web_app [--debug] [--port PORT]
 ```
 
-Set `SITE_URL` to the generated HTTPS origin and configure the GPT with that
-origin. Use test credentials and non-sensitive data because tunnel URLs are
-publicly reachable.
+## Testing
 
-The OAuth and Action test suite can be run without ChatGPT:
+`python -m pytest`
+
+### Playwright UI Tests
 
 ```bash
-pytest -q tests/unit/test_actions_oauth.py
+pip install playwright
+playwright install
+sudo $(which playwright) install-deps
+pytest tests/ui/ # run ui tests in headless mode
+
+# to see whats actually being tested
+# pytest tests/ui/ --headed --slowmo 500
+```
+
+
+## Cloud Setup
+
+register host .ssh creds as github ssh key
+
+then run client side setup
+
+`source setup_server.sh && run_client_side $CLOUD_PROVIDER`
+
+CLOUD_PROVIDER is either aws or oci (aws doesn't work atm as the instance doesnt have enough storage)
+
+register the generated ip address with your domain name
+`export SERVER_IP_ADDR=$(terraform -chdir=terraform/$CLOUD_PROVIDER output server_ip_addr | sed 's/\"//g')`
+
+it may take a while for the ip to be associated with the domain, but once it's done run the final step.
+Make sure to replace the email with your own for certbot
+
+`ssh nabicat.site -t "ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null && git clone git@github.com:quitefrankli/nabicat.git && cd nabicat && source setup_server.sh && CERTBOT_EMAIL=your@email.com run_server_side"`
+
+
+### Systemd Services
+
+`update_server.sh` generates and manages two systemd units:
+
+* `nabicat.service` — the gunicorn web app
+* `meridian.service` — the Meridian LLM proxy used by LLM-backed app features
+
+sudo systemctl status nabicat meridian
+
+### Logs
+
+stdout is captured by journald
+
+```bash
+journalctl -u nabicat -f      # for stdout/stderr from update_server.sh bash script
+journalctl -u meridian -f     # live meridian logs
+```
+
+### Claude Login (first-time Meridian setup)
+
+Meridian proxies requests to the `claude` CLI, which needs to be authenticated once on the server as the same user the service runs under (whoever ran `setup_server.sh`):
+
+```bash
+claude login
+sudo systemctl restart meridian
+```
+
+
+### Misc
+
+to bring down the server
+
+`terraform -chdir=terraform/$CLOUD_PROVIDER destroy`
+
+## Updating Server
+
+a. simply push from main branch, force push also works too
+b. on main branch run - `python scripts/api_helper.py update`
+c. run on server - `bash update_server.sh`
+
+## Renewing Cert
+
+Renewal is automatic. `setup_server.sh` installs certbot via apt, which ships a `certbot.timer` systemd unit that runs `certbot renew` twice daily. Pre/post hooks (stop/start nginx) are stored in `/etc/letsencrypt/renewal/nabicat.site.conf` and run on each renewal.
+
+To verify:
+
+```bash
+systemctl list-timers certbot.timer
+sudo certbot renew --dry-run
+```
+
+To force a manual renewal:
+
+```bash
+sudo certbot renew --force-renewal
 ```
