@@ -300,13 +300,22 @@ function displaySearchResults(data) {
     const results = Array.isArray(data) ? data : (data && data.results) || [];
     const page = (data && typeof data.page === 'number') ? data.page : 0;
     const totalPages = (data && typeof data.total_pages === 'number') ? data.total_pages : 1;
+    const filteredTooLong = (data && typeof data.filtered_too_long === 'number') ? data.filtered_too_long : 0;
+    const maxMinutes = (data && typeof data.max_video_length_minutes === 'number') ? data.max_video_length_minutes : 0;
+
+    const filterNotice = filteredTooLong > 0
+        ? `<div class="alert alert-warning d-flex align-items-center gap-2 py-2" role="alert">
+                <i class="bi bi-clock-history"></i>
+                <span>${filteredTooLong} result${filteredTooLong === 1 ? '' : 's'} hidden for exceeding the ${maxMinutes}-minute limit. Consider appending ' short' in the search.</span>
+           </div>`
+        : '';
 
     if (!results || results.length === 0) {
-        resultsDiv.innerHTML = '<div class="text-center py-5"><h5 class="text-muted">No results found</h5></div>';
+        resultsDiv.innerHTML = `${filterNotice}<div class="text-center py-5"><h5 class="text-muted">No results found</h5></div>`;
         return;
     }
 
-    let html = '<div class="accordion" id="searchResultsAccordion">';
+    let html = filterNotice + '<div class="accordion" id="searchResultsAccordion">';
 
     results.forEach((video, index) => {
         const isDisabled = video.cached ? 'disabled style="background-color: #adb5bd; border-color: #adb5bd;"' : '';
@@ -411,6 +420,122 @@ async function searchPage(page) {
     await runSearch(page, { scrollToResults: true });
 }
 
+let suggestRequestSeq = 0;
+
+function hideSuggestions() {
+    const list = document.getElementById('search-suggestions');
+    const input = document.getElementById('youtube-query');
+    if (list) {
+        list.innerHTML = '';
+        list.hidden = true;
+    }
+    if (input) input.setAttribute('aria-expanded', 'false');
+}
+
+function acceptSuggestion(value) {
+    const input = document.getElementById('youtube-query');
+    if (!input) return;
+    input.value = value;
+    hideSuggestions();
+    runSearch(0);
+}
+
+function renderSuggestions(suggestions) {
+    const list = document.getElementById('search-suggestions');
+    const input = document.getElementById('youtube-query');
+    if (!list) return;
+    if (!Array.isArray(suggestions) || suggestions.length === 0) {
+        hideSuggestions();
+        return;
+    }
+    list.innerHTML = suggestions.map((s, i) =>
+        `<li class="tubio-suggestion" role="option" data-index="${i}" data-value="${escapeHtml(s)}">
+            <i class="bi bi-search"></i><span>${escapeHtml(s)}</span>
+        </li>`
+    ).join('');
+    list.hidden = false;
+    if (input) input.setAttribute('aria-expanded', 'true');
+}
+
+function moveSuggestionActive(delta) {
+    const list = document.getElementById('search-suggestions');
+    if (!list || list.hidden) return;
+    const items = Array.from(list.querySelectorAll('.tubio-suggestion'));
+    if (items.length === 0) return;
+    const currentIndex = items.findIndex(el => el.classList.contains('active'));
+    let nextIndex = currentIndex + delta;
+    if (nextIndex < 0) nextIndex = items.length - 1;
+    if (nextIndex >= items.length) nextIndex = 0;
+    items.forEach(el => el.classList.remove('active'));
+    const active = items[nextIndex];
+    active.classList.add('active');
+    active.scrollIntoView({ block: 'nearest' });
+}
+
+async function fetchSuggestions(query) {
+    const seq = ++suggestRequestSeq;
+    try {
+        const response = await jsonPost('/tubio/suggest', { youtube_query: query });
+        const data = await response.json();
+        if (seq !== suggestRequestSeq) return; // stale response
+        if (response.ok) renderSuggestions(data.suggestions);
+    } catch (error) {
+        console.error('Error fetching suggestions:', error);
+    }
+}
+
+function setupSuggestions() {
+    const input = document.getElementById('youtube-query');
+    const list = document.getElementById('search-suggestions');
+    if (!input || !list) return;
+
+    const debounceMs = parseInt(input.dataset.debounceMs, 10) || 200;
+    const minLen = parseInt(input.dataset.minLen, 10) || 2;
+    let debounceTimer = null;
+
+    input.addEventListener('input', function() {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        const query = input.value.trim();
+        if (query.length < minLen) {
+            hideSuggestions();
+            return;
+        }
+        debounceTimer = setTimeout(() => fetchSuggestions(query), debounceMs);
+    });
+
+    input.addEventListener('keydown', function(e) {
+        if (list.hidden) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            moveSuggestionActive(1);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            moveSuggestionActive(-1);
+        } else if (e.key === 'Enter') {
+            const active = list.querySelector('.tubio-suggestion.active');
+            if (active) {
+                e.preventDefault();
+                acceptSuggestion(active.dataset.value);
+            }
+        } else if (e.key === 'Escape') {
+            hideSuggestions();
+        }
+    });
+
+    list.addEventListener('mousedown', function(e) {
+        // mousedown (not click) so it fires before the input's blur
+        const item = e.target.closest('.tubio-suggestion');
+        if (item) {
+            e.preventDefault();
+            acceptSuggestion(item.dataset.value);
+        }
+    });
+
+    input.addEventListener('blur', function() {
+        setTimeout(hideSuggestions, 150);
+    });
+}
+
 async function runSearch(page, { scrollToResults = false } = {}) {
     const queryInput = document.getElementById('youtube-query');
     if (!queryInput) return;
@@ -451,9 +576,12 @@ document.addEventListener('DOMContentLoaded', function() {
     if (searchForm) {
         searchForm.addEventListener('submit', async function(e) {
             e.preventDefault();
+            hideSuggestions();
             await runSearch(0);
         });
     }
+
+    setupSuggestions();
 });
 
 async function downloadVideo(videoId, title, buttonElement) {

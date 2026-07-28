@@ -901,3 +901,59 @@ audio::-webkit-media-controls-panel {
     align-self: center;
   }
 }
+
+/* Search autocomplete suggestions */
+.tubio-search-wrap {
+  position: relative;
+}
+
+.tubio-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 1050;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 2px solid var(--hw-sage);
+  border-radius: var(--hw-radius-md);
+  box-shadow: var(--hw-shadow-md);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.tubio-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 40px;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--hw-radius-sm);
+  color: var(--hw-text-primary);
+  cursor: pointer;
+  transition: background var(--hw-transition-fast);
+}
+
+.tubio-suggestion i {
+  color: var(--hw-text-muted);
+  font-size: 0.9rem;
+}
+
+.tubio-suggestion span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tubio-suggestion:hover,
+.tubio-suggestion.active {
+  background: var(--hw-bg-primary);
+}
+
+.tubio-suggestion.active i {
+  color: var(--hw-sage-dark);
+}

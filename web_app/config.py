@@ -79,6 +79,11 @@ class TubioConfig:
     max_results: int = 10
     max_search_pages: int = 3
     max_video_length: timedelta = timedelta(minutes=10)
+    # Ordered fallback tiers for the YouTube results `sp` duration filter:
+    # no filter -> short (<4 min) -> medium (4-20 min). Each fetch is appended
+    # until the requested page is filled, so long-stream-heavy queries still
+    # surface short videos buried below them.
+    search_length_filter_sps: tuple = (None, "EgIYAQ==", "EgIYAw==")
     test_video_id: str = "dQw4w9WgXcQ"
     upload_allowed_extensions: tuple = ("mp3", "mp4", "m4a")
     download_progress_poll_interval_s: float = 0.3
@@ -94,6 +99,11 @@ class TubioConfig:
     trackbar_default_volume_percent: int = 80
     trackbar_volume_storage_key: str = "tubio.volume"
     trackbar_muted_storage_key: str = "tubio.muted"
+    autocomplete_max_suggestions: int = 8
+    autocomplete_min_query_len: int = 2
+    autocomplete_debounce_ms: int = 200
+    autocomplete_suggest_url: str = "https://suggestqueries.google.com/complete/search"
+    autocomplete_request_timeout_s: float = 3.0
 
     @property
     def cookie_path(self) -> Path:

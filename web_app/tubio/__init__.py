@@ -41,6 +41,10 @@ def inject_app_name():
             volume_storage_key=cfg.trackbar_volume_storage_key,
             muted_storage_key=cfg.trackbar_muted_storage_key,
         ),
+        tubio_autocomplete=dict(
+            debounce_ms=cfg.autocomplete_debounce_ms,
+            min_query_len=cfg.autocomplete_min_query_len,
+        ),
     )
 
 def get_cached_yt_vid_ids(user: User|None = None) -> Set[str]:
@@ -97,6 +101,8 @@ def search():
                 'results': search_data['results'],
                 'page': search_data['page'],
                 'total_pages': search_data['total_pages'],
+                'filtered_too_long': search_data.get('filtered_too_long', 0),
+                'max_video_length_minutes': search_data.get('max_video_length_minutes', 0),
                 'query': query,
             }
 
@@ -110,6 +116,13 @@ def search():
             redirect(url_for('.index') + '#search')
 
     return redirect(url_for('.index') + '#search')
+
+@tubio_api.route('/suggest', methods=['POST'])
+def suggest():
+    query = request.form.get('youtube_query', '').strip()
+    if len(query) < ConfigManager().tubio.autocomplete_min_query_len:
+        return {'suggestions': []}
+    return {'suggestions': AudioDownloader.suggest_queries(query)}
 
 @tubio_api.route('/youtube_download', methods=['POST'])
 def youtube_download():

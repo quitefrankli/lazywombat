@@ -177,37 +177,50 @@ class AudioDownloader:
         return timedelta(seconds=total_seconds)
 
     @staticmethod
-    def search_youtube(query: str, cached_yt_vid_ids: Set[str], page: int = 0) -> dict:
-        """
-        Search YouTube for videos matching the query. Returns a dict with paginated results
-        and pagination metadata: {"results": [...], "page": int, "has_prev": bool, "has_next": bool}.
-        If query is a direct YouTube URL, returns only that video with no pagination.
+    def suggest_queries(query: str) -> List[str]:
+        """Best-effort YouTube search-term suggestions for autocomplete.
 
-        Raises:
-            VideoTooLongError: If a direct URL video exceeds the maximum allowed length.
+        Uses Google's public suggest endpoint (returns JSON `[query, [suggestions...]]`).
+        Never raises — returns [] on any network/parse failure so typing stays responsive.
         """
-        # Check if query is a direct YouTube URL
-        video_id = AudioDownloader.extract_video_id(query)
-        if video_id:
-            logging.info(f"Direct YouTube URL detected, fetching video: {video_id}")
-            # Let VideoTooLongError propagate for direct URLs
-            video_info = AudioDownloader.get_video_info(video_id, cached_yt_vid_ids)
-            results = [video_info] if video_info else []
-            return {"results": results, "page": 0, "total_pages": 1}
+        cfg = ConfigManager().tubio
+        try:
+            response = requests.get(
+                cfg.autocomplete_suggest_url,
+                params={"client": "firefox", "ds": "yt", "q": query},
+                timeout=cfg.autocomplete_request_timeout_s,
+            )
+            response.raise_for_status()
+            suggestions = json.loads(response.text)[1]
+            return [str(s) for s in suggestions][: cfg.autocomplete_max_suggestions]
+        except Exception:
+            logging.exception("Failed to fetch YouTube search suggestions")
+            return []
 
+    @staticmethod
+    def _scrape_search_page(query: str, cached_yt_vid_ids: Set[str], sp: Optional[str] = None) -> dict:
+        """Scrape a single YouTube results page, applying the max-length cap.
+
+        Returns {"results": [survivors], "filtered_too_long": [long_video_ids], "raw_count": int}
+        where raw_count is the number of parseable videoRenderer items on the page (before the
+        length cap). `sp` is the raw base64 duration-filter param, added only when truthy.
+        """
         params = {"search_query": query}
+        if sp:
+            params["sp"] = sp
         response = requests.get(AudioDownloader.YOUTUBE_SEARCH_URL, params=params)
         response.raise_for_status()
         html = response.text
         # Extract ytInitialData JSON
         initial_data_match = re.search(r'var ytInitialData = (\{.*?\});', html, re.DOTALL)
         if not initial_data_match:
-            return {"results": [], "page": 0, "total_pages": 1}
+            logging.warning(f"Tubio scrape: ytInitialData not found (sp={sp!r}, html_len={len(html)})")
+            return {"results": [], "filtered_too_long": [], "raw_count": 0}
         try:
             data = json.loads(initial_data_match.group(1))
         except Exception:
             logging.exception("Failed to parse YouTube search results")
-            return {"results": [], "page": 0, "total_pages": 1}
+            return {"results": [], "filtered_too_long": [], "raw_count": 0}
         # Traverse the JSON to get videoRenderer items
         sections = data.get('contents', {}) \
             .get('twoColumnSearchResultsRenderer', {}) \
@@ -215,8 +228,9 @@ class AudioDownloader:
             .get('sectionListRenderer', {}) \
             .get('contents', [])
 
-        logging.info(f"Searching YouTube with query: {query} (page {page})")
-        all_results = []
+        results = []
+        filtered_too_long = []
+        raw_count = 0
         for section in sections:
             items = section.get('itemSectionRenderer', {}).get('contents', [])
             for item in items:
@@ -226,10 +240,12 @@ class AudioDownloader:
                 length_txt = video.get('lengthText', {}).get('simpleText', '')
                 if not length_txt:
                     continue
+                raw_count += 1
+                vid_id = video.get('videoId')
                 vid_length = AudioDownloader.get_vid_length(length_txt)
                 if vid_length > ConfigManager().tubio.max_video_length:
+                    filtered_too_long.append(vid_id)
                     continue
-                vid_id = video.get('videoId')
                 cached = vid_id in cached_yt_vid_ids
 
                 view_count = video.get('viewCountText', {}).get('simpleText', '')
@@ -243,7 +259,7 @@ class AudioDownloader:
                 thumbnails = video.get('thumbnail', {}).get('thumbnails', [])
                 thumbnail_url = thumbnails[-1].get('url', '') if thumbnails else ''
 
-                all_results.append({
+                results.append({
                     "video_id": vid_id,
                     "url": f"https://www.youtube.com/watch?v={vid_id}",
                     "title": title,
@@ -254,17 +270,76 @@ class AudioDownloader:
                     "cached": cached,
                     "thumbnail_url": thumbnail_url,
                 })
+        return {"results": results, "filtered_too_long": filtered_too_long, "raw_count": raw_count}
 
-        page_size = ConfigManager().tubio.max_results
-        max_pages = ConfigManager().tubio.max_search_pages
-        total_pages = min(max_pages, max(1, (len(all_results) + page_size - 1) // page_size))
+    @staticmethod
+    def search_youtube(query: str, cached_yt_vid_ids: Set[str], page: int = 0) -> dict:
+        """
+        Search YouTube for videos matching the query. Returns a dict with paginated results
+        and pagination metadata: {"results": [...], "page": int, "total_pages": int, ...}.
+        If query is a direct YouTube URL, returns only that video with no pagination.
+
+        Applies ordered length-filter fallback tiers (config.search_length_filter_sps): starts
+        unfiltered, then falls back to short/medium duration buckets, accumulating deduped results
+        until the requested page is filled or a tier returns nothing.
+
+        Raises:
+            VideoTooLongError: If a direct URL video exceeds the maximum allowed length.
+        """
+        # Check if query is a direct YouTube URL
+        video_id = AudioDownloader.extract_video_id(query)
+        if video_id:
+            logging.info(f"Direct YouTube URL detected, fetching video: {video_id}")
+            # Let VideoTooLongError propagate for direct URLs
+            video_info = AudioDownloader.get_video_info(video_id, cached_yt_vid_ids)
+            results = [video_info] if video_info else []
+            return {"results": results, "page": 0, "total_pages": 1}
+
+        cfg = ConfigManager().tubio
+        page_size = cfg.max_results
+        max_pages = cfg.max_search_pages
+
+        # Search is stateless (each page click re-scrapes) and YouTube's duration
+        # buckets are non-deterministic, so we always run every tier and build the
+        # full deduped set. total_pages is then computed from what we actually have
+        # — no speculative "next page" that could vanish on the follow-up request.
+        combined = []
+        seen = set()
+        filtered_ids = set()
+        tiers = cfg.search_length_filter_sps
+        for tier_idx, sp in enumerate(tiers, start=1):
+            logging.info(f"Tubio search: query={query!r} page={page} tier={tier_idx}/{len(tiers)} sp={sp!r}")
+            scraped = AudioDownloader._scrape_search_page(query, cached_yt_vid_ids, sp=sp)
+            new_this_tier = 0
+            for vid in scraped["results"]:
+                if vid["video_id"] in seen:
+                    continue
+                seen.add(vid["video_id"])
+                combined.append(vid)
+                new_this_tier += 1
+            filtered_ids.update(scraped["filtered_too_long"])
+            logging.info(
+                f"Tubio search tier {tier_idx} result: raw={scraped['raw_count']} "
+                f"survivors={len(scraped['results'])} new={new_this_tier} too_long={len(scraped['filtered_too_long'])} "
+                f"combined={len(combined)}"
+            )
+
+        tiers_tried = len(tiers)
+        total_pages = min(max_pages, max(1, (len(combined) + page_size - 1) // page_size))
         page = max(0, min(page, total_pages - 1))
         start = page * page_size
         end = start + page_size
+        filtered_too_long = len(filtered_ids - seen)
+        logging.info(
+            f"Tubio search done: query={query!r} tiers_tried={tiers_tried} total_results={len(combined)} "
+            f"page={page}/{total_pages} returned={len(combined[start:end])} filtered_too_long={filtered_too_long}"
+        )
         return {
-            "results": all_results[start:end],
+            "results": combined[start:end],
             "page": page,
             "total_pages": total_pages,
+            "filtered_too_long": filtered_too_long,
+            "max_video_length_minutes": int(cfg.max_video_length.total_seconds() // 60),
         }
 
     @staticmethod
