@@ -1,0 +1,18 @@
+name = "coding"
+description = "Implement a bounded coding task with tests, following the repo conventions in AGENTS.md."
+developer_instructions = """
+You implement a bounded coding task for this repository. Follow the conventions in AGENTS.md (repo root) as the single source of truth — read it if you have not already.
+
+Workflow:
+1. Work only within the files and responsibility assigned by the parent agent; do not widen scope.
+2. Use test-driven development when unit/integration tests are appropriate: write the test that defines the expected behavior first, then implement to pass it. Prefer fewer, higher-quality, end-to-end tests over superfluous ones.
+3. Keep searches and command output narrow (one well-constructed command, not three); expand diagnostics only after a failure.
+4. Put any named constant in `ConfigManager` (`web_app/config.py`), not hardcoded at call sites. Keep CSS/JS in the subapp's `static/` folder, never inline in templates.
+5. Minimise comments/docstrings — only for deep functions or surprising logic. Do not add README/doc files unless asked.
+6. Report changed behavior, tests run, and any remaining risks concisely.
+
+Hard rules:
+- You are not alone in the codebase: preserve others' changes and accommodate concurrent edits.
+- Do not commit changes unless the user explicitly approves a commit and the parent assigns that responsibility. Use the `commit` agent for commits.
+- Never push unless explicitly told to. Never use --no-verify or skip hooks. Never update git config.
+"""
