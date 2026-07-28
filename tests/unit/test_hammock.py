@@ -288,6 +288,7 @@ class TestGalleryUploadAndDelete:
         assert not (post_dir / "photo.webp").exists()
         assert _post_meta(projects_dir, proj, post)["template-data"]["items"] == []
 
+    @pytest.mark.ffmpeg
     def test_add_then_delete_video_transcodes_and_updates_state(self, projects_dir, tmp_path):
         di = DataInterface()
         alice = User("alice", "x", "fa", is_admin=False)
@@ -320,6 +321,7 @@ class TestGalleryUploadAndDelete:
         assert not (post_dir / "clip.mp4").exists()
         assert _post_meta(projects_dir, proj, post)["template-data"]["items"] == []
 
+    @pytest.mark.ffmpeg
     def test_phone_video_upload_is_normalized_to_mp4(self, projects_dir, tmp_path):
         di = DataInterface()
         alice = User("alice", "x", "fa", is_admin=False)
@@ -337,6 +339,7 @@ class TestGalleryUploadAndDelete:
             {"type": "video", "filename": "iphone.mp4", "has_audio": False}
         ]
 
+    @pytest.mark.ffmpeg
     def test_video_with_audio_preserves_one_audio_stream_and_renders_sound_control(
         self, projects_dir, tmp_path
     ):
@@ -423,6 +426,7 @@ class TestGalleryUploadAndDelete:
         assert "-dn" in cmd
         assert "-sn" in cmd
 
+    @pytest.mark.ffmpeg
     def test_audio_only_upload_is_rejected_and_cleaned_up(self, projects_dir, tmp_path):
         audio_path = tmp_path / "voice.m4a"
         subprocess.run(
@@ -473,6 +477,7 @@ class TestGalleryUploadAndDelete:
             for item in _post_meta(projects_dir, proj, post)["template-data"]["items"]
         ] == ["three.webp", "one.webp", "two.webp"]
 
+    @pytest.mark.ffmpeg
     def test_portrait_video_transcode_outputs_even_dimensions(self, projects_dir, tmp_path):
         di = DataInterface()
         alice = User("alice", "x", "fa", is_admin=False)
@@ -547,6 +552,7 @@ class TestGalleryUploadAndDelete:
         assert "broken.MOV" in str(exc.value)
         assert "tmp" not in str(exc.value)
 
+    @pytest.mark.ffmpeg
     def test_video_over_duration_limit_is_rejected(self, projects_dir, tmp_path, monkeypatch):
         from web_app.config import ConfigManager
         monkeypatch.setattr(ConfigManager().hammock, "gallery_video_max_duration_s", 0)
