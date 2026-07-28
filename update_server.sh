@@ -33,6 +33,7 @@ flock 9
 
 git checkout main
 git fetch origin main
+git fetch --tags
 PREVIOUS_COMMIT=$(git rev-parse HEAD)
 
 cleanup_failed_patch() {
