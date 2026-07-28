@@ -295,6 +295,11 @@ def cli_start(debug: bool, port: int, llm_source: str | None):
     ensure_local_redis()
 
     logging.info("Starting server (llm_source=%s)", cfg.llm.api_source)
+    # Under --debug, Werkzeug's reloader re-execs this whole module in a child
+    # process, so everything from here up runs twice: once in the supervising
+    # parent and once in the serving child (WERKZEUG_RUN_MAIN=true). The parent
+    # spawns redis-server; the child then finds it already up. That's why cold
+    # debug starts log both "Starting local redis-server" and "already running".
     app.run(host='0.0.0.0', port=port, debug=debug)
 
 def prod_entry():

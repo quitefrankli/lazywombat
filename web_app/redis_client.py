@@ -44,7 +44,8 @@ def ensure_local_redis() -> None:
 
     try:
         redis.Redis(host=host, port=port).ping()
-        logging.info("Redis already reachable at %s:%s", host, port)
+        if not ConfigManager().debug_mode:
+            logging.info("Redis already reachable at %s:%s", host, port)
         return
     except Exception:
         pass
