@@ -516,6 +516,7 @@
     display: block;
     width: 100%;
     height: auto;
+    margin: 0;
     background: #000;
     cursor: zoom-in;
 }
@@ -526,6 +527,7 @@ body.hammock-video-expanded {
     position: fixed;
     inset: 0;
     z-index: 1000;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -542,6 +544,10 @@ body.hammock-video-expanded {
     max-height: 100dvh;
     object-fit: contain;
     cursor: zoom-out;
+}
+.hammock-gallery-video.is-expanded .hammock-video-sound {
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: max(1rem, env(safe-area-inset-bottom));
 }
 .hammock-gallery-empty {
     color: var(--hw-text-muted);

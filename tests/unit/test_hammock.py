@@ -256,6 +256,36 @@ class TestGalleryUploadAndDelete:
     def test_video_max_height_defaults_to_720p(self):
         assert ConfigManager().hammock.gallery_video_max_height_px == 720
 
+    def test_gallery_video_resets_shared_post_media_margin(self):
+        css = (
+            Path(__file__).parents[2]
+            / "web_app"
+            / "hammock"
+            / "static"
+            / "hammock.css"
+        ).read_text()
+
+        gallery_video_rule = css.split(".hammock-gallery-video video {", 1)[1].split(
+            "}", 1
+        )[0]
+        assert "margin: 0;" in gallery_video_rule
+
+    def test_expanded_gallery_video_keeps_controls_inside_viewport(self):
+        css = (
+            Path(__file__).parents[2]
+            / "web_app"
+            / "hammock"
+            / "static"
+            / "hammock.css"
+        ).read_text()
+
+        expanded_rule = css.split(".hammock-gallery-video.is-expanded {", 1)[1].split(
+            "}", 1
+        )[0]
+        assert "box-sizing: border-box;" in expanded_rule
+        assert ".hammock-gallery-video.is-expanded .hammock-video-sound {" in css
+        assert "env(safe-area-inset-bottom)" in css
+
     def test_add_then_delete_image_generates_thumb_and_updates_state(self, projects_dir):
         di = DataInterface()
         alice = User("alice", "x", "fa", is_admin=False)
