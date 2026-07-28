@@ -66,9 +66,10 @@
         <div class="container-fluid">
           <!-- Brand -->
           <div class="navbar-brand d-flex align-items-center mb-0">
-            <a href="/" title="Home" class="text-decoration-none me-2">
+            <a href="/" title="Home" aria-label="Home" class="navbar-home-link text-decoration-none">
               <i class="bi bi-house-fill text-sage"></i>
             </a>
+            <span class="navbar-brand-divider" aria-hidden="true"></span>
             <a href="{% block subapp_index_url %}/{% endblock %}" title="{% block subapp_title %}{{ app_name }}{% endblock %}" class="text-decoration-none navbar-brand-link">
               <span class="fw-bold">{% block navbar_brand %}{{ app_name }}{% endblock %}</span>
             </a>
