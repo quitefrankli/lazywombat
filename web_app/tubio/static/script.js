@@ -76,6 +76,11 @@ function handleTrackEnded() {
         return;
     }
 
+    if (surpriseMode) {
+        setTimeout(() => playNextSurprise(), 500);
+        return;
+    }
+
     if (crc) resetTrackPlayingUI(crc);
 
     if (isPlayingPlaylist) {
@@ -955,6 +960,7 @@ async function removeTrack(crc, buttonElement) {
 
 // Individual track playback controls
 function togglePlayTrack(crc) {
+    if (surpriseMode) exitSurpriseMode();
     const playButton = document.getElementById(`play-btn-${crc}`);
     const trackItem = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
     const loaded = getAudioForCrc(crc);
@@ -1073,6 +1079,188 @@ let currentPlaylistIndex = 0;
 let isPlayingPlaylist = false;
 let currentPlaylistName = '';
 
+// "Surprise Playlist" — infinite radio of temporary (unsaved) tracks. The client
+// owns the queue: it asks the server for the next related video (/surprise/next),
+// pre-converts it (/surprise/convert -> token), and streams it from
+// /surprise/audio/<token>. The next track is converted while the current plays so
+// transitions are gapless. Temp files are swept server-side (TTL + on /next).
+let surpriseMode = false;
+let surpriseQueue = [];          // ready {token, videoId, title, thumbnailUrl, durationS}
+let surpriseCurrent = null;
+let surpriseSeen = new Set();    // video_ids picked this session (server exclude list)
+let surpriseLastVideoId = null;  // chain seed for the next /surprise/next
+let surpriseExhausted = false;
+let surpriseFilling = false;
+
+function surpriseBufferSize() {
+    const btn = document.getElementById('surprise-btn');
+    const n = btn ? parseInt(btn.dataset.bufferSize, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : 5;
+}
+
+function setSurpriseStatus(message) {
+    const el = document.getElementById('surprise-status');
+    if (el) el.textContent = message || '';
+}
+
+function exitSurpriseMode() {
+    surpriseMode = false;
+    surpriseQueue = [];
+    surpriseCurrent = null;
+    setSurpriseStatus('');
+}
+
+async function startSurprise() {
+    surpriseMode = true;
+    isPlayingPlaylist = false;
+    surpriseQueue = [];
+    surpriseCurrent = null;
+    surpriseSeen = new Set();
+    surpriseLastVideoId = null;
+    surpriseExhausted = false;
+    setSurpriseStatus('Finding music you might like…');
+
+    const first = await surpriseFetchAndConvertOne();
+    if (!first) {
+        if (!surpriseMode) return; // user navigated away mid-fetch
+        setSurpriseStatus(surpriseExhausted
+            ? 'No fresh tracks found right now. Try again later.'
+            : 'Add some songs to your library first, then hit Surprise!');
+        surpriseMode = false;
+        return;
+    }
+    surpriseQueue.push(first);
+    playNextSurprise();
+}
+
+// Pick one related video and pre-convert it. Returns a ready entry or null.
+async function surpriseFetchAndConvertOne() {
+    try {
+        const nextResp = await jsonPost('/tubio/surprise/next', {
+            seed: surpriseLastVideoId || '',
+            exclude: [...surpriseSeen].join(','),
+        });
+        const nextData = await nextResp.json();
+        if (!nextResp.ok || nextData.error) return null;
+        if (nextData.empty_reason === 'no_library') return null;
+        if (nextData.exhausted || !nextData.track) { surpriseExhausted = true; return null; }
+
+        const track = nextData.track;
+        surpriseSeen.add(track.video_id);
+        surpriseLastVideoId = track.video_id;
+
+        const convResp = await jsonPost('/tubio/surprise/convert', {
+            video_id: track.video_id,
+            title: track.title,
+        });
+        const convData = await convResp.json();
+        if (!convResp.ok || !convData.token) return null;
+
+        return {
+            token: convData.token,
+            videoId: track.video_id,
+            title: track.title,
+            thumbnailUrl: track.thumbnail_url || '',
+            durationS: track.duration_s || 0,
+        };
+    } catch (err) {
+        console.error('Surprise fetch/convert failed:', err);
+        return null;
+    }
+}
+
+// Top the buffer back up to the rolling-window size (background pre-conversion).
+async function fillSurpriseBuffer() {
+    if (surpriseFilling) return;
+    surpriseFilling = true;
+    try {
+        while (surpriseMode && !surpriseExhausted &&
+               surpriseQueue.length < surpriseBufferSize()) {
+            const entry = await surpriseFetchAndConvertOne();
+            if (!entry) break;
+            surpriseQueue.push(entry);
+        }
+    } finally {
+        surpriseFilling = false;
+    }
+}
+
+async function playNextSurprise() {
+    if (!surpriseMode) return;
+    if (surpriseQueue.length === 0) {
+        if (surpriseExhausted) {
+            showNotification('Surprise radio finished', 'info');
+            exitSurpriseMode();
+            return;
+        }
+        setSurpriseStatus('Loading next track…');
+        await fillSurpriseBuffer();
+        if (surpriseQueue.length === 0) {
+            showNotification('Surprise radio finished', 'info');
+            exitSurpriseMode();
+            return;
+        }
+    }
+    const entry = surpriseQueue.shift();
+    surpriseCurrent = entry;
+    setSurpriseStatus(`Surprise radio · now playing “${entry.title}”`);
+    playSurpriseToken(entry);
+    fillSurpriseBuffer(); // pre-convert the next tracks while this one plays
+}
+
+function playSurpriseToken(entry) {
+    const audio = getAudio();
+    if (!audio) return;
+    const crcId = 'surprise:' + entry.token;
+
+    if (currentTrackCrc && String(currentTrackCrc) !== crcId) {
+        resetTrackPlayingUI(currentTrackCrc);
+    }
+    audio.dataset.crc = crcId;
+    audio.dataset.trimStart = '0';
+    audio.dataset.trimEnd = '0';
+    audio._trimEnded = false;
+    audio.src = '/tubio/surprise/audio/' + entry.token;
+    audio.load();
+    applyTrackbarVolume(audio);
+    currentTrackCrc = crcId;
+    audio.play().catch(err => {
+        console.error('Error playing surprise track:', err);
+        setTimeout(() => playNextSurprise(), 500);
+    });
+    updateTrackbarFromObject(entry);
+}
+
+// Drive the trackbar from a plain surprise entry (no accordion DOM node exists).
+function updateTrackbarFromObject(entry) {
+    const trackbar = document.getElementById('tubio-trackbar');
+    const titleEl = document.getElementById('trackbar-title');
+    const playlistEl = document.getElementById('trackbar-playlist');
+    const thumb = document.getElementById('trackbar-thumb');
+    const placeholder = document.getElementById('trackbar-thumb-placeholder');
+
+    if (trackbar) trackbar.dataset.active = 'true';
+    if (titleEl) titleEl.textContent = entry.title || 'Unknown Track';
+    if (playlistEl) playlistEl.textContent = 'Surprise Radio';
+    if (entry.thumbnailUrl && thumb) {
+        if (thumb.src !== entry.thumbnailUrl) thumb.src = entry.thumbnailUrl;
+        thumb.hidden = false;
+        if (placeholder) placeholder.hidden = true;
+    } else {
+        if (thumb) { thumb.hidden = true; thumb.removeAttribute('src'); }
+        if (placeholder) placeholder.hidden = false;
+    }
+    updateTrackbarPlayPauseUI(true);
+    updateTrackbarTitleOverflow();
+
+    if ('mediaSession' in navigator) {
+        const artwork = entry.thumbnailUrl
+            ? [{ src: entry.thumbnailUrl, sizes: '320x180', type: 'image/jpeg' }]
+            : [];
+        navigator.mediaSession.metadata = new MediaMetadata({ title: entry.title || '', artwork });
+    }
+}
+
 function togglePlaylistPlayback(playlistName) {
     // Check if this playlist is currently playing
     if (isPlayingPlaylist && currentPlaylistName === playlistName) {
@@ -1155,6 +1343,7 @@ function resetAllPlaylistPlayButtons() {
 }
 
 function playAllInPlaylist(playlistName) {
+    if (surpriseMode) exitSurpriseMode();
     // Find all audio items in this playlist
     const accordionId = `audioAccordion-${playlistName.replace(/ /g, '-')}`;
     const accordion = document.getElementById(accordionId);
@@ -1379,6 +1568,12 @@ function resetTrackPlayingUI(crc) {
 }
 
 function nextTrack() {
+    if (surpriseMode) {
+        const audio = getAudio();
+        if (audio) audio.pause();
+        playNextSurprise();
+        return;
+    }
     if (!isPlayingPlaylist || currentPlaylistQueue.length === 0) return;
     const oldCrc = currentPlaylistQueue[currentPlaylistIndex];
     const oldAudio = getAudioForCrc(oldCrc);
@@ -1389,6 +1584,12 @@ function nextTrack() {
 }
 
 function prevTrack() {
+    if (surpriseMode) {
+        // No history is retained for temp tracks — restart the current one.
+        const audio = getAudio();
+        if (audio) audio.currentTime = getPlaybackBounds(audio).start;
+        return;
+    }
     if (isPlayingPlaylist && currentPlaylistQueue.length > 0) {
         const crc = currentPlaylistQueue[currentPlaylistIndex];
         const audio = getAudioForCrc(crc);

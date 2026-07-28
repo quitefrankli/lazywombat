@@ -3,6 +3,7 @@ import json
 import math
 import time
 import random
+import re
 
 from typing import *
 from pathlib import Path
@@ -46,6 +47,9 @@ def inject_app_name():
         tubio_autocomplete=dict(
             debounce_ms=cfg.autocomplete_debounce_ms,
             min_query_len=cfg.autocomplete_min_query_len,
+        ),
+        tubio_surprise=dict(
+            buffer_size=cfg.surprise_buffer_size,
         ),
     )
 
@@ -156,6 +160,75 @@ def discover():
     except Exception:
         logging.exception("Error generating discovery recommendations")
         return {'error': 'Discovery failed. Please try again.', 'query': 'Discover'}, 500
+
+
+_SURPRISE_TOKEN_RE = re.compile(r'^[A-Za-z0-9]{10}$')
+
+
+@tubio_api.route('/surprise/next', methods=['POST'])
+def surprise_next():
+    """Pick the next Surprise-Playlist candidate via YouTube-Mix, without downloading.
+    Body: seed (optional video_id to chain from), exclude (comma-sep video_ids to skip)."""
+    cfg = ConfigManager().tubio
+    try:
+        DataInterface().sweep_temp_tracks()
+        owned_ids = {vid for vid in get_cached_yt_vid_ids(cur_user()) if vid}
+        if not owned_ids:
+            return {'empty_reason': 'no_library'}
+
+        exclude = {v for v in request.form.get('exclude', '').split(',') if v}
+        skip = owned_ids | exclude
+        max_length = cfg.max_video_length
+
+        seed = request.form.get('seed', '').strip()
+        seeds = [seed] if seed else []
+        remaining = list(owned_ids - {seed})
+        random.shuffle(remaining)
+        seeds += remaining
+
+        for s in seeds:
+            candidates = AudioDownloader.get_mix_related(s)
+            random.shuffle(candidates)
+            for rec in candidates:
+                vid = rec['video_id']
+                if vid in skip:
+                    continue
+                if timedelta(seconds=rec.get('duration_s', 0)) > max_length:
+                    continue
+                return {'track': rec}
+
+        return {'exhausted': True}
+    except Exception:
+        logging.exception("Error picking surprise track")
+        return {'error': 'Surprise failed. Please try again.'}, 500
+
+
+@tubio_api.route('/surprise/convert', methods=['POST'])
+def surprise_convert():
+    """Download+transcode a temp track (pre-conversion). Returns its serve token."""
+    video_id = request.form.get('video_id', '').strip()
+    title = request.form.get('title', '').strip()
+    if not video_id:
+        return {'error': 'No video ID provided'}, 400
+    try:
+        token = DataInterface().generate_random_string(10)
+        AudioDownloader.download_temp_track(video_id, token)
+        return {'token': token}
+    except Exception:
+        logging.exception("Error converting surprise track")
+        return {'error': 'Error converting track'}, 500
+
+
+@limiter.limit("100 per second")
+@tubio_api.route('/surprise/audio/<token>')
+def serve_surprise_audio(token: str):
+    if not _SURPRISE_TOKEN_RE.match(token):
+        return Response(status=404)
+    file_path = DataInterface().get_temp_track_path(token)
+    if not file_path.exists():
+        return Response(status=404)
+    return _range_response(file_path, etag=token, download_name=f"{token}.m4a")
+
 
 @tubio_api.route('/youtube_download', methods=['POST'])
 def youtube_download():
@@ -308,21 +381,27 @@ def serve_audio(crc: int):
         redownload_audio(metadata)
 
     file_path = DataInterface().get_audio_path(crc)
+    return _range_response(file_path, etag=str(crc), download_name=f"{crc}.m4a")
+
+
+def _range_response(file_path: Path, etag: str, download_name: str) -> Response:
+    """Serve an m4a file honouring HTTP Range requests (partial 206) with caching.
+    Shared by library audio (serve_audio) and Surprise-Playlist temp tracks."""
     file_size = file_path.stat().st_size
     range_header = request.headers.get("Range", None)
-    logging.info(f"Serving audio {file_path}: {metadata.title} to user {cur_user()} with size {file_size} bytes, Range header: {range_header}")
+    logging.info(f"Serving audio {file_path} to user {cur_user()} with size {file_size} bytes, Range header: {range_header}")
 
     if not range_header:
         response = send_file(
             file_path,
             mimetype='audio/mp4',
             as_attachment=False,
-            download_name=f"{crc}.m4a"
+            download_name=download_name
         )
         response.headers['Accept-Ranges'] = 'bytes'
         response.cache_control.max_age = ConfigManager().cache_max_age
         response.cache_control.public = True
-        response.set_etag(str(crc))
+        response.set_etag(etag)
         return response
 
     # Example: "Range: bytes=12345-"
@@ -367,7 +446,7 @@ def serve_audio(crc: int):
     # Cache audio ranges
     response.cache_control.max_age = ConfigManager().cache_max_age
     response.cache_control.public = True
-    response.set_etag(str(crc))
+    response.set_etag(etag)
 
     return response
 

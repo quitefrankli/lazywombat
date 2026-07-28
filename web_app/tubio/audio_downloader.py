@@ -519,3 +519,41 @@ class AudioDownloader:
         output_file = DataInterface().get_audio_path(crc)
         output_file.parent.mkdir(parents=True, exist_ok=True)
         os.rename(temp_file, output_file)
+
+    @staticmethod
+    def download_temp_track(video_id: str, token: str) -> None:
+        """Download+transcode a track for the Surprise Playlist without saving it
+        to the library (no CRC, thumbnail, or metadata write). The result lands at
+        DataInterface().get_temp_track_path(token) and is swept later by TTL."""
+        logging.info(f"Tubio downloading temp track video_id:={video_id} token:={token}")
+        temp_file = DataInterface().find_avail_temp_file_path(ext=".%(ext)s")
+        temp_file.parent.mkdir(parents=True, exist_ok=True)
+
+        progress = DownloadProgress(video_id)
+
+        def progress_hook(d):
+            if d['status'] == 'downloading':
+                progress.status = "downloading"
+                total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+                downloaded = d.get('downloaded_bytes', 0)
+                if total > 0:
+                    progress.percent = (downloaded / total) * 100
+            elif d['status'] == 'finished':
+                progress.status = "processing"
+                progress.percent = 100
+
+        ydl_opts = AudioDownloader._build_ydl_opts(temp_file.as_posix(), [progress_hook])
+
+        try:
+            AudioDownloader.download_audio_file(video_id, ydl_opts)
+            progress.status = "complete"
+        except Exception as e:
+            progress.status = "error"
+            progress.error = str(e)
+            temp_file.with_suffix('.m4a').unlink(missing_ok=True)
+            raise
+
+        temp_file = temp_file.with_suffix('.m4a')
+        output_file = DataInterface().get_temp_track_path(token)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        os.rename(temp_file, output_file)

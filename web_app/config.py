@@ -107,6 +107,12 @@ class TubioConfig:
     discover_seed_count: int = 5
     discover_entries_per_seed: int = 15
     discover_max_results: int = 20
+    # "Surprise Playlist" infinite radio: at most this many pre-converted temp
+    # tracks buffered on disk at once (rolling window). Temp tracks are never
+    # saved to the library; files older than the TTL are swept.
+    surprise_buffer_size: int = 5
+    surprise_temp_ttl_s: int = 3600
+    surprise_temp_dirname: str = "temp_tracks"
 
     @property
     def cookie_path(self) -> Path:

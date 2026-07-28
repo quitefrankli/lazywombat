@@ -1,6 +1,7 @@
 import binascii
 import logging
 import shutil
+import time
 
 from pathlib import Path
 from pydantic import BaseModel
@@ -88,6 +89,23 @@ class DataInterface(BaseDataInterface):
         self.app_audio_dir = self.app_dir / "audio"
         self.app_thumbnails_dir = self.app_dir / "thumbnails"
         self.app_metadata_file = self.app_dir / "metadata.json"
+        self.app_temp_tracks_dir = ConfigManager().temp_dir / ConfigManager().tubio.surprise_temp_dirname
+
+    def get_temp_track_path(self, token: str) -> Path:
+        """Path for a Surprise-Playlist temp track. Never added to metadata."""
+        return self.app_temp_tracks_dir / f"{token}.m4a"
+
+    def sweep_temp_tracks(self) -> None:
+        """Best-effort removal of temp tracks older than the configured TTL."""
+        if not self.app_temp_tracks_dir.exists():
+            return
+        cutoff = time.time() - ConfigManager().tubio.surprise_temp_ttl_s
+        for path in self.app_temp_tracks_dir.glob("*.m4a"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+            except OSError:
+                logging.warning("Failed to sweep temp track %s", path, exc_info=True)
 
     def delete_audio(self, crc: int) -> None:
         with self.edit_metadata() as metadata:
