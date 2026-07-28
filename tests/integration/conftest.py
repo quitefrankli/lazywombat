@@ -84,10 +84,14 @@ cli_start(["--port", "{port}", "--debug"])
     if not wait_for_server("127.0.0.1", port, timeout=30.0):
         process.terminate()
         try:
-            process.wait(timeout=5)
+            stdout, stderr = process.communicate(timeout=5)
         except subprocess.TimeoutExpired:
             process.kill()
-        raise RuntimeError(f"Server failed to start on port {port}")
+            stdout, stderr = process.communicate()
+        output = b"\n".join(part for part in (stdout, stderr) if part).decode(
+            "utf-8", errors="replace"
+        )
+        raise RuntimeError(f"Server failed to start on port {port}\n{output}")
     
     yield base_url
     
