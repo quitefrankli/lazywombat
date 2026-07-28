@@ -24,7 +24,7 @@ function toggleGoalState(switchElement, goalId) {
 	})
 	.catch((error) => {
 		console.error("Failed to toggle goal state", error);
-        switchElement.checked = !state; // Revert the switch state on error
+		switchElement.checked = !state; // Revert the switch state on error
 	});
 }
 
@@ -330,88 +330,94 @@ document.addEventListener('click', async event => {
 	}
 });
 
+function appendHtmlFragment(container, html) {
+	const template = document.createElement('template');
+	template.innerHTML = html.trim();
+	const fragment = template.content;
+	container.appendChild(fragment);
+}
+
+function ensureJsonResponse(response) {
+	if (!response.ok) {
+		throw new Error(`Request failed with status ${response.status}`);
+	}
+	return response.json();
+}
+
+function setLoadMoreButtonLoading(button) {
+	button.disabled = true;
+	button.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Loading...';
+}
+
+function resetLoadMoreButton(button) {
+	button.disabled = false;
+	button.innerHTML = '<i class="bi bi-arrow-down me-2"></i>Load More';
+}
+
+function completePagination(button, hasMore) {
+	if (!hasMore) {
+		button.remove();
+		return;
+	}
+	resetLoadMoreButton(button);
+}
+
 // Pagination for summary goals
 let summaryCurrentPage = 0;
-let summaryHasMoreGoals = false;
 
-function loadMoreSummaryGoals() {
+async function loadMoreSummaryGoals() {
 	const btn = document.getElementById('load-more-btn');
-	if (!btn) return;
-	
-	btn.disabled = true;
-	btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Loading...';
-	
-	summaryCurrentPage++;
-	fetch(`/todoist/api/summary_goals_page?page=${summaryCurrentPage}`)
-		.then(response => response.json())
-		.then(data => {
-			const container = document.getElementById('goals-container');
-			container.innerHTML += data.html;
-			initGoalDragAndDrop(container);
-			summaryHasMoreGoals = data.has_more;
-			
-			if (!summaryHasMoreGoals) {
-				btn.remove();
-			} else {
-				btn.disabled = false;
-				btn.innerHTML = '<i class="bi bi-arrow-down me-2"></i>Load More';
-			}
-		})
-		.catch(error => {
-			console.error('Error loading more goals:', error);
-			btn.disabled = false;
-			btn.innerHTML = '<i class="bi bi-arrow-down me-2"></i>Load More';
-		});
+	const container = document.getElementById('goals-container');
+	if (!btn || !container) return;
+
+	setLoadMoreButtonLoading(btn);
+	const nextPage = summaryCurrentPage + 1;
+
+	try {
+		const data = await fetch(`/todoist/api/summary_goals_page?page=${nextPage}`).then(ensureJsonResponse);
+		appendHtmlFragment(container, data.html);
+		initGoalDragAndDrop(container);
+		summaryCurrentPage = nextPage;
+		completePagination(btn, data.has_more);
+	} catch (error) {
+		console.error('Error loading more goals:', error);
+		resetLoadMoreButton(btn);
+	}
 }
 
 // Pagination for completed goals
 let completedCurrentPage = 0;
-let completedHasMoreGoals = false;
 
-function loadMoreCompletedGoals() {
+async function loadMoreCompletedGoals() {
 	const btn = document.getElementById('load-more-btn');
-	if (!btn) return;
-	
-	btn.disabled = true;
-	btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Loading...';
-	
-	completedCurrentPage++;
-	fetch(`/todoist/api/completed_goals_page?page=${completedCurrentPage}`)
-		.then(response => response.json())
-		.then(data => {
-			const container = document.getElementById('goals-container');
-			container.innerHTML += data.html;
-			completedHasMoreGoals = data.has_more;
-			
-			if (!completedHasMoreGoals) {
-				btn.remove();
-			} else {
-				btn.disabled = false;
-				btn.innerHTML = '<i class="bi bi-arrow-down me-2"></i>Load More';
-			}
-		})
-		.catch(error => {
-			console.error('Error loading more goals:', error);
-			btn.disabled = false;
-			btn.innerHTML = '<i class="bi bi-arrow-down me-2"></i>Load More';
-		});
+	const container = document.getElementById('goals-container');
+	if (!btn || !container) return;
+
+	setLoadMoreButtonLoading(btn);
+	const nextPage = completedCurrentPage + 1;
+
+	try {
+		const data = await fetch(`/todoist/api/completed_goals_page?page=${nextPage}`).then(ensureJsonResponse);
+		appendHtmlFragment(container, data.html);
+		initGoalDragAndDrop(container);
+		completedCurrentPage = nextPage;
+		completePagination(btn, data.has_more);
+	} catch (error) {
+		console.error('Error loading more goals:', error);
+		resetLoadMoreButton(btn);
+	}
 }
 
 // Initialize pagination based on which page we're on
 document.addEventListener('DOMContentLoaded', function() {
-	const summaryGoalsPage = document.querySelector('body').classList.contains('summary-goals-page');
-	const completedGoalsPage = document.querySelector('body').classList.contains('completed-goals-page');
-	
-	if (summaryGoalsPage) {
-		const btn = document.getElementById('load-more-btn');
-		if (btn) {
-			btn.onclick = loadMoreSummaryGoals;
-		}
-	} else if (completedGoalsPage) {
-		const btn = document.getElementById('load-more-btn');
-		if (btn) {
-			btn.onclick = loadMoreCompletedGoals;
-		}
+	const summaryGoalsPage = document.body.classList.contains('summary-goals-page');
+	const completedGoalsPage = document.body.classList.contains('completed-goals-page');
+	const btn = document.getElementById('load-more-btn');
+
+	if (btn && summaryGoalsPage) {
+		btn.addEventListener('click', loadMoreSummaryGoals);
+	} else if (btn && completedGoalsPage) {
+		btn.addEventListener('click', loadMoreCompletedGoals);
 	}
 
 	initGoalDragAndDrop();
