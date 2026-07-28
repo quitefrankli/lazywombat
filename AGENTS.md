@@ -16,6 +16,8 @@
 
 * A debug server is usually available for debugging at 127.0.0.1:12345 its data can be found under ~/.nabicat_debug/...
 
+* Production resource safety: when working on the production server, do not start a separate debug/test web app. Reuse existing diagnostics, keep tests and investigative commands narrowly scoped, and avoid full test suites, large generated media/transcodes, load tests, or other resource-intensive work unless explicitly requested.
+
 * Project Architecture:
     - this project contains a collection of smaller subapps/subpages under web_app/ all of which share a similar ui/ux theme and share the same domain and host
     - Each subapp is a Flask Blueprint with its own templates/ and static/ folders

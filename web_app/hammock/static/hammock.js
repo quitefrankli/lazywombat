@@ -175,6 +175,100 @@ document.addEventListener("DOMContentLoaded", function() {
     };
     setupGalleryImages();
 
+    const videos = Array.from(document.querySelectorAll("[data-hammock-video]"));
+    const syncSoundButton = video => {
+        const container = video.closest(".hammock-gallery-video, .hammock-edit-tile");
+        const button = container && container.querySelector("[data-video-sound]");
+        if (!button) return;
+        const icon = button.querySelector("i");
+        button.setAttribute("aria-pressed", String(!video.muted));
+        button.setAttribute("aria-label", video.muted ? "Unmute video" : "Mute video");
+        icon.classList.toggle("bi-volume-mute-fill", video.muted);
+        icon.classList.toggle("bi-volume-up-fill", !video.muted);
+    };
+
+    videos.forEach(video => {
+        video.muted = true;
+        syncSoundButton(video);
+        const container = video.closest(".hammock-gallery-video, .hammock-edit-tile");
+        const button = container && container.querySelector("[data-video-sound]");
+        if (!button) return;
+        button.addEventListener("click", () => {
+            const shouldUnmute = video.muted;
+            videos.forEach(other => {
+                other.muted = true;
+                syncSoundButton(other);
+            });
+            if (shouldUnmute) {
+                video.muted = false;
+                video.play().catch(() => {});
+            }
+            syncSoundButton(video);
+        });
+    });
+
+    const reorderGrid = document.querySelector("[data-reorder-grid]");
+    const mediaOrderInput = document.querySelector("[data-media-order]");
+    if (reorderGrid && mediaOrderInput) {
+        const tiles = () => Array.from(reorderGrid.querySelectorAll("[data-media-item]"));
+        const syncOrder = () => {
+            const current = tiles();
+            mediaOrderInput.value = JSON.stringify(current.map(tile => tile.dataset.mediaItem));
+            current.forEach((tile, index) => {
+                tile.querySelector("[data-reorder-previous]").disabled = index === 0;
+                tile.querySelector("[data-reorder-next]").disabled = index === current.length - 1;
+            });
+        };
+
+        reorderGrid.addEventListener("click", event => {
+            const previous = event.target.closest("[data-reorder-previous]");
+            const next = event.target.closest("[data-reorder-next]");
+            const button = previous || next;
+            if (!button) return;
+            const tile = button.closest("[data-media-item]");
+            if (previous && tile.previousElementSibling) {
+                reorderGrid.insertBefore(tile, tile.previousElementSibling);
+            } else if (next && tile.nextElementSibling) {
+                reorderGrid.insertBefore(tile.nextElementSibling, tile);
+            }
+            syncOrder();
+            button.focus();
+        });
+
+        reorderGrid.querySelectorAll("[data-reorder-handle]").forEach(handle => {
+            let dragged = null;
+            handle.addEventListener("pointerdown", event => {
+                if (event.button !== 0) return;
+                dragged = handle.closest("[data-media-item]");
+                dragged.classList.add("is-reordering");
+                handle.setPointerCapture(event.pointerId);
+                event.preventDefault();
+            });
+            handle.addEventListener("pointermove", event => {
+                if (!dragged) return;
+                const target = document.elementFromPoint(event.clientX, event.clientY);
+                const targetTile = target && target.closest("[data-media-item]");
+                if (!targetTile || targetTile === dragged || targetTile.parentElement !== reorderGrid) return;
+                const rect = targetTile.getBoundingClientRect();
+                const after = event.clientY > rect.top + rect.height / 2
+                    || (
+                        Math.abs(event.clientY - (rect.top + rect.height / 2)) < rect.height / 4
+                        && event.clientX > rect.left + rect.width / 2
+                    );
+                reorderGrid.insertBefore(dragged, after ? targetTile.nextSibling : targetTile);
+            });
+            const finish = () => {
+                if (!dragged) return;
+                dragged.classList.remove("is-reordering");
+                dragged = null;
+                syncOrder();
+            };
+            handle.addEventListener("pointerup", finish);
+            handle.addEventListener("pointercancel", finish);
+        });
+        syncOrder();
+    }
+
     // Gallery lightbox
     const galleryButtons = document.querySelectorAll(".hammock-gallery-photo-btn");
     if (galleryButtons.length > 0) {

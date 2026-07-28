@@ -11,6 +11,18 @@ def test_nginx_forwards_original_https_scheme():
     assert nginx_config.count("proxy_set_header X-Forwarded-Proto $scheme;") == 2
 
 
+def test_deployment_backfills_hammock_audio_after_production_health_check():
+    deployment = Path("update_server.sh").read_text()
+
+    health_check = deployment.index(
+        'wait_for_commit "http://127.0.0.1:5000/api/health" "$CANDIDATE_COMMIT"'
+    )
+    backfill = deployment.index("backfill_gallery_audio_flags(dry_run=False)")
+    disarm_rollback = deployment.index("ROLLBACK_ARMED=0", backfill)
+
+    assert health_check < backfill < disarm_rollback
+
+
 def test_health_reports_commit_loaded_by_worker(client, app):
     import web_app.__main__  # noqa: F401
 

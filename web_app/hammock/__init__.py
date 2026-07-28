@@ -1,5 +1,6 @@
 import base64
 import gzip
+import json
 import logging
 import zipfile
 from datetime import datetime, timezone
@@ -155,7 +156,18 @@ def edit_post(project: str, post: str):
                 di.update_markdown_post(project, post, title, source_md)
             elif template == 'gallery':
                 description = (request.form.get('description') or '').strip()
-                di.update_gallery_meta(project, post, title, description)
+                media_order = None
+                raw_media_order = request.form.get('media_order')
+                if raw_media_order is not None:
+                    try:
+                        media_order = json.loads(raw_media_order)
+                    except (json.JSONDecodeError, TypeError) as e:
+                        raise APIError("Media order is invalid") from e
+                    if not isinstance(media_order, list) or not all(
+                        isinstance(filename, str) for filename in media_order
+                    ):
+                        raise APIError("Media order is invalid")
+                di.update_gallery_meta(project, post, title, description, media_order)
                 files = [f for f in request.files.getlist('files') if f and f.filename]
                 if files:
                     di.add_gallery_images(cur_user(), project, post, files)

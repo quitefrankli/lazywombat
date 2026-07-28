@@ -371,6 +371,12 @@
     overflow: hidden;
     background: var(--hw-bg-cream);
     box-shadow: var(--hw-shadow-sm);
+    transition: transform var(--hw-transition-fast), box-shadow var(--hw-transition-fast);
+}
+.hammock-edit-tile.is-reordering {
+    transform: scale(1.03);
+    box-shadow: var(--hw-shadow-lg);
+    z-index: 2;
 }
 .hammock-edit-tile img,
 .hammock-edit-tile video {
@@ -397,8 +403,8 @@
     position: absolute;
     top: 6px;
     right: 6px;
-    width: 28px;
-    height: 28px;
+    width: 40px;
+    height: 40px;
     border-radius: var(--hw-radius-full);
     border: none;
     background: rgba(45, 74, 62, 0.75);
@@ -409,6 +415,63 @@
     display: flex;
     align-items: center;
     justify-content: center;
+}
+.hammock-reorder-drag,
+.hammock-reorder-buttons button,
+.hammock-video-sound {
+    border: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--hw-radius-full);
+    background: var(--hw-forest);
+    color: var(--hw-bg-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform var(--hw-transition-fast), background var(--hw-transition-fast);
+}
+.hammock-reorder-drag:hover,
+.hammock-reorder-buttons button:hover,
+.hammock-video-sound:hover {
+    background: var(--hw-sage-dark);
+    transform: translateY(-2px);
+}
+.hammock-reorder-drag:focus-visible,
+.hammock-reorder-buttons button:focus-visible,
+.hammock-video-sound:focus-visible {
+    outline: 3px solid var(--hw-gold);
+    outline-offset: 2px;
+}
+.hammock-reorder-drag {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    touch-action: none;
+    cursor: grab;
+}
+.hammock-reorder-drag:active {
+    cursor: grabbing;
+}
+.hammock-reorder-buttons {
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    display: flex;
+    gap: 4px;
+}
+.hammock-reorder-buttons button:disabled {
+    opacity: 0.45;
+    cursor: default;
+    transform: none;
+}
+.hammock-edit-tile .hammock-media-badge {
+    bottom: 52px;
+}
+.hammock-edit-tile .hammock-video-sound {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
 }
 .hammock-tile-delete:hover {
     background: var(--hw-coral);
@@ -445,12 +508,18 @@
     margin: 0 auto;
 }
 .hammock-gallery-photo {
+    position: relative;
     margin: 0;
     background: rgba(255, 255, 255, 0.72);
     border-radius: var(--hw-radius-xl);
     overflow: hidden;
     box-shadow: 0 18px 40px rgba(45, 74, 62, 0.14);
     backdrop-filter: blur(10px);
+}
+.hammock-gallery-video .hammock-video-sound {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 0.75rem;
 }
 .hammock-gallery-photo-btn {
     display: block;
