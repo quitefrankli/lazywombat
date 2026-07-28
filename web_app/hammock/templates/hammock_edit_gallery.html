@@ -17,6 +17,8 @@
                       enctype="multipart/form-data"
                       class="hammock-form">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="media_order" value='{{ (gallery.items | map(attribute="filename") | list) | tojson }}'
+                           data-media-order>
 
                     <div class="hammock-field">
                         <label class="hammock-label">Title</label>
@@ -34,15 +36,21 @@
                 <hr class="hammock-divider">
 
                 <h2 class="hammock-section-title">Media</h2>
-                <div class="hammock-edit-grid">
+                <div class="hammock-edit-grid" data-reorder-grid>
                     {% set media_items = gallery.items or [] %}
                     {% for item in media_items %}
                     {% set filename = item.filename %}
-                    <div class="hammock-edit-tile">
+                    <div class="hammock-edit-tile" data-media-item="{{ filename }}">
                         {% if item.type == 'video' %}
-                        <video muted playsinline preload="metadata">
+                        <video data-hammock-video autoplay loop muted playsinline preload="metadata">
                             <source src="{{ url_for('.post_asset', project=project_name, post=post_name, filename=filename) }}" type="video/mp4">
                         </video>
+                        {% if item.has_audio %}
+                        <button type="button" class="hammock-video-sound"
+                                data-video-sound aria-label="Unmute video" aria-pressed="false">
+                            <i class="bi bi-volume-mute-fill" aria-hidden="true"></i>
+                        </button>
+                        {% endif %}
                         <span class="hammock-media-badge"><i class="bi bi-play-fill"></i> Video</span>
                         {% else %}
                         <img loading="lazy"
@@ -55,6 +63,20 @@
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="hammock-tile-delete" aria-label="Delete media">×</button>
                         </form>
+                        <button type="button" class="hammock-reorder-drag" data-reorder-handle
+                                aria-label="Drag {{ filename }} to reorder">
+                            <i class="bi bi-grip-vertical" aria-hidden="true"></i>
+                        </button>
+                        <div class="hammock-reorder-buttons">
+                            <button type="button" data-reorder-previous
+                                    aria-label="Move {{ filename }} earlier">
+                                <i class="bi bi-chevron-left" aria-hidden="true"></i>
+                            </button>
+                            <button type="button" data-reorder-next
+                                    aria-label="Move {{ filename }} later">
+                                <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                            </button>
+                        </div>
                     </div>
                     {% else %}
                     <p class="hammock-empty">No media yet — add some below.</p>

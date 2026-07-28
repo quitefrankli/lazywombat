@@ -49,6 +49,7 @@ class Project(BaseModel):
 class GalleryItem(BaseModel):
     type: str = "image"
     filename: str
+    has_audio: bool | None = None
 
 
 class GalleryTemplateData(BaseModel):
@@ -91,6 +92,12 @@ class PreparedGalleryUpload(BaseModel):
     data: bytes
     display_name: str
     upload_suffix: str
+
+
+class VideoInfo(BaseModel):
+    duration: float | None = None
+    video_index: int
+    audio_index: int | None = None
 
 
 class ProjectStore(BaseModel):
@@ -391,7 +398,14 @@ class DataInterface(BaseDataInterface):
             items=[item for item in td.items if item.filename],
         )
 
-    def update_gallery_meta(self, project: str, post: str, title: str, description: str) -> None:
+    def update_gallery_meta(
+        self,
+        project: str,
+        post: str,
+        title: str,
+        description: str,
+        media_order: list[str] | None = None,
+    ) -> None:
         cfg = ConfigManager()
         title = self._validate_text(title, "Title", cfg.hammock.title_max_chars)
         description = self._validate_text(description, "Description", cfg.hammock.description_max_chars)
@@ -404,6 +418,17 @@ class DataInterface(BaseDataInterface):
             meta.title = title.strip()
             td = meta.template_data or GalleryTemplateData()
             td.description = description
+            if media_order is not None:
+                current = [item for item in td.items if item.filename]
+                by_filename = {item.filename: item for item in current}
+                if (
+                    len(by_filename) != len(current)
+                    or len(media_order) != len(current)
+                    or len(set(media_order)) != len(media_order)
+                    or set(media_order) != set(by_filename)
+                ):
+                    raise APIError("Media order does not match the current gallery")
+                td.items = [by_filename[filename] for filename in media_order]
             meta.template_data = td
 
     def add_gallery_images(self, user: User, project: str, post: str, files: list[FileStorage]) -> int:
@@ -483,15 +508,19 @@ class DataInterface(BaseDataInterface):
             upload_path = Path(tmp.name)
             output_path = post_dir / item.name
             try:
-                self._validate_video(upload_path, item.display_name)
-                self._transcode_video(upload_path, output_path, item.display_name)
-                self._validate_video(output_path, item.display_name)
+                source_info = self._validate_video(upload_path, item.display_name)
+                self._transcode_video(upload_path, output_path, item.display_name, source_info)
+                output_info = self._validate_video(output_path, item.display_name)
             except APIError:
                 self.atomic_delete(upload_path)
                 self.atomic_delete(output_path)
                 raise
             self.atomic_delete(upload_path)
-            added.append(GalleryItem(type="video", filename=item.name))
+            added.append(GalleryItem(
+                type="video",
+                filename=item.name,
+                has_audio=output_info.audio_index is not None,
+            ))
 
         # Only the meta update is serialized — the transcode/thumbnail work above
         # can take minutes and must NOT hold the lock (it would exceed the lock
@@ -521,6 +550,46 @@ class DataInterface(BaseDataInterface):
             self.atomic_delete(post_dir / filename)
             td.items = [item for item in td.items if item.filename != filename]
             meta.template_data = td
+
+    def backfill_gallery_audio_flags(self, dry_run: bool = True) -> int:
+        pending: list[tuple[str, str, str, bool]] = []
+        store = self._read_meta_store()
+        for project, project_store in store.projects.items():
+            for post, meta in project_store.posts.items():
+                if meta.type != PostType.GALLERY:
+                    continue
+                td = meta.template_data or GalleryTemplateData()
+                for item in td.items:
+                    if item.type != "video" or item.has_audio is not None:
+                        continue
+                    path = self._post_dir(project, post) / item.filename
+                    if not path.is_file():
+                        logging.warning(f"Hammock audio backfill skipped missing file: {path}")
+                        continue
+                    try:
+                        info = self._probe_video_info(path, item.filename)
+                    except APIError as e:
+                        logging.warning(f"Hammock audio backfill skipped {path}: {e}")
+                        continue
+                    pending.append((project, post, item.filename, info.audio_index is not None))
+        if dry_run or not pending:
+            return len(pending)
+
+        updates = {
+            (project, post, filename): has_audio
+            for project, post, filename, has_audio in pending
+        }
+        with self.edit_meta() as current:
+            for project, project_store in current.projects.items():
+                for post, meta in project_store.posts.items():
+                    td = meta.template_data
+                    if meta.type != PostType.GALLERY or td is None:
+                        continue
+                    for item in td.items:
+                        key = (project, post, item.filename)
+                        if item.has_audio is None and key in updates:
+                            item.has_audio = updates[key]
+        return len(pending)
 
     # ---------- thumbnails / video processing ----------
 
@@ -567,14 +636,13 @@ class DataInterface(BaseDataInterface):
                 raise APIError(f"{error_message}: {detail[-1][:240]}") from e
             raise APIError(error_message) from e
 
-    def _probe_video_duration(self, src: Path, display_name: str) -> float | None:
+    def _probe_video_info(self, src: Path, display_name: str) -> VideoInfo:
         cfg = ConfigManager()
         result = self._run_media_command(
             [
                 "ffprobe",
                 "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=duration:format=duration",
+                "-show_entries", "stream=index,codec_type,codec_name,codec_tag_string,duration:format=duration",
                 "-of", "json",
                 str(src),
             ],
@@ -585,30 +653,65 @@ class DataInterface(BaseDataInterface):
             payload = json.loads(result.stdout or "{}")
         except json.JSONDecodeError as e:
             raise APIError(f"Could not process {display_name} as a video") from e
+        streams = payload.get("streams", [])
+        video = next(
+            (
+                stream for stream in streams
+                if stream.get("codec_type") == "video"
+                and stream.get("codec_name") not in (None, "", "none", "unknown")
+            ),
+            None,
+        )
+        if video is None:
+            raise APIError(f"Video {display_name} has no valid video stream")
+        audio = next(
+            (
+                stream for stream in streams
+                if stream.get("codec_type") == "audio"
+                and stream.get("codec_name") not in (None, "", "none", "unknown")
+            ),
+            None,
+        )
         candidates = [payload.get("format", {}).get("duration")]
-        candidates.extend(stream.get("duration") for stream in payload.get("streams", []))
+        candidates.extend(stream.get("duration") for stream in streams)
+        duration = None
         for candidate in candidates:
             try:
-                duration = float(candidate)
+                value = float(candidate)
             except (TypeError, ValueError):
                 continue
-            if math.isfinite(duration) and duration > 0:
-                return duration
-        return None
+            if math.isfinite(value) and value > 0:
+                duration = value
+                break
+        return VideoInfo(
+            duration=duration,
+            video_index=int(video["index"]),
+            audio_index=int(audio["index"]) if audio is not None else None,
+        )
 
-    def _validate_video(self, src: Path, display_name: str) -> None:
+    def _probe_video_duration(self, src: Path, display_name: str) -> float | None:
+        return self._probe_video_info(src, display_name).duration
+
+    def _validate_video(self, src: Path, display_name: str) -> VideoInfo:
         cfg = ConfigManager()
-        duration = self._probe_video_duration(src, display_name)
-        if duration is None:
+        info = self._probe_video_info(src, display_name)
+        if info.duration is None:
             logging.warning(f"Hammock video duration unavailable for {display_name}; continuing to transcode")
-            return
-        if duration > cfg.hammock.gallery_video_max_duration_s:
+            return info
+        if info.duration > cfg.hammock.gallery_video_max_duration_s:
             raise APIError(
                 f"Video {display_name} is too long "
                 f"(max {cfg.hammock.gallery_video_max_duration_s} seconds)"
             )
+        return info
 
-    def _transcode_video(self, src: Path, dst: Path, display_name: str) -> None:
+    def _transcode_video(
+        self,
+        src: Path,
+        dst: Path,
+        display_name: str,
+        info: VideoInfo,
+    ) -> None:
         cfg = ConfigManager()
         max_height = cfg.hammock.gallery_video_max_height_px
         vf = (
@@ -616,15 +719,19 @@ class DataInterface(BaseDataInterface):
             f"'trunc(ih*min(1,{max_height}/ih)/2)*2',"
             "setsar=1"
         )
-        self._run_media_command(
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i", str(src),
+            "-map", f"0:{info.video_index}",
+        ]
+        if info.audio_index is None:
+            cmd.append("-an")
+        else:
+            cmd.extend(["-map", f"0:{info.audio_index}"])
+        cmd.extend(
             [
-                "ffmpeg",
-                "-y",
-                "-i", str(src),
-                "-map", "0:v:0",
-                "-map", "0:a?",
-                "-dn",
-                "-sn",
+                "-dn", "-sn",
                 "-vf", vf,
                 "-c:v", "libx264",
                 "-preset", "veryfast",
@@ -634,7 +741,10 @@ class DataInterface(BaseDataInterface):
                 "-b:a", "96k",
                 "-movflags", "+faststart",
                 str(dst),
-            ],
+            ]
+        )
+        self._run_media_command(
+            cmd,
             cfg.hammock.gallery_video_transcode_timeout_s,
             f"Could not process {display_name} as a video",
         )
@@ -681,11 +791,20 @@ class DataInterface(BaseDataInterface):
                 continue
             name = html.escape(item.filename)
             if item.type == "video":
+                sound_control = ""
+                if item.has_audio:
+                    sound_control = (
+                        f'<button type="button" class="hammock-video-sound" '
+                        f'data-video-sound aria-label="Unmute video" aria-pressed="false">'
+                        f'<i class="bi bi-volume-mute-fill" aria-hidden="true"></i>'
+                        f'</button>'
+                    )
                 media_html.append(
                     f'<figure class="hammock-gallery-photo hammock-gallery-video">'
-                    f'<video autoplay loop muted playsinline preload="metadata">'
+                    f'<video data-hammock-video autoplay loop muted playsinline preload="metadata">'
                     f'<source src="{name}" type="video/mp4">'
                     f'</video>'
+                    f'{sound_control}'
                     f'</figure>'
                 )
             else:

@@ -14,7 +14,7 @@ from werkzeug.datastructures import FileStorage
 
 from web_app.errors import APIError
 from web_app.hammock import hammock_api
-from web_app.hammock.data_interface import DataInterface
+from web_app.hammock.data_interface import DataInterface, VideoInfo
 from web_app.users import User
 from web_app.config import ConfigManager
 
@@ -90,6 +90,30 @@ def _mov_file_storage(tmp_path: Path, name: str = "iphone.MOV", duration: float 
             "-t", str(duration),
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
+            str(path),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return FileStorage(stream=BytesIO(path.read_bytes()), filename=name, content_type="video/quicktime")
+
+
+def _av_mov_file_storage(tmp_path: Path, name: str = "sound.MOV", duration: float = 0.5) -> FileStorage:
+    path = tmp_path / name
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f", "lavfi",
+            "-i", "testsrc=size=320x240:rate=15",
+            "-f", "lavfi",
+            "-i", "sine=frequency=440:sample_rate=44100",
+            "-t", str(duration),
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-shortest",
             str(path),
         ],
         check=True,
@@ -280,12 +304,13 @@ class TestGalleryUploadAndDelete:
         gallery = _post_meta(projects_dir, proj, post)
         assert "images" not in gallery
         assert gallery["template-data"]["items"] == [
-            {"type": "video", "filename": "clip.mp4"}
+            {"type": "video", "filename": "clip.mp4", "has_audio": False}
         ]
 
         rendered = di.get_post_content(proj, post)
-        assert '<video autoplay loop muted playsinline preload="metadata">' in rendered
+        assert '<video data-hammock-video autoplay loop muted playsinline preload="metadata">' in rendered
         assert "controls" not in rendered
+        assert "hammock-video-sound" not in rendered
         assert '<source src="clip.mp4" type="video/mp4">' in rendered
 
         di.delete_gallery_media(proj, post, "clip.mp4")
@@ -306,8 +331,179 @@ class TestGalleryUploadAndDelete:
 
         gallery = _post_meta(projects_dir, proj, post)
         assert gallery["template-data"]["items"] == [
-            {"type": "video", "filename": "iphone.mp4"}
+            {"type": "video", "filename": "iphone.mp4", "has_audio": False}
         ]
+
+    def test_video_with_audio_preserves_one_audio_stream_and_renders_sound_control(
+        self, projects_dir, tmp_path
+    ):
+        di = DataInterface()
+        alice = User("alice", "x", "fa", is_admin=False)
+        proj, post = di.create_gallery_post(alice, "Album", "Sound Clip", "")
+        post_dir = projects_dir / proj / post
+
+        assert di.add_gallery_media(alice, proj, post, [_av_mov_file_storage(tmp_path)]) == 1
+
+        output = post_dir / "sound.mp4"
+        probe = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-show_entries", "stream=codec_type,codec_name",
+                "-of", "json", str(output),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        streams = json.loads(probe.stdout)["streams"]
+        assert [stream["codec_type"] for stream in streams] == ["video", "audio"]
+        assert streams[1]["codec_name"] == "aac"
+        assert _post_meta(projects_dir, proj, post)["template-data"]["items"] == [
+            {"type": "video", "filename": "sound.mp4", "has_audio": True}
+        ]
+        rendered = di.get_post_content(proj, post)
+        assert 'class="hammock-video-sound"' in rendered
+        assert 'aria-label="Unmute video"' in rendered
+
+    def test_probe_skips_mebx_like_unknown_audio_and_selects_real_audio(
+        self, projects_dir, tmp_path, monkeypatch
+    ):
+        payload = {
+            "format": {"duration": "0.5"},
+            "streams": [
+                {"index": 0, "codec_type": "video", "codec_name": "hevc"},
+                {"index": 1, "codec_type": "audio", "codec_name": "none", "codec_tag_string": "mebx"},
+                {"index": 2, "codec_type": "data", "codec_name": "bin_data"},
+                {"index": 3, "codec_type": "audio", "codec_name": "aac"},
+                {"index": 4, "codec_type": "audio", "codec_name": "aac"},
+            ],
+        }
+        monkeypatch.setattr(
+            DataInterface,
+            "_run_media_command",
+            staticmethod(lambda *args: subprocess.CompletedProcess(args[0], 0, json.dumps(payload), "")),
+        )
+
+        info = DataInterface()._probe_video_info(tmp_path / "phone.mov", "phone.mov")
+
+        assert info.video_index == 0
+        assert info.audio_index == 3
+        assert info.duration == 0.5
+
+    @pytest.mark.parametrize(("audio_index", "expects_audio"), [(None, False), (3, True)])
+    def test_transcode_maps_only_selected_media_streams(
+        self, projects_dir, tmp_path, monkeypatch, audio_index, expects_audio
+    ):
+        commands = []
+        monkeypatch.setattr(
+            DataInterface,
+            "_run_media_command",
+            staticmethod(
+                lambda cmd, timeout_s, error_message: (
+                    commands.append(cmd)
+                    or subprocess.CompletedProcess(cmd, 0, "", "")
+                )
+            ),
+        )
+
+        DataInterface()._transcode_video(
+            tmp_path / "source.mov",
+            tmp_path / "output.mp4",
+            "source.mov",
+            VideoInfo(duration=0.5, video_index=0, audio_index=audio_index),
+        )
+
+        cmd = commands[0]
+        mapped = [cmd[index + 1] for index, value in enumerate(cmd[:-1]) if value == "-map"]
+        assert mapped == (["0:0", "0:3"] if expects_audio else ["0:0"])
+        assert ("-an" in cmd) is not expects_audio
+        assert "0:a?" not in cmd
+        assert "-dn" in cmd
+        assert "-sn" in cmd
+
+    def test_audio_only_upload_is_rejected_and_cleaned_up(self, projects_dir, tmp_path):
+        audio_path = tmp_path / "voice.m4a"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440",
+                "-t", "0.2", "-c:a", "aac", str(audio_path),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        di = DataInterface()
+        alice = User("alice", "x", "fa", is_admin=False)
+        proj, post = di.create_gallery_post(alice, "Album", "Audio Only", "")
+        upload = FileStorage(
+            stream=BytesIO(audio_path.read_bytes()),
+            filename="fake-video.mp4",
+            content_type="video/mp4",
+        )
+
+        with pytest.raises(APIError, match="video stream"):
+            di.add_gallery_media(alice, proj, post, [upload])
+
+        assert list((projects_dir / proj / post).iterdir()) == []
+        assert _post_meta(projects_dir, proj, post)["template-data"]["items"] == []
+
+    def test_gallery_reorder_validates_exact_filenames(self, projects_dir):
+        di = DataInterface()
+        alice = User("alice", "x", "fa", is_admin=False)
+        proj, post = di.create_gallery_post(alice, "Album", "Order", "")
+        di.add_gallery_images(
+            alice, proj, post,
+            [_png_file_storage("one.png"), _png_file_storage("two.png"), _png_file_storage("three.png")],
+        )
+
+        di.update_gallery_meta(
+            proj, post, "Order", "", ["three.webp", "one.webp", "two.webp"]
+        )
+        assert [
+            item["filename"]
+            for item in _post_meta(projects_dir, proj, post)["template-data"]["items"]
+        ] == ["three.webp", "one.webp", "two.webp"]
+
+        with pytest.raises(APIError, match="Media order"):
+            di.update_gallery_meta(proj, post, "Order", "", ["one.webp", "missing.webp"])
+        assert [
+            item["filename"]
+            for item in _post_meta(projects_dir, proj, post)["template-data"]["items"]
+        ] == ["three.webp", "one.webp", "two.webp"]
+
+    def test_audio_flag_backfill_is_dry_run_safe_and_idempotent(
+        self, projects_dir, monkeypatch
+    ):
+        di = DataInterface()
+        alice = User("alice", "x", "fa", is_admin=False)
+        proj, post = di.create_gallery_post(alice, "Album", "Legacy", "")
+        post_dir = projects_dir / proj / post
+        (post_dir / "sound.mp4").write_bytes(b"legacy")
+        (post_dir / "silent.mp4").write_bytes(b"legacy")
+        meta = json.loads((projects_dir.parent / "meta.json").read_text())
+        meta["projects"][proj]["posts"][post]["template-data"]["items"] = [
+            {"type": "video", "filename": "sound.mp4"},
+            {"type": "video", "filename": "silent.mp4"},
+        ]
+        (projects_dir.parent / "meta.json").write_text(json.dumps(meta))
+        monkeypatch.setattr(
+            DataInterface,
+            "_probe_video_info",
+            lambda self, path, display_name: type(
+                "Info", (), {"audio_index": 1 if path.name == "sound.mp4" else None}
+            )(),
+        )
+
+        assert di.backfill_gallery_audio_flags(dry_run=True) == 2
+        assert all(
+            "has_audio" not in item
+            for item in _post_meta(projects_dir, proj, post)["template-data"]["items"]
+        )
+        assert di.backfill_gallery_audio_flags(dry_run=False) == 2
+        assert _post_meta(projects_dir, proj, post)["template-data"]["items"] == [
+            {"type": "video", "filename": "sound.mp4", "has_audio": True},
+            {"type": "video", "filename": "silent.mp4", "has_audio": False},
+        ]
+        assert di.backfill_gallery_audio_flags(dry_run=False) == 0
 
     def test_portrait_video_transcode_outputs_even_dimensions(self, projects_dir, tmp_path):
         di = DataInterface()
@@ -342,7 +538,12 @@ class TestGalleryUploadAndDelete:
         di = DataInterface()
 
         def fake_run(cmd, timeout_s, error_message):
-            return subprocess.CompletedProcess(cmd, 0, stdout='{"format":{},"streams":[{}]}', stderr="")
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                stdout='{"format":{},"streams":[{"index":0,"codec_type":"video","codec_name":"h264"}]}',
+                stderr="",
+            )
 
         monkeypatch.setattr(DataInterface, "_run_media_command", staticmethod(fake_run))
         di._validate_video(tmp_path / "upload.mp4", "phone-video.mp4")
@@ -357,7 +558,10 @@ class TestGalleryUploadAndDelete:
                 return subprocess.CompletedProcess(
                     cmd,
                     0,
-                    stdout='{"format":{"duration":"0.5"},"streams":[{"duration":"0.5"}]}',
+                    stdout=(
+                        '{"format":{"duration":"0.5"},"streams":'
+                        '[{"index":0,"codec_type":"video","codec_name":"h264","duration":"0.5"}]}'
+                    ),
                     stderr="",
                 )
             raise APIError(error_message)
@@ -512,6 +716,76 @@ class TestGalleryEditRoute:
         assert _post_meta(projects_dir, proj, post)["template-data"]["items"] == [
             {"type": "image", "filename": "photo.webp"}
         ]
+
+    def test_edit_gallery_exposes_audio_controls_and_saves_media_order(
+        self, client, projects_dir, monkeypatch
+    ):
+        if "hammock" not in client.application.blueprints:
+            client.application.register_blueprint(hammock_api)
+        di = DataInterface()
+        alice = User("alice", "x", "fa", is_admin=False)
+        proj, post = di.create_gallery_post(alice, "Album", "Reorder", "")
+        di.add_gallery_images(
+            alice, proj, post, [_png_file_storage("one.png"), _png_file_storage("two.png")]
+        )
+        with di.edit_meta() as store:
+            td = store.projects[proj].posts[post].template_data
+            td.items.append(type(td.items[0])(type="video", filename="sound.mp4", has_audio=True))
+        monkeypatch.setattr(
+            helpers.login_manager,
+            "_user_callback",
+            lambda username: alice if username == alice.id else None,
+        )
+        with client.session_transaction() as sess:
+            sess["_user_id"] = alice.id
+            sess["_fresh"] = True
+
+        edit_response = client.get(f"/hammock/{proj}/{post}/edit")
+        assert b"data-reorder-grid" in edit_response.data
+        assert b"data-reorder-handle" in edit_response.data
+        assert b"data-video-sound" in edit_response.data
+
+        response = client.post(
+            f"/hammock/{proj}/{post}/edit",
+            data={
+                "title": "Reorder",
+                "description": "",
+                "media_order": '["sound.mp4","two.webp","one.webp"]',
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+
+        assert response.status_code == 200
+        assert [
+            item["filename"]
+            for item in _post_meta(projects_dir, proj, post)["template-data"]["items"]
+        ] == ["sound.mp4", "two.webp", "one.webp"]
+
+    def test_edit_gallery_rejects_stale_media_order(self, client, projects_dir, monkeypatch):
+        if "hammock" not in client.application.blueprints:
+            client.application.register_blueprint(hammock_api)
+        di = DataInterface()
+        alice = User("alice", "x", "fa", is_admin=False)
+        proj, post = di.create_gallery_post(alice, "Album", "Reorder", "")
+        di.add_gallery_images(alice, proj, post, [_png_file_storage("one.png")])
+        monkeypatch.setattr(
+            helpers.login_manager,
+            "_user_callback",
+            lambda username: alice if username == alice.id else None,
+        )
+        with client.session_transaction() as sess:
+            sess["_user_id"] = alice.id
+            sess["_fresh"] = True
+
+        response = client.post(
+            f"/hammock/{proj}/{post}/edit",
+            data={"title": "Reorder", "description": "", "media_order": '["missing.webp"]'},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+
+        assert response.status_code == 400
+        assert "Media order" in response.get_json()["error"]
+        assert _post_meta(projects_dir, proj, post)["title"] == "Reorder"
 
 
 class TestRestrictedPostRoute:

@@ -267,5 +267,8 @@ if ! wait_for_commit "http://127.0.0.1:5000/api/health" "$CANDIDATE_COMMIT"; the
     false
 fi
 
+HAMMOCK_AUDIO_UPDATED=$(python -c 'from web_app.hammock.data_interface import DataInterface; print(DataInterface().backfill_gallery_audio_flags(dry_run=False))')
+deploy_log "backfilled audio flags for ${HAMMOCK_AUDIO_UPDATED} gallery videos"
+
 ROLLBACK_ARMED=0
 deploy_log "deployment ${CANDIDATE_COMMIT} is healthy; old workers are draining for up to ${GRACEFUL_TIMEOUT}s"
