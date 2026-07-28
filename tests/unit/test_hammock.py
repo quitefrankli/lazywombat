@@ -470,41 +470,6 @@ class TestGalleryUploadAndDelete:
             for item in _post_meta(projects_dir, proj, post)["template-data"]["items"]
         ] == ["three.webp", "one.webp", "two.webp"]
 
-    def test_audio_flag_backfill_is_dry_run_safe_and_idempotent(
-        self, projects_dir, monkeypatch
-    ):
-        di = DataInterface()
-        alice = User("alice", "x", "fa", is_admin=False)
-        proj, post = di.create_gallery_post(alice, "Album", "Legacy", "")
-        post_dir = projects_dir / proj / post
-        (post_dir / "sound.mp4").write_bytes(b"legacy")
-        (post_dir / "silent.mp4").write_bytes(b"legacy")
-        meta = json.loads((projects_dir.parent / "meta.json").read_text())
-        meta["projects"][proj]["posts"][post]["template-data"]["items"] = [
-            {"type": "video", "filename": "sound.mp4"},
-            {"type": "video", "filename": "silent.mp4"},
-        ]
-        (projects_dir.parent / "meta.json").write_text(json.dumps(meta))
-        monkeypatch.setattr(
-            DataInterface,
-            "_probe_video_info",
-            lambda self, path, display_name: type(
-                "Info", (), {"audio_index": 1 if path.name == "sound.mp4" else None}
-            )(),
-        )
-
-        assert di.backfill_gallery_audio_flags(dry_run=True) == 2
-        assert all(
-            "has_audio" not in item
-            for item in _post_meta(projects_dir, proj, post)["template-data"]["items"]
-        )
-        assert di.backfill_gallery_audio_flags(dry_run=False) == 2
-        assert _post_meta(projects_dir, proj, post)["template-data"]["items"] == [
-            {"type": "video", "filename": "sound.mp4", "has_audio": True},
-            {"type": "video", "filename": "silent.mp4", "has_audio": False},
-        ]
-        assert di.backfill_gallery_audio_flags(dry_run=False) == 0
-
     def test_portrait_video_transcode_outputs_even_dimensions(self, projects_dir, tmp_path):
         di = DataInterface()
         alice = User("alice", "x", "fa", is_admin=False)

@@ -551,46 +551,6 @@ class DataInterface(BaseDataInterface):
             td.items = [item for item in td.items if item.filename != filename]
             meta.template_data = td
 
-    def backfill_gallery_audio_flags(self, dry_run: bool = True) -> int:
-        pending: list[tuple[str, str, str, bool]] = []
-        store = self._read_meta_store()
-        for project, project_store in store.projects.items():
-            for post, meta in project_store.posts.items():
-                if meta.type != PostType.GALLERY:
-                    continue
-                td = meta.template_data or GalleryTemplateData()
-                for item in td.items:
-                    if item.type != "video" or item.has_audio is not None:
-                        continue
-                    path = self._post_dir(project, post) / item.filename
-                    if not path.is_file():
-                        logging.warning(f"Hammock audio backfill skipped missing file: {path}")
-                        continue
-                    try:
-                        info = self._probe_video_info(path, item.filename)
-                    except APIError as e:
-                        logging.warning(f"Hammock audio backfill skipped {path}: {e}")
-                        continue
-                    pending.append((project, post, item.filename, info.audio_index is not None))
-        if dry_run or not pending:
-            return len(pending)
-
-        updates = {
-            (project, post, filename): has_audio
-            for project, post, filename, has_audio in pending
-        }
-        with self.edit_meta() as current:
-            for project, project_store in current.projects.items():
-                for post, meta in project_store.posts.items():
-                    td = meta.template_data
-                    if meta.type != PostType.GALLERY or td is None:
-                        continue
-                    for item in td.items:
-                        key = (project, post, item.filename)
-                        if item.has_audio is None and key in updates:
-                            item.has_audio = updates[key]
-        return len(pending)
-
     # ---------- thumbnails / video processing ----------
 
     def _make_thumbnail(self, src: Path, dst: Path) -> None:
