@@ -30,6 +30,60 @@ function renderSearchError(message) {
     }
 }
 
+// Single persistent <audio> element (in the trackbar, outside #playlists) so
+// playlist re-renders never destroy the playing stream. Per-track state (src,
+// trim bounds, which crc is loaded) is carried on the element's dataset.
+function getAudio() {
+    return document.getElementById('tubio-audio');
+}
+
+// The single audio element IFF it currently holds this crc, else null.
+function getAudioForCrc(crc) {
+    const audio = getAudio();
+    return audio && audio.dataset.crc === String(crc) ? audio : null;
+}
+
+// Point the single audio element at a track (by crc), reading src + trim bounds
+// from the track's accordion item. No-op reload if it already holds this crc.
+// Returns the audio element, or null if the track isn't in the DOM.
+function loadTrack(crc, { force = false } = {}) {
+    const audio = getAudio();
+    if (!audio) return null;
+    const item = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
+    if (!item) return null;
+    if (force || audio.dataset.crc !== String(crc)) {
+        audio.dataset.crc = String(crc);
+        audio.dataset.trimStart = item.dataset.trimStart || '0';
+        audio.dataset.trimEnd = item.dataset.trimEnd || '0';
+        audio._trimEnded = false;
+        audio.src = item.dataset.audioSrc;
+        audio.load();
+        applyTrackbarVolume(audio);
+    }
+    return audio;
+}
+
+// Unified 'ended' handler for the single audio element. Behavior depends on the
+// global loop mode and whether a playlist is driving playback.
+function handleTrackEnded() {
+    const crc = currentTrackCrc;
+    const audio = getAudio();
+
+    if (globalLoopMode === 'single' && audio) {
+        audio.currentTime = getPlaybackBounds(audio).start;
+        audio._trimEnded = false;
+        audio.play().catch(err => console.error('Error replaying audio:', err));
+        return;
+    }
+
+    if (crc) resetTrackPlayingUI(crc);
+
+    if (isPlayingPlaylist) {
+        currentPlaylistIndex++;
+        setTimeout(() => playNextInQueue(), 500);
+    }
+}
+
 function setPlayButtonState(playButton, isPlaying) {
     if (!playButton) return;
     playButton.innerHTML = isPlaying
@@ -683,13 +737,10 @@ async function updateContent(data) {
             const currentPlaylistsTab = document.getElementById('playlists');
 
             if (newPlaylistsContent && currentPlaylistsTab) {
+                // The single <audio> lives in the trackbar (outside #playlists),
+                // so replacing the tab no longer touches playback. Re-render the
+                // list, then restore the playing track's row UI.
                 currentPlaylistsTab.innerHTML = newPlaylistsContent.innerHTML;
-
-                // Audio elements were destroyed; clear playback state
-                currentTrackCrc = null;
-                isPlayingPlaylist = false;
-                currentPlaylistQueue = [];
-                currentPlaylistIndex = 0;
 
                 initializeAudioEventListeners();
                 initializeLazyThumbnails();
@@ -697,8 +748,27 @@ async function updateContent(data) {
                 initializeTrimForm();
                 initializeSidebar();
                 initializeTrackbarVolume();
-                updateTrackbar(null);
-                updateTrackbarScrubber();
+
+                const audio = getAudio();
+                const loadedItem = audio && audio.dataset.crc
+                    ? document.querySelector(`.accordion-item[data-audio-crc="${audio.dataset.crc}"]`)
+                    : null;
+                if (loadedItem) {
+                    const crc = audio.dataset.crc;
+                    // Trim bounds may have changed in the re-rendered DOM.
+                    audio.dataset.trimStart = loadedItem.dataset.trimStart || '0';
+                    audio.dataset.trimEnd = loadedItem.dataset.trimEnd || '0';
+                    syncAudioButtonUI(crc);
+                    if (!audio.paused) {
+                        const trackItem = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
+                        if (trackItem) trackItem.classList.add('track-playing');
+                    }
+                    updateTrackbar(crc);
+                    updateTrackbarScrubber();
+                } else {
+                    updateTrackbar(currentTrackCrc);
+                    updateTrackbarScrubber();
+                }
             }
         }
     } catch (error) {
@@ -816,7 +886,7 @@ async function removeTrack(crc, buttonElement) {
 
     try {
         // Stop audio if currently playing this track
-        const audio = document.getElementById(`audio-${crc}`);
+        const audio = getAudioForCrc(crc);
         if (audio && !audio.paused) audio.pause();
 
         const response = await jsonPost(`/tubio/delete_audio/${crc}`);
@@ -825,6 +895,12 @@ async function removeTrack(crc, buttonElement) {
 
         document.querySelectorAll(`.accordion-item[data-audio-crc="${crc}"]`).forEach(el => el.remove());
         if (String(currentTrackCrc) === String(crc)) {
+            const player = getAudio();
+            if (player) {
+                player.pause();
+                player.removeAttribute('src');
+                delete player.dataset.crc;
+            }
             currentTrackCrc = null;
             isPlayingPlaylist = false;
             updateTrackbar(null);
@@ -842,73 +918,38 @@ async function removeTrack(crc, buttonElement) {
 
 // Individual track playback controls
 function togglePlayTrack(crc) {
-    const audioElement = document.getElementById(`audio-${crc}`);
     const playButton = document.getElementById(`play-btn-${crc}`);
     const trackItem = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
+    const loaded = getAudioForCrc(crc);
 
-    if (!audioElement || !playButton) {
-        console.error(`Audio element or button not found for crc: ${crc}`);
+    // Currently playing this exact track → pause it.
+    if (loaded && !loaded.paused) {
+        loaded.pause();
+        setPlayButtonState(playButton, false);
         return;
     }
 
-    // Get the playlist name from the track's parent accordion
-    const playlistName = trackItem ? trackItem.dataset.playlist : '';
-
-    currentTrackCrc = crc;
-
-    if (audioElement.paused) {
-        // Pause all other audio elements and reset their buttons
-        document.querySelectorAll('audio').forEach(audio => {
-            if (audio.id !== `audio-${crc}` && !audio.paused) {
-                audio.pause();
-                // Reset the other play button
-                const otherCrc = audio.id.replace('audio-', '');
-                const otherButton = document.getElementById(`play-btn-${otherCrc}`);
-                if (otherButton) {
-                    setPlayButtonState(otherButton, false);
-                }
-            }
-        });
-
-        // Update current playlist name for loop mode
-        if (playlistName) {
-            currentPlaylistName = playlistName;
-        }
-
-        // Load audio if not loaded, then play
-        if (audioElement.readyState === 0) {
-            audioElement.load();
-        }
-        applyPlaybackStart(audioElement);
-        audioElement.play().catch(err => {
-            console.error('Error playing audio:', err);
-            showNotification('Error playing audio. Please try again.', 'error');
-        });
-
-        // Update button to show pause icon
-        setPlayButtonState(playButton, true);
-    } else {
-        // Pause this track
-        audioElement.pause();
-
-        // Update button to show play icon
-        setPlayButtonState(playButton, false);
+    // Switching to a different track clears the previous track's row UI.
+    if (currentTrackCrc && String(currentTrackCrc) !== String(crc)) {
+        resetTrackPlayingUI(currentTrackCrc);
     }
 
-    // Add event listener to reset button when track ends naturally
-    audioElement.onended = function() {
-        // Get loop mode for current playlist
-        const loopMode = globalLoopMode;
+    if (trackItem && trackItem.dataset.playlist) {
+        currentPlaylistName = trackItem.dataset.playlist;
+    }
 
-        // Handle single track looping for individual track play
-        if (loopMode === 'single') {
-            audioElement.currentTime = getPlaybackBounds(audioElement).start;
-            audioElement.play().catch(err => console.error('Error replaying audio:', err));
-            return;
-        }
-
-        setPlayButtonState(playButton, false);
-    };
+    const audio = loadTrack(crc);
+    if (!audio) {
+        console.error(`Track not found for crc: ${crc}`);
+        return;
+    }
+    currentTrackCrc = crc;
+    applyPlaybackStart(audio);
+    audio.play().catch(err => {
+        console.error('Error playing audio:', err);
+        showNotification('Error playing audio. Please try again.', 'error');
+    });
+    setPlayButtonState(playButton, true);
 }
 
 // Global playback state — controlled from the bottom trackbar
@@ -970,16 +1011,16 @@ function formatTime(seconds) {
 }
 
 function seekTrack(crc, value) {
-    const audio = document.getElementById(`audio-${crc}`);
+    const audio = getAudioForCrc(crc);
     if (!audio) return;
 
     if (audio.readyState === 0) {
-        audio.load();
         audio.addEventListener('loadedmetadata', function onMeta() {
             audio.removeEventListener('loadedmetadata', onMeta);
             const bounds = getPlaybackBounds(audio);
             audio.currentTime = bounds.start + ((value / 100) * (bounds.end - bounds.start));
         }, { once: true });
+        audio.load();
     } else if (audio.duration && isFinite(audio.duration)) {
         const bounds = getPlaybackBounds(audio);
         audio.currentTime = bounds.start + ((value / 100) * (bounds.end - bounds.start));
@@ -1000,7 +1041,7 @@ function togglePlaylistPlayback(playlistName) {
     if (isPlayingPlaylist && currentPlaylistName === playlistName) {
         // Find the currently playing audio
         const crc = currentPlaylistQueue[currentPlaylistIndex];
-        const audioElement = document.getElementById(`audio-${crc}`);
+        const audioElement = getAudioForCrc(crc);
 
         if (audioElement && !audioElement.paused) {
             // Pause the playlist
@@ -1017,7 +1058,7 @@ function togglePlaylistPlayback(playlistName) {
 
 function pausePlaylist() {
     const crc = currentPlaylistQueue[currentPlaylistIndex];
-    const audioElement = document.getElementById(`audio-${crc}`);
+    const audioElement = getAudioForCrc(crc);
     const playButton = document.getElementById(`play-btn-${crc}`);
 
     if (audioElement) {
@@ -1034,13 +1075,11 @@ function pausePlaylist() {
 
 function resumePlaylist() {
     const crc = currentPlaylistQueue[currentPlaylistIndex];
-    const audioElement = document.getElementById(`audio-${crc}`);
+    const audioElement = loadTrack(crc);
     const playButton = document.getElementById(`play-btn-${crc}`);
 
     if (audioElement) {
-        if (audioElement.readyState === 0) {
-            audioElement.load();
-        }
+        currentTrackCrc = crc;
         applyPlaybackStart(audioElement);
         audioElement.play().catch(err => {
             console.error('Error resuming audio:', err);
@@ -1098,25 +1137,14 @@ function playAllInPlaylist(playlistName) {
     }
     
     // Stop any currently playing track first
-    document.querySelectorAll('audio').forEach(audio => {
-        if (!audio.paused) {
-            const crc = audio.id.replace('audio-', '');
-            // Use the same system as the play button to stop the track
-            const playButton = document.getElementById(`play-btn-${crc}`);
-            const trackItem = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
-            
-            audio.pause();
-            
-            if (playButton) {
-                setPlayButtonState(playButton, false);
-            }
-            
-            if (trackItem) {
-                trackItem.classList.remove('track-playing');
-            }
-        }
-    });
-    
+    const playingAudio = getAudio();
+    if (playingAudio && !playingAudio.paused) {
+        playingAudio.pause();
+    }
+    if (currentTrackCrc) {
+        resetTrackPlayingUI(currentTrackCrc);
+    }
+
     // Build queue of audio CRCs
     currentPlaylistQueue = Array.from(audioItems).map(item => item.dataset.audioCrc);
 
@@ -1158,75 +1186,37 @@ function playNextInQueue() {
     }
     
     const crc = currentPlaylistQueue[currentPlaylistIndex];
-    currentTrackCrc = crc;
-    const audioElement = document.getElementById(`audio-${crc}`);
     const playButton = document.getElementById(`play-btn-${crc}`);
     const trackItem = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
 
-    if (!audioElement) {
-        console.error(`Audio element not found: audio-${crc}`);
+    const audioElement = loadTrack(crc);
+    if (!audioElement || !trackItem) {
+        console.error(`Track not found for crc: ${crc}`);
         currentPlaylistIndex++;
         playNextInQueue();
         return;
     }
-    
+    currentTrackCrc = crc;
+
     // Scroll to the song
-    const accordionItem = audioElement.closest('.accordion-item');
-    if (accordionItem) {
-        accordionItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-    
-    // Load audio if not loaded, then play
-    if (audioElement.readyState === 0) {
-        audioElement.load();
-    }
-    audioElement.currentTime = getPlaybackBounds(audioElement).start;
+    trackItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    applyPlaybackStart(audioElement);
     audioElement.play().catch(err => {
         console.error('Error playing audio:', err);
         currentPlaylistIndex++;
         playNextInQueue();
     });
-    
+
     // Update button to show pause icon (same as togglePlayTrack)
     if (playButton) {
         setPlayButtonState(playButton, true);
     }
-    
+
     // Highlight this track (same as togglePlayTrack)
-    if (trackItem) {
-        trackItem.classList.add('track-playing');
-    }
-    
-    // Set up event listener for when song ends
-    audioElement.addEventListener('ended', function onEnded() {
-        // Remove this event listener
-        audioElement.removeEventListener('ended', onEnded);
-
-        // Get loop mode for current playlist
-        const loopMode = globalLoopMode;
-
-        // Handle single track looping
-        if (loopMode === 'single') {
-            audioElement.currentTime = getPlaybackBounds(audioElement).start;
-            audioElement.play().catch(err => console.error('Error replaying audio:', err));
-            return;
-        }
-
-        // Reset button and highlight
-        if (playButton) {
-            setPlayButtonState(playButton, false);
-        }
-
-        if (trackItem) {
-            trackItem.classList.remove('track-playing');
-        }
-
-        // Move to next song
-        if (isPlayingPlaylist) {
-            currentPlaylistIndex++;
-            setTimeout(() => playNextInQueue(), 500); // Small delay between songs
-        }
-    }, { once: true });
+    trackItem.classList.add('track-playing');
+    // Advancement to the next track is handled by the single element's
+    // persistent 'ended' listener (handleTrackEnded).
 }
 
 // Stop playlist playback if user manually interacts with play button
@@ -1260,66 +1250,54 @@ function showNotification(message, type = 'info') {
 
 // Sync button UI with audio element state
 function syncAudioButtonUI(crc) {
-    const audioElement = document.getElementById(`audio-${crc}`);
+    const audioElement = getAudioForCrc(crc);
     const playButton = document.getElementById(`play-btn-${crc}`);
 
     if (!audioElement || !playButton) {
         return;
     }
 
-    if (audioElement.paused) {
-        setPlayButtonState(playButton, false);
-    } else {
-        setPlayButtonState(playButton, true);
-    }
+    setPlayButtonState(playButton, !audioElement.paused);
 }
 
-// Initialize audio event listeners to sync UI
+// Bind playback listeners ONCE to the single persistent audio element. Handlers
+// read audio.dataset.crc so they always act on whatever track is loaded.
 function initializeAudioEventListeners() {
-    document.querySelectorAll('audio').forEach(audio => {
-        const crc = audio.id.replace('audio-', '');
+    const audio = getAudio();
+    if (!audio || audio._listenersBound) {
+        if (audio) applyTrackbarVolume(audio);
+        return;
+    }
+    audio._listenersBound = true;
 
-        // Remove existing listeners to avoid duplicates
-        audio.removeEventListener('play', audio._playHandler);
-        audio.removeEventListener('pause', audio._pauseHandler);
-        audio.removeEventListener('timeupdate', audio._timeHandler);
-        audio.removeEventListener('loadedmetadata', audio._metaHandler);
-
-        // Create and store handlers
-        audio._playHandler = () => {
-            applyPlaybackStart(audio);
-            currentTrackCrc = crc;
-            syncAudioButtonUI(crc);
-            updateMediaSessionMetadata(crc);
-            updateMediaSessionPlaybackState('playing');
-            updateTrackbar(crc);
-        };
-        audio._pauseHandler = () => {
-            syncAudioButtonUI(crc);
-            updateMediaSessionPlaybackState('paused');
-            if (crc === currentTrackCrc) updateTrackbarPlayPauseUI(false);
-        };
-        audio._timeHandler = () => {
-            const bounds = getPlaybackBounds(audio);
-            if (!audio.paused && audio.currentTime >= bounds.end && !audio._trimEnded) {
-                audio._trimEnded = true;
-                audio.pause();
-                audio.dispatchEvent(new Event('ended'));
-                return;
-            }
-            if (crc === currentTrackCrc) updateTrackbarScrubber();
-        };
-        audio._metaHandler = () => {
-            if (crc === currentTrackCrc) updateTrackbarScrubber();
-        };
-
-        // Add event listeners
-        audio.addEventListener('play', audio._playHandler);
-        audio.addEventListener('pause', audio._pauseHandler);
-        audio.addEventListener('timeupdate', audio._timeHandler);
-        audio.addEventListener('loadedmetadata', audio._metaHandler);
-        applyTrackbarVolume(audio);
+    audio.addEventListener('play', () => {
+        const crc = audio.dataset.crc;
+        applyPlaybackStart(audio);
+        currentTrackCrc = crc;
+        syncAudioButtonUI(crc);
+        updateMediaSessionMetadata(crc);
+        updateMediaSessionPlaybackState('playing');
+        updateTrackbar(crc);
     });
+    audio.addEventListener('pause', () => {
+        const crc = audio.dataset.crc;
+        syncAudioButtonUI(crc);
+        updateMediaSessionPlaybackState('paused');
+        if (crc === currentTrackCrc) updateTrackbarPlayPauseUI(false);
+    });
+    audio.addEventListener('timeupdate', () => {
+        const bounds = getPlaybackBounds(audio);
+        if (!audio.paused && audio.currentTime >= bounds.end && !audio._trimEnded) {
+            audio._trimEnded = true;
+            audio.pause();
+            audio.dispatchEvent(new Event('ended'));
+            return;
+        }
+        updateTrackbarScrubber();
+    });
+    audio.addEventListener('loadedmetadata', () => updateTrackbarScrubber());
+    audio.addEventListener('ended', handleTrackEnded);
+    applyTrackbarVolume(audio);
 }
 
 function updateMediaSessionMetadata(crc) {
@@ -1346,10 +1324,10 @@ function updateMediaSessionPlaybackState(state) {
 function togglePlayPause() {
     const crc = currentTrackCrc;
     if (!crc) return;
-    const audio = document.getElementById(`audio-${crc}`);
+    const audio = loadTrack(crc);
     if (!audio) return;
     if (audio.paused) {
-        if (audio.readyState === 0) audio.load();
+        applyPlaybackStart(audio);
         audio.play().catch(err => console.error('Error playing audio:', err));
     } else {
         audio.pause();
@@ -1366,7 +1344,7 @@ function resetTrackPlayingUI(crc) {
 function nextTrack() {
     if (!isPlayingPlaylist || currentPlaylistQueue.length === 0) return;
     const oldCrc = currentPlaylistQueue[currentPlaylistIndex];
-    const oldAudio = document.getElementById(`audio-${oldCrc}`);
+    const oldAudio = getAudioForCrc(oldCrc);
     if (oldAudio) oldAudio.pause();
     resetTrackPlayingUI(oldCrc);
     currentPlaylistIndex++;
@@ -1376,7 +1354,7 @@ function nextTrack() {
 function prevTrack() {
     if (isPlayingPlaylist && currentPlaylistQueue.length > 0) {
         const crc = currentPlaylistQueue[currentPlaylistIndex];
-        const audio = document.getElementById(`audio-${crc}`);
+        const audio = getAudioForCrc(crc);
         const playbackStart = audio ? getPlaybackBounds(audio).start : 0;
         if (audio && audio.currentTime > playbackStart + 3) {
             audio.currentTime = playbackStart;
@@ -1391,7 +1369,7 @@ function prevTrack() {
     } else {
         const crc = currentTrackCrc;
         if (crc) {
-            const audio = document.getElementById(`audio-${crc}`);
+            const audio = getAudioForCrc(crc);
             if (audio) audio.currentTime = getPlaybackBounds(audio).start;
         }
     }
@@ -1433,7 +1411,7 @@ function updateTrackbar(crc) {
         if (placeholder) placeholder.hidden = false;
     }
 
-    const audio = document.getElementById(`audio-${crc}`);
+    const audio = getAudioForCrc(crc);
     updateTrackbarPlayPauseUI(audio ? !audio.paused : false);
 }
 
@@ -1462,7 +1440,7 @@ function updateTrackbarScrubber() {
     }
 
     range.disabled = false;
-    const audio = document.getElementById(`audio-${crc}`);
+    const audio = getAudioForCrc(crc);
     if (!audio) return;
 
     if (audio.duration && isFinite(audio.duration)) {
@@ -1482,8 +1460,9 @@ function initializeMediaSession() {
     navigator.mediaSession.setActionHandler('play', () => {
         const crc = getCurrentlyPlayingTrack();
         if (crc) {
-            const audio = document.getElementById(`audio-${crc}`);
+            const audio = loadTrack(crc);
             if (audio && audio.paused) {
+                applyPlaybackStart(audio);
                 audio.play();
                 updateMediaSessionPlaybackState('playing');
             }
@@ -1493,7 +1472,7 @@ function initializeMediaSession() {
     navigator.mediaSession.setActionHandler('pause', () => {
         const crc = getCurrentlyPlayingTrack();
         if (crc) {
-            const audio = document.getElementById(`audio-${crc}`);
+            const audio = getAudioForCrc(crc);
             if (audio && !audio.paused) {
                 audio.pause();
                 updateMediaSessionPlaybackState('paused');
@@ -1509,7 +1488,7 @@ function initializeMediaSession() {
         } else {
             const crc = getCurrentlyPlayingTrack();
             if (crc) {
-                const audio = document.getElementById(`audio-${crc}`);
+                const audio = getAudioForCrc(crc);
                 if (audio) audio.currentTime = getPlaybackBounds(audio).start;
             }
         }
@@ -1536,8 +1515,8 @@ async function resyncTrack(crc, buttonElement) {
         if (response.ok && data.success) {
             showNotification(data.message, 'success');
             buttonElement.innerHTML = '<i class="bi bi-check-circle me-1"></i>Done';
-            // Reload the audio element to pick up the new file
-            const audio = document.getElementById(`audio-${crc}`);
+            // Reload the audio element to pick up the new file (only if loaded)
+            const audio = getAudioForCrc(crc);
             if (audio) {
                 audio.load();
             }
@@ -1574,7 +1553,7 @@ async function submitAudioTrim(event) {
     const errorElement = document.getElementById('trim-audio-error');
     const trimStart = Number(document.getElementById('trim-start-seconds').value);
     const trimEnd = Number(document.getElementById('trim-end-seconds').value);
-    const audio = document.getElementById(`audio-${crc}`);
+    const audio = getAudioForCrc(crc);
     if (audio && Number.isFinite(audio.duration) && trimStart + trimEnd >= audio.duration) {
         errorElement.textContent = 'The start and end trims must leave some audio to play.';
         errorElement.classList.remove('d-none');
@@ -1657,11 +1636,6 @@ function initializeLazyThumbnails() {
             const lazyImg = this.querySelector('.lazy-thumbnail[data-src]');
             if (lazyImg && !lazyImg.src) {
                 lazyImg.src = lazyImg.dataset.src;
-            }
-            // Load audio metadata for scrubber
-            const audio = this.querySelector('audio');
-            if (audio && audio.readyState === 0) {
-                audio.load();
             }
             // Initialize tooltips within this expanded section
             this.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {

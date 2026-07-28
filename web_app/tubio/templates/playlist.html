@@ -35,7 +35,7 @@
         {% else %}
         <div class="accordion" id="audioAccordion-{{ playlist_name|replace(' ', '-') }}" data-playlist-name="{{ playlist_name }}">
             {% for crc, title, has_thumbnail, source_url, trim_start_s, trim_end_s in playlist_data %}
-            <div class="accordion-item mb-2 border-0 shadow-sm" data-audio-crc="{{ crc }}" data-playlist="{{ playlist_name }}" data-title="{{ title }}" data-has-thumbnail="{{ has_thumbnail|lower }}" style="border-radius: 12px; overflow: hidden;">
+            <div class="accordion-item mb-2 border-0 shadow-sm" data-audio-crc="{{ crc }}" data-playlist="{{ playlist_name }}" data-title="{{ title }}" data-has-thumbnail="{{ has_thumbnail|lower }}" data-trim-start="{{ trim_start_s }}" data-trim-end="{{ trim_end_s }}" data-audio-src="{{ url_for('.serve_audio', crc=crc) }}" style="border-radius: 12px; overflow: hidden;">
                 <h2 class="accordion-header">
                     <div class="d-flex align-items-center gap-2 px-2">
                         <div class="form-check ms-1">
@@ -96,10 +96,6 @@
                                 </div>
                             </div>
                         </div>
-                        <audio hidden controls preload="none" id="audio-{{ crc }}" data-trim-start="{{ trim_start_s }}" data-trim-end="{{ trim_end_s }}">
-                            <source src="{{ url_for('.serve_audio', crc=crc) }}" type="audio/mp4">
-                            Your browser does not support the audio element.
-                        </audio>
                     </div>
                 </div>
             </div>

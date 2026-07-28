@@ -126,6 +126,9 @@
      data-default-volume="{{ tubio_player.default_volume_percent }}"
      data-volume-storage-key="{{ tubio_player.volume_storage_key }}"
      data-muted-storage-key="{{ tubio_player.muted_storage_key }}">
+    <!-- Single persistent audio element; lives outside #playlists so playlist
+         re-renders (e.g. after a download) never destroy the playing stream. -->
+    <audio id="tubio-audio" hidden preload="none"></audio>
     <div class="trackbar-info">
         <div class="trackbar-thumb-wrap">
             <img class="trackbar-thumb" id="trackbar-thumb" alt="" hidden>
