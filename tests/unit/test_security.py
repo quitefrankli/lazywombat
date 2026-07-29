@@ -51,8 +51,10 @@ class TestPathTraversal:
         with pytest.raises(ValueError, match="Invalid filename"):
             di.delete_data("../users.json", user)
 
-    def test_allows_normal_filename(self, tmp_path):
+    @patch('web_app.api.data_interface.ConfigManager')
+    def test_allows_normal_filename(self, mock_config, tmp_path):
         from web_app.api.data_interface import DataInterface
+        mock_config.return_value.save_data_path = tmp_path
         di = DataInterface()
         user = User(username='test', password='x', folder='testfolder', is_admin=False)
         user_dir = di._get_user_dir(user)

@@ -965,21 +965,22 @@ def test_scroll_action_moves_page_and_waits():
 
 
 def test_click_action_reports_external_links_blocked_when_not_allowed():
-    try:
-        from playwright.sync_api import sync_playwright
-    except Exception:
-        pytest.skip("Playwright unavailable")
+    class DummyLocator:
+        def evaluate(self, script):
+            return "https://jobs.example.org/apply"
 
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.set_content('<a data-sentinel-id="e1" href="https://jobs.example.org/apply">Apply now</a>')
-            action = parse_agent_action('{"action": "click", "element_id": "e1"}', {"e1"})
-            result = _apply_action(page, action, ValidatedTarget("https://example.com/", "example.com"))
-            browser.close()
-    except Exception as e:
-        pytest.skip(f"Playwright browser unavailable: {e}")
+    class DummyPage:
+        url = "https://example.com/"
+
+        def locator(self, selector):
+            return type("LocatorHandle", (), {"first": DummyLocator()})()
+
+    action = parse_agent_action('{"action": "click", "element_id": "e1"}', {"e1"})
+    result = _apply_action(
+        DummyPage(),
+        action,
+        ValidatedTarget("https://example.com/", "example.com"),
+    )
 
     assert result["ok"] is False
     assert result["error"] == "Navigation outside target host blocked"

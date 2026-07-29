@@ -6,6 +6,7 @@ from yt_dlp.utils import DownloadError
 
 from web_app.tubio.audio_downloader import AudioDownloader, VideoTooLongError, DownloadProgress, get_download_progress, clear_download_progress
 from web_app.tubio.data_interface import UserMetadata
+from web_app.config import ConfigManager
 from web_app.users import User
 import web_app.helpers as helpers
 
@@ -319,9 +320,15 @@ class TestSearchYoutubeWithDirectUrl:
 
         results = AudioDownloader.search_youtube('rick astley', set())
 
-        # Should have called requests.get for normal search
-        mock_get.assert_called_once()
-        assert 'search_query' in str(mock_get.call_args)
+        tiers = ConfigManager().tubio.search_length_filter_sps
+        assert mock_get.call_count == len(tiers)
+        assert [
+            request.kwargs["params"]
+            for request in mock_get.call_args_list
+        ] == [
+            {"search_query": "rick astley", **({"sp": tier} if tier else {})}
+            for tier in tiers
+        ]
 
     @patch.object(AudioDownloader, 'get_video_info')
     def test_search_with_direct_url_raises_video_too_long_error(self, mock_get_info):
