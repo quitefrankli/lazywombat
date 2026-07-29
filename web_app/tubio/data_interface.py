@@ -1,10 +1,11 @@
 import binascii
 import logging
 import shutil
-import time
 
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
+from pydantic import Field
 from copy import deepcopy
 from pydub import AudioSegment
 
@@ -15,7 +16,9 @@ from web_app.config import ConfigManager
 
 class Playlist(BaseModel):
     name: str
-    audio_crcs: list[int] = []
+    audio_crcs: list[int] = Field(default_factory=list)
+    # NOTE this is used to indicate that the playlist is a "Surprise" playlist, which is ephemeral and can be cleaned up after a period of inactivity. If last_active is None, it is not a Surprise playlist.
+    last_active: datetime | None = None
 
 class PlaybackTrim(BaseModel):
     start_s: float = 0
@@ -23,8 +26,8 @@ class PlaybackTrim(BaseModel):
 
 class UserMetadata(BaseModel):
     user_id: str
-    playlists: dict[str, Playlist] = {}
-    playback_trims: dict[int, PlaybackTrim] = {}
+    playlists: dict[str, Playlist] = Field(default_factory=dict)
+    playback_trims: dict[int, PlaybackTrim] = Field(default_factory=dict)
 
     def add_to_playlist(self, audio_crc: int, playlist_name: str = "Favourites") -> None:
         playlist = self.get_playlist(playlist_name)
@@ -48,7 +51,32 @@ class UserMetadata(BaseModel):
         return self.playlists[playlist_name]
     
     def get_playlists(self) -> list[Playlist]:
-        return list(self.playlists.values())
+        return [
+            playlist
+            for playlist in self.playlists.values()
+            if playlist.last_active is None
+        ]
+
+    def get_surprise_playlist(self) -> Playlist | None:
+        playlist = self.playlists.get(
+            ConfigManager().tubio.surprise_playlist_storage_key
+        )
+        if playlist is None or playlist.last_active is None:
+            return None
+        return playlist
+
+    def set_surprise_playlist(self, playlist: Playlist) -> None:
+        if playlist.last_active is None:
+            raise ValueError("A Surprise playlist requires last_active")
+        self.playlists[
+            ConfigManager().tubio.surprise_playlist_storage_key
+        ] = playlist
+
+    def pop_surprise_playlist(self) -> Playlist | None:
+        return self.playlists.pop(
+            ConfigManager().tubio.surprise_playlist_storage_key,
+            None,
+        )
 
     def set_playback_trim(self, audio_crc: int, start_s: float, end_s: float) -> None:
         if start_s == 0 and end_s == 0:
@@ -71,9 +99,9 @@ class AudioMetadata(BaseModel):
 
 class Metadata(BaseModel):
     # username -> UserMetadata
-    users: dict[str, UserMetadata] = {}
+    users: dict[str, UserMetadata] = Field(default_factory=dict)
     # audio crc -> AudioMetadata
-    audios: dict[int, AudioMetadata] = {}
+    audios: dict[int, AudioMetadata] = Field(default_factory=dict)
 
     def get_user(self, user_id: str) -> UserMetadata:
         """Get-or-create this user's slice. Use inside an edit_metadata() block
@@ -89,23 +117,6 @@ class DataInterface(BaseDataInterface):
         self.app_audio_dir = self.app_dir / "audio"
         self.app_thumbnails_dir = self.app_dir / "thumbnails"
         self.app_metadata_file = self.app_dir / "metadata.json"
-        self.app_temp_tracks_dir = ConfigManager().temp_dir / ConfigManager().tubio.surprise_temp_dirname
-
-    def get_temp_track_path(self, token: str) -> Path:
-        """Path for a Surprise-Playlist temp track. Never added to metadata."""
-        return self.app_temp_tracks_dir / f"{token}.m4a"
-
-    def sweep_temp_tracks(self) -> None:
-        """Best-effort removal of temp tracks older than the configured TTL."""
-        if not self.app_temp_tracks_dir.exists():
-            return
-        cutoff = time.time() - ConfigManager().tubio.surprise_temp_ttl_s
-        for path in self.app_temp_tracks_dir.glob("*.m4a"):
-            try:
-                if path.stat().st_mtime < cutoff:
-                    path.unlink()
-            except OSError:
-                logging.warning("Failed to sweep temp track %s", path, exc_info=True)
 
     def delete_audio(self, crc: int) -> None:
         with self.edit_metadata() as metadata:
@@ -197,26 +208,56 @@ class DataInterface(BaseDataInterface):
         return self.get_thumbnail_path(crc).exists()
 
     def cleanup_unused_tracks(self) -> None:
-        metadata = self.get_metadata()
-        used_crcs = set()
-        for user_metadata in metadata.users.values():
-            for playlist in user_metadata.playlists.values():
-                used_crcs.update(playlist.audio_crcs)
-        
-        all_crcs = set(metadata.audios.keys())
-        unused_crcs = all_crcs - used_crcs
+        unused_crcs: set[int] = set()
+        with self.edit_metadata() as metadata:
+            used_crcs: set[int] = set()
+            for user_metadata in metadata.users.values():
+                for playlist in user_metadata.playlists.values():
+                    used_crcs.update(playlist.audio_crcs)
+            unused_crcs = set(metadata.audios) - used_crcs
+            for crc in unused_crcs:
+                metadata.audios.pop(crc)
 
         for crc in unused_crcs:
-            self.delete_audio(crc)
-            logging.info(f"Deleted unused audio with crc {crc}.")
+            self.atomic_delete(self.app_audio_dir / f"{crc}.m4a")
+            logging.info("Deleted unused audio with crc %s.", crc)
+        logging.info(
+            "Tubio unused-track cleanup completed removed=%d",
+            len(unused_crcs),
+        )
 
     def delete_user_data(self, user: User) -> None:
         with self.edit_metadata() as metadata:
             if user.id not in metadata.users:
                 return
             metadata.users.pop(user.id)
-        self.cleanup_unused_tracks()
-        self.cleanup_unused_thumbnails()
+        self.cleanup_unused_resources()
+
+    def cleanup_surprise_playlists(
+        self,
+        now: datetime | None = None,
+    ) -> None:
+        now = now or datetime.now(timezone.utc)
+        cutoff = now - timedelta(
+            seconds=ConfigManager().tubio.surprise_playlist_inactivity_ttl_s
+        )
+        removed = 0
+        with self.edit_metadata() as metadata:
+            for user_metadata in metadata.users.values():
+                for key, playlist in list(user_metadata.playlists.items()):
+                    last_active = playlist.last_active
+                    if last_active is not None and last_active.tzinfo is None:
+                        last_active = last_active.replace(tzinfo=timezone.utc)
+                    if (
+                        last_active is not None
+                        and last_active < cutoff
+                    ):
+                        user_metadata.playlists.pop(key)
+                        removed += 1
+        logging.info(
+            "Tubio Surprise playlist cleanup completed removed=%d",
+            removed,
+        )
 
     def cleanup_unused_thumbnails(self) -> None:
         if not self.app_thumbnails_dir.exists():
@@ -227,7 +268,12 @@ class DataInterface(BaseDataInterface):
         for thumbnail_path in self.app_thumbnails_dir.glob("*.jpg"):
             if thumbnail_path.stem not in used_crcs:
                 self.atomic_delete(thumbnail_path)
-    
+
+    def cleanup_unused_resources(self) -> None:
+        self.cleanup_surprise_playlists()
+        self.cleanup_unused_tracks()
+        self.cleanup_unused_thumbnails()
+
     def backup_data(self, backup_dir: Path) -> None:
         tubio_backup_dir = backup_dir / "tubio"
         tubio_backup_dir.mkdir(parents=True, exist_ok=True)
@@ -235,6 +281,23 @@ class DataInterface(BaseDataInterface):
         audio_backup_dir.mkdir(parents=True, exist_ok=True)
         
         metadata = deepcopy(self.get_metadata())
+        for user_metadata in metadata.users.values():
+            user_metadata.playlists = {
+                key: playlist
+                for key, playlist in user_metadata.playlists.items()
+                if playlist.last_active is None
+            }
+        durable_crcs = {
+            crc
+            for user_metadata in metadata.users.values()
+            for playlist in user_metadata.playlists.values()
+            for crc in playlist.audio_crcs
+        }
+        metadata.audios = {
+            crc: audio
+            for crc, audio in metadata.audios.items()
+            if crc in durable_crcs
+        }
         for audio in metadata.audios.values():
             if audio.yt_video_id:
                 audio.is_cached = False

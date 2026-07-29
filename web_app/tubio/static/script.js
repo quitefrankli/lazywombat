@@ -23,6 +23,29 @@ function jsonPost(url, fields = {}) {
     });
 }
 
+function reportTubioClientError(scope, error, context = {}) {
+    const message = error instanceof Error ? error.message : String(error || 'Unknown client error');
+    const stack = error instanceof Error ? error.stack || '' : '';
+    jsonPost('/tubio/client-log', {
+        scope,
+        message,
+        stack,
+        context: JSON.stringify(context)
+    }).catch(() => {});
+}
+
+window.addEventListener('error', event => {
+    reportTubioClientError('window-error', event.error || event.message, {
+        filename: event.filename || '',
+        line: event.lineno || 0,
+        column: event.colno || 0
+    });
+});
+
+window.addEventListener('unhandledrejection', event => {
+    reportTubioClientError('unhandled-rejection', event.reason);
+});
+
 function renderSearchError(message) {
     const resultsDiv = document.getElementById('search-results');
     if (resultsDiv) {
@@ -337,21 +360,30 @@ function switchTab(tabName) {
         targetPane.classList.add('show', 'active');
     }
 
-    // Only the Playlists tab has contextual actions (Upload / Move) — hide the
-    // Actions dropdown on Search and Discover.
+    document.querySelectorAll('.tubio-playlists-action').forEach(item => {
+        item.classList.toggle('d-none', tabName !== 'playlists');
+    });
+    document.querySelectorAll('.tubio-discover-action').forEach(item => {
+        item.classList.toggle('d-none', tabName !== 'discover');
+    });
+
+    // Search has no contextual actions. Playlists and Discover each expose
+    // their own action set.
     const actionsDropdown = document.querySelector('.actions-dropdown');
     const actionsContainer = actionsDropdown ? actionsDropdown.closest('.dropdown') : null;
     if (actionsContainer) {
-        actionsContainer.classList.toggle('d-none', tabName !== 'playlists');
+        actionsContainer.classList.toggle(
+            'd-none',
+            tabName !== 'playlists' && tabName !== 'discover'
+        );
     }
 
     // Hide the trackbar in search mode.
     const trackbar = document.getElementById('tubio-trackbar');
     if (trackbar) trackbar.classList.toggle('d-none', tabName === 'search');
 
-    // Lazily load discoveries the first time the tab is opened.
-    if (tabName === 'discover' && !discoverLoaded) {
-        runDiscover();
+    if (tabName === 'discover') {
+        initializeDiscover();
     }
 
     // Update URL hash
@@ -628,36 +660,6 @@ async function runSearch(page, { scrollToResults = false } = {}) {
     } catch (error) {
         console.error('Error during search:', error);
         renderSearchError('Error occurred while searching.');
-    }
-}
-
-let discoverLoaded = false;
-
-async function runDiscover() {
-    const resultsDiv = document.getElementById('discover-results');
-    if (!resultsDiv) return;
-
-    discoverLoaded = true;
-    resultsDiv.innerHTML = `
-        <div class="text-center py-5 text-muted">
-            <div class="spinner-border text-sage mb-3" role="status"><span class="visually-hidden">Loading...</span></div>
-            <div>Finding music you might like…</div>
-        </div>`;
-
-    try {
-        const response = await jsonPost('/tubio/discover', {});
-        const data = await response.json();
-        if (response.ok) {
-            const empty = data.empty_reason === 'no_library'
-                ? 'Add some songs to your library first — discoveries are based on what you already have.'
-                : 'No recommendations right now. Try refreshing.';
-            displaySearchResults(data, { targetId: 'discover-results', paginate: false, emptyMessage: empty });
-        } else {
-            resultsDiv.innerHTML = `<div class="text-center py-5"><h5 class="text-danger">${escapeHtml(data.error || 'Discovery failed.')}</h5></div>`;
-        }
-    } catch (error) {
-        console.error('Error during discovery:', error);
-        resultsDiv.innerHTML = '<div class="text-center py-5"><h5 class="text-danger">Error occurred while finding recommendations.</h5></div>';
     }
 }
 
@@ -1079,23 +1081,40 @@ let currentPlaylistIndex = 0;
 let isPlayingPlaylist = false;
 let currentPlaylistName = '';
 
-// "Surprise Playlist" — infinite radio of temporary (unsaved) tracks. The client
-// owns the queue: it asks the server for the next related video (/surprise/next),
-// pre-converts it (/surprise/convert -> token), and streams it from
-// /surprise/audio/<token>. The next track is converted while the current plays so
-// transitions are gapless. Temp files are swept server-side (TTL + on /next).
 let surpriseMode = false;
-let surpriseQueue = [];          // ready {token, videoId, title, thumbnailUrl, durationS}
-let surpriseCurrent = null;
-let surpriseSeen = new Set();    // video_ids picked this session (server exclude list)
-let surpriseLastVideoId = null;  // chain seed for the next /surprise/next
+let surprisePlaylist = null;
+let surpriseCurrentIndex = -1;
 let surpriseExhausted = false;
 let surpriseFilling = false;
 
 function surpriseBufferSize() {
-    const btn = document.getElementById('surprise-btn');
-    const n = btn ? parseInt(btn.dataset.bufferSize, 10) : NaN;
+    const container = document.getElementById('surprise-playlist');
+    const n = container ? parseInt(container.dataset.bufferSize, 10) : NaN;
     return Number.isFinite(n) && n > 0 ? n : 5;
+}
+
+function surpriseCachePollIntervalMs() {
+    const container = document.getElementById('surprise-playlist');
+    const n = container ? parseInt(container.dataset.cachePollIntervalMs, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : 750;
+}
+
+function surpriseCrcs() {
+    return surprisePlaylist?.audio_crcs || [];
+}
+
+function normalizeSurprisePlaylist(payload, source) {
+    if (payload === null || payload === undefined) return null;
+    if (!Array.isArray(payload.audio_crcs)) {
+        const error = new Error('Surprise Playlist data is invalid. Reload Discover to try again.');
+        reportTubioClientError('surprise-payload', error, {
+            source,
+            hasPayload: Boolean(payload),
+            audioCrcsType: typeof payload?.audio_crcs
+        });
+        throw error;
+    }
+    return payload;
 }
 
 function setSurpriseStatus(message) {
@@ -1105,80 +1124,29 @@ function setSurpriseStatus(message) {
 
 function exitSurpriseMode() {
     surpriseMode = false;
-    surpriseQueue = [];
-    surpriseCurrent = null;
     setSurpriseStatus('');
 }
 
-async function startSurprise() {
-    surpriseMode = true;
-    isPlayingPlaylist = false;
-    surpriseQueue = [];
-    surpriseCurrent = null;
-    surpriseSeen = new Set();
-    surpriseLastVideoId = null;
-    surpriseExhausted = false;
-    setSurpriseStatus('Finding music you might like…');
-
-    const first = await surpriseFetchAndConvertOne();
-    if (!first) {
-        if (!surpriseMode) return; // user navigated away mid-fetch
-        setSurpriseStatus(surpriseExhausted
-            ? 'No fresh tracks found right now. Try again later.'
-            : 'Add some songs to your library first, then hit Surprise!');
-        surpriseMode = false;
-        return;
-    }
-    surpriseQueue.push(first);
-    playNextSurprise();
-}
-
-// Pick one related video and pre-convert it. Returns a ready entry or null.
-async function surpriseFetchAndConvertOne() {
-    try {
-        const nextResp = await jsonPost('/tubio/surprise/next', {
-            seed: surpriseLastVideoId || '',
-            exclude: [...surpriseSeen].join(','),
-        });
-        const nextData = await nextResp.json();
-        if (!nextResp.ok || nextData.error) return null;
-        if (nextData.empty_reason === 'no_library') return null;
-        if (nextData.exhausted || !nextData.track) { surpriseExhausted = true; return null; }
-
-        const track = nextData.track;
-        surpriseSeen.add(track.video_id);
-        surpriseLastVideoId = track.video_id;
-
-        const convResp = await jsonPost('/tubio/surprise/convert', {
-            video_id: track.video_id,
-            title: track.title,
-        });
-        const convData = await convResp.json();
-        if (!convResp.ok || !convData.token) return null;
-
-        return {
-            token: convData.token,
-            videoId: track.video_id,
-            title: track.title,
-            thumbnailUrl: track.thumbnail_url || '',
-            durationS: track.duration_s || 0,
-        };
-    } catch (err) {
-        console.error('Surprise fetch/convert failed:', err);
-        return null;
-    }
-}
-
-// Top the buffer back up to the rolling-window size (background pre-conversion).
-async function fillSurpriseBuffer() {
-    if (surpriseFilling) return;
+async function fillSurpriseBuffer({ requirePlayback = true } = {}) {
+    if (surpriseFilling || !surprisePlaylist) return;
     surpriseFilling = true;
     try {
-        while (surpriseMode && !surpriseExhausted &&
-               surpriseQueue.length < surpriseBufferSize()) {
-            const entry = await surpriseFetchAndConvertOne();
-            if (!entry) break;
-            surpriseQueue.push(entry);
+        while ((!requirePlayback || surpriseMode) && !surpriseExhausted &&
+               surpriseCrcs().length - surpriseCurrentIndex - 1 < surpriseBufferSize()) {
+            const response = await jsonPost('/tubio/surprise/grow');
+            const data = await response.json();
+            if (data.exhausted) {
+                surpriseExhausted = true;
+                break;
+            }
+            if (response.status === 404 ||
+                response.status === 409) {
+                if (!await loadSurprisePlaylist()) break;
+                continue;
+            }
+            if (!response.ok || !data.playlist) break;
+            surprisePlaylist = normalizeSurprisePlaylist(data.playlist, 'grow');
+            renderSurprisePlaylist();
         }
     } finally {
         surpriseFilling = false;
@@ -1186,78 +1154,301 @@ async function fillSurpriseBuffer() {
 }
 
 async function playNextSurprise() {
-    if (!surpriseMode) return;
-    if (surpriseQueue.length === 0) {
-        if (surpriseExhausted) {
-            showNotification('Surprise radio finished', 'info');
-            exitSurpriseMode();
-            return;
-        }
+    if (!surpriseMode || !surprisePlaylist) return;
+    const nextIndex = surpriseCurrentIndex + 1;
+    if (nextIndex >= surpriseCrcs().length && !surpriseExhausted) {
         setSurpriseStatus('Loading next track…');
         await fillSurpriseBuffer();
-        if (surpriseQueue.length === 0) {
-            showNotification('Surprise radio finished', 'info');
-            exitSurpriseMode();
-            return;
+    }
+    if (nextIndex >= surpriseCrcs().length) {
+        showNotification('Surprise playlist finished', 'info');
+        exitSurpriseMode();
+        return;
+    }
+    playSurpriseTrack(nextIndex);
+}
+
+function sleep(milliseconds) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+async function ensureSurpriseTrackCached(crc) {
+    const item = document.querySelector(`.playlist-track[data-playlist-kind="surprise"][data-audio-crc="${crc}"]`);
+    if (!item) {
+        showNotification('This Surprise track is no longer available', 'error');
+        return false;
+    }
+    const needsDownload = item.dataset.isCached !== 'true';
+    const button = item.querySelector('.track-play-btn');
+    const original = button ? button.innerHTML : '';
+    if (button && needsDownload) {
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>';
+    }
+    if (needsDownload) {
+        setSurpriseStatus(`Downloading “${item.dataset.title || 'track'}”…`);
+    }
+    try {
+        while (true) {
+            const request = jsonPost(`/tubio/audio/${encodeURIComponent(crc)}/cache`);
+            const videoId = item.dataset.videoId;
+            const progress = needsDownload && videoId
+                ? new EventSource(`/tubio/download_progress/${encodeURIComponent(videoId)}`)
+                : null;
+            if (progress) {
+                progress.onmessage = event => {
+                    const data = JSON.parse(event.data);
+                    if (typeof data.percent === 'number') {
+                        setSurpriseStatus(`Downloading “${item.dataset.title || 'track'}”… ${Math.round(data.percent)}%`);
+                    }
+                };
+            }
+            const response = await request;
+            const data = await response.json();
+            if (progress) progress.close();
+            if (response.status === 202) {
+                await sleep(surpriseCachePollIntervalMs());
+                continue;
+            }
+            if (!response.ok || !data.is_cached) {
+                throw new Error(data.error || 'Could not download this track');
+            }
+            item.dataset.isCached = 'true';
+            item.querySelector('.track-cache-badge')?.remove();
+            return true;
+        }
+    } catch (error) {
+        showNotification(error.message, 'error');
+        setSurpriseStatus(error.message);
+        return false;
+    } finally {
+        if (button && needsDownload) {
+            button.disabled = false;
+            button.innerHTML = original;
         }
     }
-    const entry = surpriseQueue.shift();
-    surpriseCurrent = entry;
-    setSurpriseStatus(`Surprise radio · now playing “${entry.title}”`);
-    playSurpriseToken(entry);
-    fillSurpriseBuffer(); // pre-convert the next tracks while this one plays
 }
 
-function playSurpriseToken(entry) {
-    const audio = getAudio();
-    if (!audio) return;
-    const crcId = 'surprise:' + entry.token;
-
-    if (currentTrackCrc && String(currentTrackCrc) !== crcId) {
+async function playSurpriseTrack(index) {
+    const crc = surpriseCrcs()[index];
+    if (crc === undefined) return;
+    if (!await ensureSurpriseTrackCached(crc)) return;
+    const existingAudio = getAudio();
+    if (surpriseMode && index === surpriseCurrentIndex && existingAudio) {
+        if (existingAudio.paused) {
+            existingAudio.play().catch(err => console.error('Error playing audio:', err));
+        } else {
+            existingAudio.pause();
+        }
+        renderSurprisePlaylist();
+        return;
+    }
+    surpriseMode = true;
+    isPlayingPlaylist = false;
+    surpriseCurrentIndex = index;
+    if (currentTrackCrc && String(currentTrackCrc) !== String(crc)) {
         resetTrackPlayingUI(currentTrackCrc);
     }
-    audio.dataset.crc = crcId;
-    audio.dataset.trimStart = '0';
-    audio.dataset.trimEnd = '0';
-    audio._trimEnded = false;
-    audio.src = '/tubio/surprise/audio/' + entry.token;
-    audio.load();
-    applyTrackbarVolume(audio);
-    currentTrackCrc = crcId;
+    const audio = loadTrack(crc);
+    if (!audio) return;
+    currentTrackCrc = String(crc);
     audio.play().catch(err => {
         console.error('Error playing surprise track:', err);
-        setTimeout(() => playNextSurprise(), 500);
+        showNotification('Could not play this track', 'error');
     });
-    updateTrackbarFromObject(entry);
+    const item = document.querySelector(`.playlist-track[data-playlist-kind="surprise"][data-audio-crc="${crc}"]`);
+    setSurpriseStatus(`Surprise Playlist · now playing “${item?.dataset.title || 'track'}”`);
+    renderSurprisePlaylist();
+    fillSurpriseBuffer();
 }
 
-// Drive the trackbar from a plain surprise entry (no accordion DOM node exists).
-function updateTrackbarFromObject(entry) {
-    const trackbar = document.getElementById('tubio-trackbar');
-    const titleEl = document.getElementById('trackbar-title');
-    const playlistEl = document.getElementById('trackbar-playlist');
-    const thumb = document.getElementById('trackbar-thumb');
-    const placeholder = document.getElementById('trackbar-thumb-placeholder');
+function toggleSurpriseTrack(crc) {
+    const index = surpriseCrcs().findIndex(value => String(value) === String(crc));
+    if (index >= 0) playSurpriseTrack(index);
+}
 
-    if (trackbar) trackbar.dataset.active = 'true';
-    if (titleEl) titleEl.textContent = entry.title || 'Unknown Track';
-    if (playlistEl) playlistEl.textContent = 'Surprise Radio';
-    if (entry.thumbnailUrl && thumb) {
-        if (thumb.src !== entry.thumbnailUrl) thumb.src = entry.thumbnailUrl;
-        thumb.hidden = false;
-        if (placeholder) placeholder.hidden = true;
-    } else {
-        if (thumb) { thumb.hidden = true; thumb.removeAttribute('src'); }
-        if (placeholder) placeholder.hidden = false;
+function toggleSurprisePlaylistPlayback() {
+    const audio = getAudio();
+    if (surpriseMode && surpriseCurrentIndex >= 0 && audio) {
+        playSurpriseTrack(surpriseCurrentIndex);
+        return;
     }
-    updateTrackbarPlayPauseUI(true);
-    updateTrackbarTitleOverflow();
+    playSurpriseTrack(0);
+}
 
-    if ('mediaSession' in navigator) {
-        const artwork = entry.thumbnailUrl
-            ? [{ src: entry.thumbnailUrl, sizes: '320x180', type: 'image/jpeg' }]
-            : [];
-        navigator.mediaSession.metadata = new MediaMetadata({ title: entry.title || '', artwork });
+function renderSurprisePlaylist() {
+    const container = document.getElementById('surprise-playlist');
+    if (!container) return;
+    if (!surprisePlaylist || !surprisePlaylist.html) {
+        container.hidden = true;
+        return;
+    }
+    container.innerHTML = surprisePlaylist.html;
+    container.hidden = false;
+    container.setAttribute('aria-busy', 'false');
+    initializeLazyThumbnails();
+    initializeTooltips();
+    const crc = surpriseCrcs()[surpriseCurrentIndex];
+    const audio = getAudioForCrc(crc);
+    if (crc !== undefined && audio) {
+        const item = document.querySelector(`.playlist-track[data-playlist-kind="surprise"][data-audio-crc="${crc}"]`);
+        if (item && !audio.paused) item.classList.add('track-playing');
+        setPlayButtonState(item?.querySelector('.track-play-btn'), !audio.paused);
+    }
+}
+
+async function loadSurprisePlaylist() {
+    const response = await fetch('/tubio/surprise', { headers: { 'Accept': 'application/json' } });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not restore Surprise playlist');
+    if (surpriseMode && surprisePlaylist && data.playlist) {
+        const currentCrc = surpriseCrcs()[surpriseCurrentIndex];
+        const restored = normalizeSurprisePlaylist(data.playlist, 'restore-playing');
+        const restoredIndex = restored.audio_crcs.findIndex(crc => crc === currentCrc);
+        surprisePlaylist = restored;
+        surpriseCurrentIndex = restoredIndex;
+        if (restoredIndex < 0) {
+            const audio = getAudioForCrc(currentCrc);
+            if (audio) audio.pause();
+            exitSurpriseMode();
+        }
+        renderSurprisePlaylist();
+        return surprisePlaylist;
+    }
+    if (surpriseMode && surprisePlaylist && !data.playlist) {
+        const audio = getAudio();
+        if (audio && surpriseCrcs().some(crc => String(crc) === audio.dataset.crc)) {
+            audio.pause();
+        }
+        exitSurpriseMode();
+    }
+    surprisePlaylist = normalizeSurprisePlaylist(data.playlist, 'restore');
+    surpriseCurrentIndex = -1;
+    surpriseExhausted = false;
+    renderSurprisePlaylist();
+    return surprisePlaylist;
+}
+
+async function createSurprisePlaylist() {
+    const response = await jsonPost('/tubio/surprise');
+    const data = await response.json();
+    if (!response.ok || !data.playlist) {
+        throw new Error(data.error || (data.empty_reason === 'no_library'
+            ? 'Add some songs to your library first to generate a Surprise Playlist.'
+            : 'No fresh tracks found right now.'));
+    }
+    surprisePlaylist = normalizeSurprisePlaylist(data.playlist, 'create');
+    surpriseCurrentIndex = -1;
+    surpriseExhausted = false;
+    renderSurprisePlaylist();
+    return surprisePlaylist;
+}
+
+let discoverInitialization = null;
+
+function initializeDiscover() {
+    if (discoverInitialization) return discoverInitialization;
+    discoverInitialization = (async () => {
+        if (!surpriseMode) setSurpriseStatus('Building your Surprise Playlist…');
+        try {
+            const restored = await loadSurprisePlaylist();
+            if (!restored) await createSurprisePlaylist();
+            if (!surpriseMode && surprisePlaylist) {
+                const count = surpriseCrcs().length;
+                setSurpriseStatus(`${count} track${count === 1 ? '' : 's'} ready to play.`);
+            }
+        } catch (error) {
+            console.error('Could not initialize Discover:', error);
+            reportTubioClientError('discover-initialize', error);
+            if (!surpriseMode) setSurpriseStatus(error.message || 'Could not build a Surprise Playlist.');
+        } finally {
+            discoverInitialization = null;
+        }
+    })();
+    return discoverInitialization;
+}
+
+async function favouriteSurpriseTrack(crc, button) {
+    if (!surprisePlaylist) return;
+    button.disabled = true;
+    try {
+        const response = await jsonPost(
+            `/tubio/surprise/tracks/${encodeURIComponent(crc)}/favourite`
+        );
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Could not favourite track');
+        surprisePlaylist = normalizeSurprisePlaylist(data.playlist, 'favourite');
+        renderSurprisePlaylist();
+        showNotification('Added to Favourites', 'success');
+        updateContent({});
+    } catch (error) {
+        button.disabled = false;
+        showNotification(error.message, 'error');
+    }
+}
+
+async function saveSurprisePlaylist() {
+    if (!surprisePlaylist) return;
+    const name = window.prompt('Name this playlist:');
+    if (!name || !name.trim()) return;
+    try {
+        const response = await jsonPost(
+            '/tubio/surprise/save',
+            { playlist_name: name.trim() }
+        );
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Could not save playlist');
+        exitSurpriseMode();
+        surprisePlaylist = null;
+        renderSurprisePlaylist();
+        await updateContent(data);
+        switchTab('playlists');
+        const slug = data.playlist_name.replace(/ /g, '-').replace(/'/g, '');
+        selectPlaylist(slug);
+        const skipped = Array.isArray(data.skipped) ? data.skipped.length : 0;
+        showNotification(skipped ? `${data.message}; ${skipped} track(s) skipped` : data.message, skipped ? 'info' : 'success');
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+}
+
+async function refreshSurprisePlaylist(button) {
+    const previousPlaylist = surprisePlaylist;
+    const previousCrcs = [...surpriseCrcs()];
+    const original = button ? button.innerHTML : '';
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Refreshing…</span>';
+    }
+    setSurpriseStatus('Refreshing your Surprise Playlist…');
+    try {
+        await createSurprisePlaylist();
+        const audio = getAudio();
+        if (audio && previousCrcs.some(crc => String(crc) === audio.dataset.crc)) {
+            audio.pause();
+            audio.removeAttribute('src');
+            delete audio.dataset.crc;
+            currentTrackCrc = null;
+            updateTrackbar(null);
+            updateTrackbarScrubber();
+        }
+        exitSurpriseMode();
+        surpriseCurrentIndex = -1;
+        renderSurprisePlaylist();
+        const count = surpriseCrcs().length;
+        setSurpriseStatus(`${count} track${count === 1 ? '' : 's'} ready to play.`);
+        showNotification('Surprise Playlist refreshed', 'success');
+    } catch (error) {
+        surprisePlaylist = previousPlaylist;
+        renderSurprisePlaylist();
+        setSurpriseStatus(error.message || 'Could not refresh the Surprise Playlist.');
+        reportTubioClientError('surprise-refresh', error);
+        showNotification(error.message || 'Could not refresh the Surprise Playlist', 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = original;
+        }
     }
 }
 
@@ -1504,12 +1695,14 @@ function initializeAudioEventListeners() {
         updateMediaSessionMetadata(crc);
         updateMediaSessionPlaybackState('playing');
         updateTrackbar(crc);
+        if (surpriseMode) renderSurprisePlaylist();
     });
     audio.addEventListener('pause', () => {
         const crc = audio.dataset.crc;
         syncAudioButtonUI(crc);
         updateMediaSessionPlaybackState('paused');
         if (crc === currentTrackCrc) updateTrackbarPlayPauseUI(false);
+        if (surpriseMode) renderSurprisePlaylist();
     });
     audio.addEventListener('timeupdate', () => {
         const bounds = getPlaybackBounds(audio);
@@ -1533,8 +1726,8 @@ function updateMediaSessionMetadata(crc) {
 
     const title = trackItem.dataset.title || 'Unknown Track';
     const artwork = [];
-    if (trackItem.dataset.hasThumbnail === 'true') {
-        const thumbnailUrl = `/tubio/thumbnail/${crc}`;
+    if (trackItem.dataset.thumbnailUrl) {
+        const thumbnailUrl = trackItem.dataset.thumbnailUrl;
         artwork.push({ src: thumbnailUrl, sizes: '512x512', type: 'image/jpeg' });
     }
     navigator.mediaSession.metadata = new MediaMetadata({ title, artwork });
@@ -1548,6 +1741,10 @@ function updateMediaSessionPlaybackState(state) {
 
 // Trackbar / playback control entry points
 function togglePlayPause() {
+    if (surpriseMode && surpriseCurrentIndex >= 0) {
+        playSurpriseTrack(surpriseCurrentIndex);
+        return;
+    }
     const crc = currentTrackCrc;
     if (!crc) return;
     const audio = loadTrack(crc);
@@ -1585,9 +1782,15 @@ function nextTrack() {
 
 function prevTrack() {
     if (surpriseMode) {
-        // No history is retained for temp tracks — restart the current one.
         const audio = getAudio();
-        if (audio) audio.currentTime = getPlaybackBounds(audio).start;
+        if (audio && audio.currentTime > 3) {
+            audio.currentTime = 0;
+        } else if (surpriseCurrentIndex > 0) {
+            if (audio) audio.pause();
+            playSurpriseTrack(surpriseCurrentIndex - 1);
+        } else if (audio) {
+            audio.currentTime = 0;
+        }
         return;
     }
     if (isPlayingPlaylist && currentPlaylistQueue.length > 0) {
@@ -1639,8 +1842,8 @@ function updateTrackbar(crc) {
     if (playlistEl) playlistEl.textContent = trackItem.dataset.playlist || '';
     updateTrackbarTitleOverflow();
 
-    if (trackItem.dataset.hasThumbnail === 'true' && thumb) {
-        const url = `/tubio/thumbnail/${crc}`;
+    if (trackItem.dataset.thumbnailUrl && thumb) {
+        const url = trackItem.dataset.thumbnailUrl;
         if (thumb.src !== url) thumb.src = url;
         thumb.hidden = false;
         if (placeholder) placeholder.hidden = true;

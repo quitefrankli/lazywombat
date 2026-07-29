@@ -277,6 +277,7 @@ def configure_logging(debug: bool) -> None:
                         handlers=[] if debug else [rotating_log_handler],
                         format=config.log_format)
     logging.getLogger("markdown_it").setLevel(logging.INFO)
+    logging.getLogger("redis").setLevel(logging.INFO)
     logging.getLogger("apscheduler.scheduler").setLevel(logging.WARNING)
 
 @click.command()

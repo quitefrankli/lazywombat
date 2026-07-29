@@ -75,6 +75,7 @@ class LLMConfig:
 @dataclass
 class TubioConfig:
     _save_data_path: Callable[[], Path] = field(repr=False)
+    static_asset_version: str = "surprise-playlist-v5"
     search_prefix: str = ""
     max_results: int = 10
     max_search_pages: int = 3
@@ -104,15 +105,21 @@ class TubioConfig:
     autocomplete_debounce_ms: int = 200
     autocomplete_suggest_url: str = "https://suggestqueries.google.com/complete/search"
     autocomplete_request_timeout_s: float = 3.0
-    discover_seed_count: int = 5
-    discover_entries_per_seed: int = 15
-    discover_max_results: int = 20
-    # "Surprise Playlist" infinite radio: at most this many pre-converted temp
-    # tracks buffered on disk at once (rolling window). Temp tracks are never
-    # saved to the library; files older than the TTL are swept.
+    surprise_mix_entries_per_seed: int = 15
+    # Number of Surprise metadata entries kept ready ahead of playback.
     surprise_buffer_size: int = 5
-    surprise_temp_ttl_s: int = 3600
-    surprise_temp_dirname: str = "temp_tracks"
+    surprise_grow_batch_size: int = 1
+    surprise_playlist_name: str = "Surprise Playlist"
+    surprise_playlist_storage_key: str = "__surprise_playlist__"
+    surprise_playlist_inactivity_ttl_s: int = 3600
+    surprise_crc_collision_attempts: int = 100
+    surprise_media_rate_limit: str = "30 per minute"
+    client_log_rate_limit: str = "30 per minute"
+    client_log_max_length: int = 2000
+    surprise_cache_claim_ttl_s: int = 3600
+    surprise_cache_claim_token_bytes: int = 12
+    surprise_cache_poll_interval_ms: int = 750
+    surprise_cache_redis_prefix: str = "nabicat:tubio:cache:"
 
     @property
     def cookie_path(self) -> Path:

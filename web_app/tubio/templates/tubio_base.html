@@ -25,22 +25,29 @@
 {% endblock %}
 
 {% block page_actions %}
-  <li>
+  <li class="tubio-playlists-action">
     <button type="button" class="dropdown-item d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#uploadAudioModal">
       <i class="bi bi-cloud-upload text-primary"></i>
       <span>Upload Audio</span>
     </button>
   </li>
-  <li>
+  <li class="tubio-playlists-action">
     <button type="button" class="dropdown-item d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#addToPlaylistModal" onclick="preparePlaylistModal()">
       <i class="bi bi-plus-square text-info"></i>
       <span>Move to Playlist</span>
+    </button>
+  </li>
+  <li class="tubio-discover-action d-none">
+    <button type="button" class="dropdown-item d-flex align-items-center gap-2"
+            id="refresh-surprise-action" onclick="refreshSurprisePlaylist(this)">
+      <i class="bi bi-arrow-clockwise text-primary"></i>
+      <span>Refresh Surprise Playlist</span>
     </button>
   </li>
 {% endblock %}
 
 {% block scripts %}
   {{ super() }}
-  <script src="{{ url_for('.static', filename='script.js') }}"></script>
-  <link rel="stylesheet" href="{{ url_for('.static', filename='style.css') }}">
+  <script src="{{ url_for('.static', filename='script.js', v=tubio_static_asset_version) }}"></script>
+  <link rel="stylesheet" href="{{ url_for('.static', filename='style.css', v=tubio_static_asset_version) }}">
 {% endblock %}

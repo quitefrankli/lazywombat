@@ -1,0 +1,153 @@
+{% macro playlist_panel(playlist_name, playlist_data, kind="regular", active=false) %}
+{% set slug_source = playlist_name if kind == "regular" else kind ~ "-" ~ playlist_name %}
+{% set slug = slug_source|replace(' ', '-')|replace("'", '') %}
+<section class="playlist-panel{% if active %} active{% endif %}"
+         id="panel-{{ slug }}"
+         data-playlist-name="{{ playlist_name }}"
+         data-playlist-kind="{{ kind }}">
+    <header class="playlist-panel-header">
+        <div class="playlist-panel-title">
+            <i class="bi {% if kind == 'surprise' %}bi-stars{% else %}bi-music-note-list{% endif %} me-2"></i>
+            <span>{{ playlist_name }}</span>
+            <span class="badge bg-light ms-2 playlist-count">{{ playlist_data|length }} songs</span>
+        </div>
+        <div class="playlist-panel-controls">
+            {% if playlist_data %}
+            <button class="btn btn-sm btn-play-all"
+                    id="play-all-btn-{{ slug }}"
+                    {% if kind == "surprise" %}
+                    onclick="toggleSurprisePlaylistPlayback()"
+                    {% else %}
+                    onclick='togglePlaylistPlayback({{ playlist_name|tojson }})'
+                    {% endif %}
+                    title="Play All">
+                <i class="bi bi-play-fill"></i>
+            </button>
+            {% endif %}
+            {% if kind == "surprise" %}
+            <button class="btn btn-sm btn-primary" type="button" onclick="saveSurprisePlaylist()">
+                <i class="bi bi-save me-1"></i>Save playlist
+            </button>
+            {% elif playlist_name != "Favourites" %}
+            <form method="post" action="{{ url_for('tubio.delete_playlist') }}" class="playlist-delete-form"
+                  onsubmit="return confirm('Are you sure you want to delete this playlist? All songs will remain in your Favourites.');">
+                <input type="hidden" name="playlist_name" value="{{ playlist_name }}">
+                <button type="submit" class="btn btn-sm btn-playlist-delete" title="Delete Playlist">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </header>
+    <div class="playlist-panel-body">
+        {% if not playlist_data %}
+        <div class="empty-playlist">
+            <i class="bi bi-music-note-beamed"></i>
+            <p>No songs in this playlist yet.</p>
+        </div>
+        {% else %}
+        <div class="accordion playlist-accordion" id="audioAccordion-{{ slug }}"
+             data-playlist-name="{{ playlist_name }}" data-playlist-kind="{{ kind }}">
+            {% for track in playlist_data %}
+            {% set crc = track.crc %}
+            <article class="accordion-item playlist-track mb-2 border-0 shadow-sm"
+                     data-audio-crc="{{ crc }}"
+                     data-playlist="{{ playlist_name }}"
+                     data-playlist-kind="{{ kind }}"
+                     data-title="{{ track.title }}"
+                     data-has-thumbnail="{{ (track.thumbnail_url != '')|lower }}"
+                     data-thumbnail-url="{{ track.thumbnail_url }}"
+                     data-trim-start="{{ track.trim_start_s }}"
+                     data-trim-end="{{ track.trim_end_s }}"
+                     data-is-cached="{{ track.is_cached|lower }}"
+                     data-video-id="{{ track.video_id }}"
+                     data-audio-src="{{ url_for('tubio.serve_audio', crc=crc) }}">
+                <h2 class="accordion-header">
+                    <div class="playlist-track-header">
+                        <div class="form-check playlist-track-select playlist-track-select-slot">
+                            {% if kind == "regular" %}
+                            <input class="form-check-input song-checkbox" type="checkbox" value="{{ crc }}"
+                                   id="checkbox-{{ crc }}-{{ slug }}" data-song-crc="{{ crc }}">
+                            {% endif %}
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary track-play-btn" id="play-btn-{{ crc }}"
+                                {% if kind == "surprise" %}
+                                onclick="toggleSurpriseTrack('{{ crc }}')"
+                                {% else %}
+                                onclick="togglePlayTrack('{{ crc }}')"
+                                {% endif %}
+                                title="Play/Pause track">
+                            <i class="bi bi-play-fill"></i>
+                        </button>
+                        <button class="accordion-button collapsed playlist-track-expand"
+                                type="button"
+                                data-bs-toggle="collapse"
+                                data-bs-target="#collapse-{{ crc }}-{{ slug }}"
+                                aria-expanded="false"
+                                aria-controls="collapse-{{ crc }}-{{ slug }}">
+                            <i class="bi bi-musical-note me-2 text-sage"></i>
+                            <span class="playlist-track-name">{{ track.title }}</span>
+                            {% if kind == "surprise" and not track.is_cached %}
+                            <span class="badge bg-light text-muted ms-2 track-cache-badge">Downloads on play</span>
+                            {% endif %}
+                        </button>
+                    </div>
+                </h2>
+                <div id="collapse-{{ crc }}-{{ slug }}" class="accordion-collapse collapse"
+                     data-bs-parent="#audioAccordion-{{ slug }}">
+                    <div class="accordion-body playlist-track-details">
+                        <div class="row">
+                            {% if track.thumbnail_url %}
+                            <div class="col-md-3 mb-3 text-center">
+                                <img data-src="{{ track.thumbnail_url }}" alt="" class="img-fluid rounded shadow-sm lazy-thumbnail playlist-track-thumbnail">
+                            </div>
+                            <div class="col-md-9">
+                            {% else %}
+                            <div class="col-12">
+                            {% endif %}
+                                <div class="playlist-track-copy mb-3">
+                                    <p class="text-dark fw-medium mb-0">{{ track.title }}</p>
+                                </div>
+                                <div class="d-flex gap-2 flex-wrap playlist-track-actions">
+                                    {% if track.source_url %}
+                                    <a href="{{ track.source_url }}" target="_blank" rel="noopener noreferrer"
+                                       class="btn btn-sm btn-outline-secondary track-action-btn">
+                                        <i class="bi bi-box-arrow-up-right me-1"></i>View Source
+                                    </a>
+                                    {% endif %}
+                                    {% if kind == "surprise" %}
+                                    <button class="btn btn-sm {% if track.is_favourite %}btn-success{% else %}btn-outline-primary{% endif %} track-action-btn"
+                                            type="button" onclick="favouriteSurpriseTrack('{{ crc }}', this)"
+                                            {% if track.is_favourite %}disabled{% endif %}>
+                                        <i class="bi bi-heart{% if track.is_favourite %}-fill{% endif %} me-1"></i>
+                                        {% if track.is_favourite %}Favourited{% else %}Favourite{% endif %}
+                                    </button>
+                                    {% else %}
+                                    {% if track.source_url %}
+                                    <button class="btn btn-sm btn-outline-warning track-action-btn" onclick="resyncTrack('{{ crc }}', this)">
+                                        <i class="bi bi-arrow-clockwise me-1"></i>Resync
+                                    </button>
+                                    {% endif %}
+                                    <a href="{{ url_for('tubio.download_audio', crc=crc) }}" class="btn btn-sm btn-outline-success track-action-btn">
+                                        <i class="bi bi-download me-1"></i>Download
+                                    </a>
+                                    <button class="btn btn-sm btn-outline-primary track-action-btn"
+                                            onclick='openTrimModal("{{ crc }}", {{ track.title|tojson }}, {{ track.trim_start_s }}, {{ track.trim_end_s }})'>
+                                        <i class="bi bi-scissors me-1"></i>Trim
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger track-action-btn" onclick="removeTrack('{{ crc }}', this)">
+                                        <i class="bi bi-trash me-1"></i>Remove
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endmacro %}

@@ -241,6 +241,116 @@ body {
   display: none;
 }
 
+.surprise-playlist {
+  width: 100%;
+  margin-bottom: 1.5rem;
+}
+
+.tubio-discover-content {
+  width: 100%;
+}
+
+.surprise-playlist[hidden] {
+  display: none;
+}
+
+.playlist-delete-form {
+  display: inline;
+}
+
+.playlist-count {
+  color: var(--hw-sage-dark);
+}
+
+.playlist-track {
+  border-radius: var(--hw-radius-md);
+  overflow: hidden;
+}
+
+.playlist-track.track-playing {
+  border-color: var(--hw-sage);
+  box-shadow: var(--hw-shadow-glow);
+}
+
+.playlist-track-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline: 0.5rem;
+}
+
+.playlist-track-select {
+  width: var(--tubio-track-control-size);
+  min-width: var(--tubio-track-control-size);
+  margin-left: 0.25rem;
+  flex: 0 0 var(--tubio-track-control-size);
+}
+
+.playlist-track-expand {
+  color: var(--hw-forest);
+  background: var(--hw-gradient-soft);
+}
+
+.playlist-track-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-track-details {
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.playlist-track-copy {
+  min-height: 1.5rem;
+}
+
+.playlist-track-actions {
+  align-items: center;
+  min-height: 31px;
+}
+
+.playlist-track-thumbnail {
+  max-height: 120px;
+}
+
+.track-cache-badge {
+  flex-shrink: 0;
+}
+
+.surprise-loading-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 52px;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--hw-border);
+  border-radius: var(--hw-radius-md);
+}
+
+.surprise-loading-play,
+.surprise-loading-title {
+  display: block;
+  background: var(--hw-gradient-sage);
+  opacity: 0.28;
+  animation: pulse-glow 2s infinite;
+}
+
+.surprise-loading-play {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--hw-radius-md);
+  flex: 0 0 auto;
+}
+
+.surprise-loading-title {
+  width: min(65%, 28rem);
+  height: 1rem;
+  border-radius: var(--hw-radius-full);
+}
+
 /* Desktop: collapsed sidebar slides off the flex track */
 .tubio-layout.sidebar-collapsed .tubio-sidebar {
   flex: 0 0 0;
@@ -358,24 +468,30 @@ body {
 /* ============================================================
    Track row controls (compact)
    ============================================================ */
+:root {
+  --tubio-track-control-size: 16px;
+}
+
 .song-checkbox,
 .form-check-input.song-checkbox {
-  width: 0.95em !important;
-  height: 0.95em !important;
+  width: var(--tubio-track-control-size) !important;
+  height: var(--tubio-track-control-size) !important;
+  min-width: var(--tubio-track-control-size);
+  min-height: var(--tubio-track-control-size);
   cursor: pointer;
   border: 1.5px solid var(--hw-sage, #87A878) !important;
   border-radius: 4px !important;
   margin: 0 !important;
   vertical-align: middle;
-  accent-color: var(--hw-sage, #87A878);
   background-color: white;
-  appearance: auto;
-  -webkit-appearance: checkbox;
+  appearance: none;
+  -webkit-appearance: none;
   display: inline-block !important;
   visibility: visible !important;
   opacity: 1 !important;
   position: relative;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .song-checkbox:checked,
@@ -392,6 +508,13 @@ body {
 .form-check-input.song-checkbox:hover {
   border-color: var(--hw-sage-dark, #6B8E5A) !important;
   box-shadow: 0 0 0 2px rgba(135, 168, 120, 0.2);
+}
+
+.song-checkbox:focus-visible,
+.form-check-input.song-checkbox:focus-visible {
+  outline: 2px solid var(--hw-sage-dark, #6B8E5A);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 .form-check {

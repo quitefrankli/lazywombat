@@ -3,20 +3,22 @@ import json
 import math
 import time
 import random
-import re
+import secrets
 
 from typing import *
 from pathlib import Path
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from flask import Blueprint, render_template, request, send_file, redirect, url_for, flash, Response
 from flask_login import login_required
 
-from web_app.tubio.data_interface import DataInterface, AudioMetadata
+from web_app.tubio.data_interface import DataInterface, AudioMetadata, Playlist
 from web_app.tubio.audio_downloader import AudioDownloader, VideoTooLongError, get_download_progress, clear_download_progress
 from web_app.config import ConfigManager
 from web_app.helpers import cur_user, parse_request, require_login_blueprint
 from web_app.users import User
 from web_app.helpers import limiter
+from web_app.redis_client import get_redis
+from web_app.tubio.surprise import reserve_audio_metadata
 
 
 tubio_api = Blueprint(
@@ -50,7 +52,9 @@ def inject_app_name():
         ),
         tubio_surprise=dict(
             buffer_size=cfg.surprise_buffer_size,
+            cache_poll_interval_ms=cfg.surprise_cache_poll_interval_ms,
         ),
+        tubio_static_asset_version=cfg.static_asset_version,
     )
 
 def get_cached_yt_vid_ids(user: User|None = None) -> Set[str]:
@@ -61,7 +65,37 @@ def get_cached_yt_vid_ids(user: User|None = None) -> Set[str]:
         user_metadata = DataInterface().get_user_metadata(user)
         return {metadata.audios[crc].yt_video_id for crc in user_metadata.get_playlist().audio_crcs}
 
-def get_playlists_data(user: User) -> list[tuple[str, list[tuple[int, str, bool, str, float, float]]]]:
+def _playlist_track_data(
+    audio: AudioMetadata,
+    user_metadata,
+    *,
+    is_favourite: bool = False,
+) -> dict:
+    playback_trim = user_metadata.get_playback_trim(audio.crc)
+    has_thumbnail = DataInterface().has_thumbnail(audio.crc)
+    thumbnail_url = (
+        url_for(".serve_thumbnail", crc=audio.crc)
+        if has_thumbnail
+        else (
+            f"https://i.ytimg.com/vi/{audio.yt_video_id}/mqdefault.jpg"
+            if audio.yt_video_id
+            else ""
+        )
+    )
+    return {
+        "crc": audio.crc,
+        "title": audio.title,
+        "thumbnail_url": thumbnail_url,
+        "source_url": audio.source_url,
+        "video_id": audio.yt_video_id,
+        "trim_start_s": playback_trim.start_s,
+        "trim_end_s": playback_trim.end_s,
+        "is_cached": audio.is_cached,
+        "is_favourite": is_favourite,
+    }
+
+
+def get_playlists_data(user: User) -> list[tuple[str, list[dict]]]:
     user_metadata = DataInterface().get_user_metadata(user)
     playlists = []
     metadata = DataInterface().get_metadata()
@@ -70,12 +104,7 @@ def get_playlists_data(user: User) -> list[tuple[str, list[tuple[int, str, bool,
         for crc in reversed(playlist.audio_crcs):
             if crc in metadata.audios:
                 audio = metadata.audios[crc]
-                has_thumbnail = DataInterface().has_thumbnail(crc)
-                playback_trim = user_metadata.get_playback_trim(crc)
-                playlist_data.append((
-                    crc, audio.title, has_thumbnail, audio.source_url,
-                    playback_trim.start_s, playback_trim.end_s,
-                ))
+                playlist_data.append(_playlist_track_data(audio, user_metadata))
         playlists.append((playlist.name, playlist_data))
 
     return playlists
@@ -130,104 +159,357 @@ def suggest():
         return {'suggestions': []}
     return {'suggestions': AudioDownloader.suggest_queries(query)}
 
-@tubio_api.route('/discover', methods=['GET', 'POST'])
-def discover():
+
+@tubio_api.route("/client-log", methods=["POST"])
+@limiter.limit(lambda: ConfigManager().tubio.client_log_rate_limit)
+def client_log():
+    max_length = ConfigManager().tubio.client_log_max_length
+    scope = request.form.get("scope", "unknown")[:max_length]
+    message = request.form.get("message", "")[:max_length]
+    stack = request.form.get("stack", "")[:max_length]
+    context = request.form.get("context", "")[:max_length]
+    logging.error(
+        "Tubio client error user_id=%s scope=%s message=%r context=%r stack=%r",
+        cur_user().id,
+        scope,
+        message,
+        context,
+        stack,
+    )
+    return {"success": True}
+
+
+def _surprise_payload(playlist: Playlist) -> dict:
+    payload = playlist.model_dump(mode="json")
+    metadata = DataInterface().get_metadata()
+    user_metadata = DataInterface().get_user_metadata(cur_user())
+    favourites = set(user_metadata.get_playlist().audio_crcs)
+    tracks = [
+        _playlist_track_data(
+            metadata.audios[crc],
+            user_metadata,
+            is_favourite=crc in favourites,
+        )
+        for crc in playlist.audio_crcs
+        if crc in metadata.audios
+    ]
+    missing_count = len(playlist.audio_crcs) - len(tracks)
+    logging.info(
+        "Tubio Surprise payload user_id=%s tracks=%d missing_metadata=%d last_active=%s",
+        cur_user().id,
+        len(tracks),
+        missing_count,
+        playlist.last_active,
+    )
+    if missing_count:
+        logging.warning(
+            "Tubio Surprise payload omitted missing metadata user_id=%s missing=%d",
+            cur_user().id,
+            missing_count,
+        )
+    payload["html"] = render_template(
+        "surprise_playlist.html",
+        playlist_name=playlist.name,
+        playlist_data=tracks,
+    )
+    return payload
+
+
+def _surprise_is_expired(
+    playlist: Playlist,
+    now: datetime | None = None,
+) -> bool:
+    if playlist.last_active is None:
+        return True
+    last_active = playlist.last_active
+    if last_active.tzinfo is None:
+        last_active = last_active.replace(tzinfo=timezone.utc)
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(
+        seconds=ConfigManager().tubio.surprise_playlist_inactivity_ttl_s
+    )
+    return last_active < cutoff
+
+
+def _active_surprise(*, touch: bool = False) -> Playlist | None:
+    now = datetime.now(timezone.utc)
+    with DataInterface().edit_metadata() as metadata:
+        playlist = metadata.get_user(cur_user().id).get_surprise_playlist()
+        if playlist is None or _surprise_is_expired(playlist, now):
+            return None
+        if touch:
+            playlist.last_active = now
+        return playlist.model_copy(deep=True)
+
+
+def _pick_surprise_candidates(playlist: Playlist, count: int) -> list[dict]:
     cfg = ConfigManager().tubio
+    owned_ids = {vid for vid in get_cached_yt_vid_ids(cur_user()) if vid}
+    if not owned_ids:
+        logging.info(
+            "Tubio Surprise candidate selection empty library user_id=%s",
+            cur_user().id,
+        )
+        return []
+    metadata = DataInterface().get_metadata()
+    seen_video_ids = {
+        metadata.audios[crc].yt_video_id
+        for crc in playlist.audio_crcs
+        if crc in metadata.audios and metadata.audios[crc].yt_video_id
+    }
+    last_video_id = next(
+        (
+            metadata.audios[crc].yt_video_id
+            for crc in reversed(playlist.audio_crcs)
+            if crc in metadata.audios and metadata.audios[crc].yt_video_id
+        ),
+        "",
+    )
+    skip = owned_ids | seen_video_ids
+    seeds = [last_video_id] if last_video_id else []
+    remaining = list(owned_ids - set(seeds))
+    random.shuffle(remaining)
+    seeds.extend(remaining)
+    selected = []
+    logging.info(
+        "Tubio Surprise candidate selection started user_id=%s requested=%d owned=%d seen=%d seeds=%d",
+        cur_user().id,
+        count,
+        len(owned_ids),
+        len(seen_video_ids),
+        len(seeds),
+    )
+    for seed in seeds:
+        candidates = AudioDownloader.get_mix_related(seed)
+        logging.info(
+            "Tubio Surprise mix loaded user_id=%s seed=%s candidates=%d",
+            cur_user().id,
+            seed,
+            len(candidates),
+        )
+        random.shuffle(candidates)
+        for candidate in candidates:
+            if candidate["video_id"] in skip:
+                continue
+            if timedelta(seconds=candidate.get("duration_s", 0)) > cfg.max_video_length:
+                continue
+            selected.append(candidate)
+            skip.add(candidate["video_id"])
+            if len(selected) >= count:
+                logging.info(
+                    "Tubio Surprise candidate selection completed user_id=%s selected=%d",
+                    cur_user().id,
+                    len(selected),
+                )
+                return selected
+    logging.info(
+        "Tubio Surprise candidate selection exhausted user_id=%s selected=%d requested=%d",
+        cur_user().id,
+        len(selected),
+        count,
+    )
+    return selected
+
+
+def _grow_surprise(playlist: Playlist, count: int | None = None):
+    if count is None:
+        count = ConfigManager().tubio.surprise_grow_batch_size
+    logging.info(
+        "Tubio Surprise grow started user_id=%s requested=%d existing=%d",
+        cur_user().id,
+        count,
+        len(playlist.audio_crcs),
+    )
+    candidates = _pick_surprise_candidates(playlist, count)
+    if not candidates:
+        empty_reason = "no_library" if not get_cached_yt_vid_ids(cur_user()) else None
+        logging.info(
+            "Tubio Surprise grow exhausted user_id=%s empty_reason=%s",
+            cur_user().id,
+            empty_reason or "no_fresh_candidates",
+        )
+        return {"exhausted": True, "empty_reason": empty_reason}, 200
+
     try:
-        owned_ids = {vid for vid in get_cached_yt_vid_ids(cur_user()) if vid}
-        if not owned_ids:
-            return {'results': [], 'empty_reason': 'no_library', 'query': 'Discover'}
-
-        seeds = random.sample(list(owned_ids), min(cfg.discover_seed_count, len(owned_ids)))
-        max_length = cfg.max_video_length
-
-        seen = set()
-        results = []
-        for seed in seeds:
-            for rec in AudioDownloader.get_mix_related(seed):
-                vid = rec['video_id']
-                if vid in owned_ids or vid in seen:
-                    continue
-                if timedelta(seconds=rec.get('duration_s', 0)) > max_length:
-                    continue
-                seen.add(vid)
-                results.append(rec)
-
-        random.shuffle(results)
-        results = results[:cfg.discover_max_results]
-        return {'results': results, 'query': 'Discover'}
-
+        with DataInterface().edit_metadata() as metadata:
+            current = metadata.get_user(cur_user().id).get_surprise_playlist()
+            if current is None or _surprise_is_expired(current):
+                return {"error": "Surprise playlist not found"}, 404
+            for candidate in candidates:
+                crc = reserve_audio_metadata(metadata, candidate)
+                if crc not in current.audio_crcs:
+                    current.audio_crcs.append(crc)
+            current.last_active = datetime.now(timezone.utc)
+            playlist = current.model_copy(deep=True)
     except Exception:
-        logging.exception("Error generating discovery recommendations")
-        return {'error': 'Discovery failed. Please try again.', 'query': 'Discover'}, 500
+        logging.exception(
+            "Tubio Surprise grow failed user_id=%s",
+            cur_user().id,
+        )
+        return {"error": "Surprise playlist changed; reload it and try again."}, 409
+    logging.info(
+        "Tubio Surprise grow completed user_id=%s added=%d total=%d",
+        cur_user().id,
+        len(candidates),
+        len(playlist.audio_crcs),
+    )
+    return {"playlist": _surprise_payload(playlist)}, 200
 
 
-_SURPRISE_TOKEN_RE = re.compile(r'^[A-Za-z0-9]{10}$')
+@tubio_api.route("/surprise", methods=["GET"])
+def get_surprise_playlist():
+    playlist = _active_surprise(touch=True)
+    logging.info(
+        "Tubio Surprise restore user_id=%s found=%s",
+        cur_user().id,
+        playlist is not None,
+    )
+    return {"playlist": _surprise_payload(playlist) if playlist else None}
 
 
-@tubio_api.route('/surprise/next', methods=['POST'])
-def surprise_next():
-    """Pick the next Surprise-Playlist candidate via YouTube-Mix, without downloading.
-    Body: seed (optional video_id to chain from), exclude (comma-sep video_ids to skip)."""
+@tubio_api.route("/surprise", methods=["POST"])
+@limiter.limit(lambda: ConfigManager().tubio.surprise_media_rate_limit)
+def create_surprise_playlist():
     cfg = ConfigManager().tubio
+    playlist = Playlist(
+        name=cfg.surprise_playlist_name,
+        last_active=datetime.now(timezone.utc),
+    )
+    logging.info(
+        "Tubio Surprise create started user_id=%s initial_tracks=%d",
+        cur_user().id,
+        cfg.surprise_buffer_size,
+    )
+    data = DataInterface()
     try:
-        DataInterface().sweep_temp_tracks()
-        owned_ids = {vid for vid in get_cached_yt_vid_ids(cur_user()) if vid}
-        if not owned_ids:
-            return {'empty_reason': 'no_library'}
+        with data.edit_metadata() as metadata:
+            existing = metadata.get_user(
+                cur_user().id
+            ).get_surprise_playlist()
+            if existing is not None and not _surprise_is_expired(existing):
+                existing.last_active = datetime.now(timezone.utc)
+        candidates = _pick_surprise_candidates(
+            playlist,
+            cfg.surprise_buffer_size,
+        )
+        if not candidates:
+            empty_reason = (
+                "no_library"
+                if not get_cached_yt_vid_ids(cur_user())
+                else None
+            )
+            logging.warning(
+                "Tubio Surprise create did not produce playlist user_id=%s empty_reason=%s",
+                cur_user().id,
+                empty_reason or "no_fresh_candidates",
+            )
+            return {
+                "exhausted": True,
+                "empty_reason": empty_reason,
+            }, 200
+        with data.edit_metadata() as metadata:
+            playlist.last_active = datetime.now(timezone.utc)
+            for candidate in candidates:
+                crc = reserve_audio_metadata(metadata, candidate)
+                if crc not in playlist.audio_crcs:
+                    playlist.audio_crcs.append(crc)
+            metadata.get_user(cur_user().id).set_surprise_playlist(playlist)
+        playlist = playlist.model_copy(deep=True)
+        logging.info(
+            "Tubio Surprise create completed user_id=%s tracks=%d",
+            cur_user().id,
+            len(playlist.audio_crcs),
+        )
+        return {"playlist": _surprise_payload(playlist)}, 200
+    finally:
+        try:
+            data.cleanup_unused_resources()
+        except Exception:
+            logging.exception(
+                "Tubio cleanup failed after Surprise generation user_id=%s",
+                cur_user().id,
+            )
 
-        exclude = {v for v in request.form.get('exclude', '').split(',') if v}
-        skip = owned_ids | exclude
-        max_length = cfg.max_video_length
 
-        seed = request.form.get('seed', '').strip()
-        seeds = [seed] if seed else []
-        remaining = list(owned_ids - {seed})
-        random.shuffle(remaining)
-        seeds += remaining
-
-        for s in seeds:
-            candidates = AudioDownloader.get_mix_related(s)
-            random.shuffle(candidates)
-            for rec in candidates:
-                vid = rec['video_id']
-                if vid in skip:
-                    continue
-                if timedelta(seconds=rec.get('duration_s', 0)) > max_length:
-                    continue
-                return {'track': rec}
-
-        return {'exhausted': True}
-    except Exception:
-        logging.exception("Error picking surprise track")
-        return {'error': 'Surprise failed. Please try again.'}, 500
+@tubio_api.route("/surprise/grow", methods=["POST"])
+@limiter.limit(lambda: ConfigManager().tubio.surprise_media_rate_limit)
+def grow_surprise_playlist():
+    playlist = _active_surprise(touch=True)
+    if playlist is None:
+        return {"error": "Surprise playlist not found"}, 404
+    return _grow_surprise(playlist)
 
 
-@tubio_api.route('/surprise/convert', methods=['POST'])
-def surprise_convert():
-    """Download+transcode a temp track (pre-conversion). Returns its serve token."""
-    video_id = request.form.get('video_id', '').strip()
-    title = request.form.get('title', '').strip()
-    if not video_id:
-        return {'error': 'No video ID provided'}, 400
-    try:
-        token = DataInterface().generate_random_string(10)
-        AudioDownloader.download_temp_track(video_id, token)
-        return {'token': token}
-    except Exception:
-        logging.exception("Error converting surprise track")
-        return {'error': 'Error converting track'}, 500
+@tubio_api.route("/surprise/tracks/<int:crc>/favourite", methods=["POST"])
+@limiter.limit(lambda: ConfigManager().tubio.surprise_media_rate_limit)
+def favourite_surprise_track(crc: int):
+    logging.info(
+        "Tubio Surprise favourite requested user_id=%s crc=%d",
+        cur_user().id,
+        crc,
+    )
+    with DataInterface().edit_metadata() as metadata:
+        user_metadata = metadata.get_user(cur_user().id)
+        playlist = user_metadata.get_surprise_playlist()
+        if playlist is None or _surprise_is_expired(playlist):
+            return {"error": "Surprise playlist not found"}, 404
+        if crc not in playlist.audio_crcs:
+            return {"error": "Surprise track not found"}, 404
+        if crc not in metadata.audios:
+            return {"error": "Audio metadata not found"}, 404
+        playlist.last_active = datetime.now(timezone.utc)
+        user_metadata.add_to_playlist(
+            crc, ConfigManager().tubio.default_playlist_name
+        )
+        playlist = playlist.model_copy(deep=True)
+    logging.info(
+        "Tubio Surprise favourite completed user_id=%s crc=%d",
+        cur_user().id,
+        crc,
+    )
+    return {"success": True, "crc": crc, "playlist": _surprise_payload(playlist)}
 
 
-@limiter.limit("100 per second")
-@tubio_api.route('/surprise/audio/<token>')
-def serve_surprise_audio(token: str):
-    if not _SURPRISE_TOKEN_RE.match(token):
-        return Response(status=404)
-    file_path = DataInterface().get_temp_track_path(token)
-    if not file_path.exists():
-        return Response(status=404)
-    return _range_response(file_path, etag=token, download_name=f"{token}.m4a")
+@tubio_api.route("/surprise/save", methods=["POST"])
+@limiter.limit(lambda: ConfigManager().tubio.surprise_media_rate_limit)
+def save_surprise_playlist():
+    playlist = _active_surprise(touch=True)
+    if playlist is None:
+        return {"error": "Surprise playlist not found"}, 404
+    playlist_name = request.form.get("playlist_name", "").strip()
+    logging.info(
+        "Tubio Surprise save requested user_id=%s name=%r tracks=%d",
+        cur_user().id,
+        playlist_name,
+        len(playlist.audio_crcs),
+    )
+    if not playlist_name:
+        return {"error": "Playlist name cannot be empty"}, 400
+    with DataInterface().edit_metadata() as metadata:
+        user_metadata = metadata.get_user(cur_user().id)
+        if playlist_name in user_metadata.playlists:
+            return {"error": f'Playlist "{playlist_name}" already exists'}, 409
+        playlist = user_metadata.pop_surprise_playlist()
+        if playlist is None or _surprise_is_expired(playlist):
+            return {"error": "Surprise playlist not found"}, 404
+        playlist.name = playlist_name
+        playlist.audio_crcs.reverse()
+        playlist.last_active = None
+        user_metadata.playlists[playlist_name] = playlist
+        saved_count = len(playlist.audio_crcs)
+    logging.info(
+        "Tubio Surprise save completed user_id=%s name=%r tracks=%d",
+        cur_user().id,
+        playlist_name,
+        saved_count,
+    )
+    return {
+        "success": True,
+        "message": f'Saved playlist "{playlist_name}"',
+        "playlist_name": playlist_name,
+        "saved_count": saved_count,
+        "skipped": [],
+        "playlists": get_playlists_data(cur_user()),
+    }
 
 
 @tubio_api.route('/youtube_download', methods=['POST'])
@@ -360,12 +642,91 @@ def redownload_audio(audio_metadata: AudioMetadata) -> None:
         raise ValueError("No YouTube video ID associated with this audio.")
 
     logging.info(f"Redownloading audio for YT video ID: {audio_metadata.yt_video_id}")
-    AudioDownloader.download_youtube_audio(audio_metadata.yt_video_id,
-                                           audio_metadata.title,
-                                           cur_user(),
-                                           crc=audio_metadata.crc)
+    AudioDownloader.cache_youtube_audio(audio_metadata)
     
     logging.info(f"Redownloaded audio for YT video ID: {audio_metadata.yt_video_id}")
+
+
+@tubio_api.route("/audio/<int:crc>/cache", methods=["POST"])
+@limiter.limit(lambda: ConfigManager().tubio.surprise_media_rate_limit)
+def cache_audio(crc: int):
+    logging.info("Tubio audio cache requested user_id=%s crc=%d", cur_user().id, crc)
+    data = DataInterface()
+    with data.edit_metadata() as metadata:
+        user_metadata = metadata.get_user(cur_user().id)
+        surprise = user_metadata.get_surprise_playlist()
+        if surprise is not None and _surprise_is_expired(surprise):
+            surprise = None
+        can_access = any(
+            crc in playlist.audio_crcs
+            for playlist in user_metadata.playlists.values()
+            if playlist.last_active is None
+        )
+        if surprise is not None and crc in surprise.audio_crcs:
+            surprise.last_active = datetime.now(timezone.utc)
+            can_access = True
+        audio = metadata.audios.get(crc)
+        if audio is not None:
+            audio = audio.model_copy(deep=True)
+    if not can_access:
+        logging.warning(
+            "Tubio audio cache denied user_id=%s crc=%d",
+            cur_user().id,
+            crc,
+        )
+        return {"error": "Audio not found"}, 404
+    if audio is None:
+        return {"error": "Audio metadata not found"}, 404
+
+    file_path = data.app_audio_dir / f"{crc}.m4a"
+    if audio.is_cached and file_path.exists():
+        logging.info(
+            "Tubio audio cache hit user_id=%s crc=%d video_id=%s",
+            cur_user().id,
+            crc,
+            audio.yt_video_id,
+        )
+        return {"success": True, "is_cached": True, "video_id": audio.yt_video_id}
+
+    cfg = ConfigManager().tubio
+    key = cfg.surprise_cache_redis_prefix + str(crc)
+    token = secrets.token_urlsafe(cfg.surprise_cache_claim_token_bytes).encode()
+    redis = get_redis()
+    if not redis.set(key, token, nx=True, ex=cfg.surprise_cache_claim_ttl_s):
+        logging.info(
+            "Tubio audio cache already in progress user_id=%s crc=%d video_id=%s",
+            cur_user().id,
+            crc,
+            audio.yt_video_id,
+        )
+        return {
+            "success": False,
+            "is_cached": False,
+            "status": "in_progress",
+            "video_id": audio.yt_video_id,
+        }, 202
+
+    try:
+        logging.info(
+            "Tubio audio cache materialization started user_id=%s crc=%d video_id=%s",
+            cur_user().id,
+            crc,
+            audio.yt_video_id,
+        )
+        AudioDownloader.cache_youtube_audio(audio)
+        logging.info(
+            "Tubio audio cache materialization completed user_id=%s crc=%d video_id=%s",
+            cur_user().id,
+            crc,
+            audio.yt_video_id,
+        )
+        return {"success": True, "is_cached": True, "video_id": audio.yt_video_id}
+    except Exception:
+        logging.exception("Could not cache audio %s", crc)
+        return {"error": "Could not download this track"}, 500
+    finally:
+        if redis.get(key) == token:
+            redis.delete(key)
 
 @limiter.limit("100 per second") # TODO: only 1 should be loaded at a time temporary fix
 @tubio_api.route('/audio/<int:crc>')
@@ -385,8 +746,7 @@ def serve_audio(crc: int):
 
 
 def _range_response(file_path: Path, etag: str, download_name: str) -> Response:
-    """Serve an m4a file honouring HTTP Range requests (partial 206) with caching.
-    Shared by library audio (serve_audio) and Surprise-Playlist temp tracks."""
+    """Serve an m4a file honouring HTTP Range requests with caching."""
     file_size = file_path.stat().st_size
     range_header = request.headers.get("Range", None)
     logging.info(f"Serving audio {file_path} to user {cur_user()} with size {file_size} bytes, Range header: {range_header}")
@@ -557,7 +917,8 @@ def resync_audio(crc: int):
 def delete_audio(crc: int):
     try:
         user = cur_user()
-        with DataInterface().edit_metadata() as metadata:
+        data = DataInterface()
+        with data.edit_metadata() as metadata:
             user_metadata = metadata.get_user(user.id)
 
             # Check if user has this audio in their playlists
@@ -568,20 +929,19 @@ def delete_audio(crc: int):
             # Remove from user's playlists
             user_metadata.remove_from_playlist(crc)
 
-            # Check if any other users have this audio in their playlists
-            other_users_have_audio = any(
-                crc in other.get_playlist().audio_crcs
+            # Preserve metadata while any durable or temporary playlist still
+            # references the track.
+            audio_is_still_used = any(
+                crc in playlist.audio_crcs
                 for other in metadata.users.values()
+                for playlist in other.playlists.values()
             )
 
-            # If no other users have this audio, delete it completely
-            if not other_users_have_audio:
-                metadata.audios.pop(crc, None)
-                flash('Audio deleted successfully.', 'success')
-            else:
+            if audio_is_still_used:
                 flash('Audio removed from your playlists.', 'info')
-        if not other_users_have_audio:
-            DataInterface().atomic_delete(DataInterface().app_audio_dir / f"{crc}.m4a")
+            else:
+                flash('Audio deleted successfully.', 'success')
+        data.cleanup_unused_resources()
             
     except Exception as e:
         logging.exception("Error deleting audio")
@@ -673,8 +1033,7 @@ def delete_selected_songs():
             for crc in song_crcs:
                 user_metadata.remove_from_all_playlists(crc)
 
-        DataInterface().cleanup_unused_tracks()
-        DataInterface().cleanup_unused_thumbnails()
+        DataInterface().cleanup_unused_resources()
     except Exception as e:
         logging.exception("Error deleting selected songs", exc_info=e)
         flash('Error deleting songs.', 'error')
@@ -708,6 +1067,7 @@ def delete_playlist():
             # Delete the playlist
             del user_metadata.playlists[playlist_name]
 
+        DataInterface().cleanup_unused_resources()
         flash(f'Playlist "{playlist_name}" deleted successfully!', 'success')
         
     except Exception as e:

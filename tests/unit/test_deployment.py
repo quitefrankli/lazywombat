@@ -127,6 +127,7 @@ def test_production_logging_identifies_worker_and_thread():
     assert "worker=%(process)d" in log_format
     assert "thread=%(thread)d" in log_format
     assert logging.getLogger("apscheduler.scheduler").level == logging.WARNING
+    assert logging.getLogger("redis").level == logging.INFO
 
 
 def test_prod_entry_logs_gunicorn_worker_start(caplog):

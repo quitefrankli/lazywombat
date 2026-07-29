@@ -177,18 +177,24 @@ class AudioDownloader:
         """Fetch YouTube's Mix (radio) recommendations seeded by a video.
 
         Returns search-card-shaped dicts (same shape as search_youtube results).
-        Best-effort: returns [] on any failure so discovery never breaks the page.
+        Best-effort: returns [] on failure so Surprise generation can exhaust
+        cleanly instead of breaking the page.
         Each result carries an integer `duration_s` so the caller can apply the
-        length cap; `cached` is left False for the caller (route) to stamp.
+        length cap.
         """
         cfg = ConfigManager().tubio
+        logging.info(
+            "Tubio YouTube mix request started seed_video_id=%s max_entries=%d",
+            video_id,
+            cfg.surprise_mix_entries_per_seed,
+        )
         url = f"https://www.youtube.com/watch?v={video_id}&list=RD{video_id}"
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,
             'extract_flat': True,
-            'playlist_items': f"1-{cfg.discover_entries_per_seed}",
+            'playlist_items': f"1-{cfg.surprise_mix_entries_per_seed}",
         }
         if cfg.cookie_path.exists():
             ydl_opts['cookiefile'] = str(cfg.cookie_path)
@@ -225,6 +231,12 @@ class AudioDownloader:
                 "cached": False,
                 "thumbnail_url": thumbnail_url,
             })
+        logging.info(
+            "Tubio YouTube mix request completed seed_video_id=%s entries=%d usable=%d",
+            video_id,
+            len(entries),
+            len(results),
+        )
         return results
 
     @staticmethod
@@ -521,39 +533,61 @@ class AudioDownloader:
         os.rename(temp_file, output_file)
 
     @staticmethod
-    def download_temp_track(video_id: str, token: str) -> None:
-        """Download+transcode a track for the Surprise Playlist without saving it
-        to the library (no CRC, thumbnail, or metadata write). The result lands at
-        DataInterface().get_temp_track_path(token) and is swept later by TTL."""
-        logging.info(f"Tubio downloading temp track video_id:={video_id} token:={token}")
+    def cache_youtube_audio(audio_metadata: AudioMetadata) -> None:
+        """Materialize one uncached YouTube record without changing playlists."""
+        video_id = audio_metadata.yt_video_id
+        if not video_id:
+            raise ValueError("Cannot cache audio without a YouTube video ID")
+
+        logging.info(
+            "Tubio lazy audio download started crc=%d video_id=%s",
+            audio_metadata.crc,
+            video_id,
+        )
         temp_file = DataInterface().find_avail_temp_file_path(ext=".%(ext)s")
         temp_file.parent.mkdir(parents=True, exist_ok=True)
-
         progress = DownloadProgress(video_id)
 
         def progress_hook(d):
-            if d['status'] == 'downloading':
+            if d["status"] == "downloading":
                 progress.status = "downloading"
-                total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
-                downloaded = d.get('downloaded_bytes', 0)
+                total = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
+                downloaded = d.get("downloaded_bytes", 0)
                 if total > 0:
                     progress.percent = (downloaded / total) * 100
-            elif d['status'] == 'finished':
+            elif d["status"] == "finished":
                 progress.status = "processing"
                 progress.percent = 100
 
-        ydl_opts = AudioDownloader._build_ydl_opts(temp_file.as_posix(), [progress_hook])
-
+        ydl_opts = AudioDownloader._build_ydl_opts(
+            temp_file.as_posix(), [progress_hook]
+        )
         try:
             AudioDownloader.download_audio_file(video_id, ydl_opts)
+            converted = temp_file.with_suffix(".m4a")
+            AudioDownloader.download_thumbnail(video_id, audio_metadata.crc)
+            output_file = DataInterface().app_audio_dir / f"{audio_metadata.crc}.m4a"
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(converted, output_file)
+            with DataInterface().edit_metadata() as metadata:
+                current = metadata.audios.get(audio_metadata.crc)
+                if current is None:
+                    raise ValueError("Audio metadata was removed while caching")
+                current.is_cached = True
             progress.status = "complete"
-        except Exception as e:
+            logging.info(
+                "Tubio lazy audio download completed crc=%d video_id=%s output=%s",
+                audio_metadata.crc,
+                video_id,
+                output_file,
+            )
+        except Exception as exc:
             progress.status = "error"
-            progress.error = str(e)
-            temp_file.with_suffix('.m4a').unlink(missing_ok=True)
+            progress.error = str(exc)
+            temp_file.with_suffix(".m4a").unlink(missing_ok=True)
+            logging.exception(
+                "Tubio lazy audio download failed crc=%d video_id=%s",
+                audio_metadata.crc,
+                video_id,
+            )
             raise
-
-        temp_file = temp_file.with_suffix('.m4a')
-        output_file = DataInterface().get_temp_track_path(token)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        os.rename(temp_file, output_file)
