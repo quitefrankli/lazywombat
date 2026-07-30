@@ -25,6 +25,7 @@ def tubio_player_page(browser):
                        data-track-key="mix-0" data-audio-crc="101"
                        data-playlist="Mix" data-playlist-kind="regular"
                        data-title="First" data-thumbnail-url=""
+                       data-is-cached="true"
                        data-trim-start="5" data-trim-end="2"
                        data-audio-src="/audio/101">
                 <button class="track-play-btn"><i></i></button>
@@ -33,6 +34,7 @@ def tubio_player_page(browser):
                        data-track-key="mix-1" data-audio-crc="202"
                        data-playlist="Mix" data-playlist-kind="regular"
                        data-title="Second" data-thumbnail-url=""
+                       data-is-cached="false"
                        data-trim-start="0" data-trim-end="0"
                        data-audio-src="/audio/202">
                 <button class="track-play-btn"><i></i></button>
@@ -477,6 +479,120 @@ def test_playlist_handoff_is_immediate_and_uses_exact_queue_entry(tubio_player_p
         "currentCrc": "202",
         "currentIndex": 1,
         "transitionTimers": 0,
+    }
+
+
+def test_regular_playlist_converts_and_prefetches_next_track(tubio_player_page):
+    result = tubio_player_page.evaluate(
+        """
+        async () => {
+            const requests = [];
+            window.fetch = async (url, options = {}) => {
+                requests.push({
+                    url: String(url),
+                    method: options.method || 'GET'
+                });
+                if (String(url).endsWith('/cache')) {
+                    return {
+                        ok: true,
+                        status: 200,
+                        json: async () => ({ success: true, is_cached: true })
+                    };
+                }
+                return {
+                    ok: true,
+                    status: 200,
+                    blob: async () => new Blob(['audio'])
+                };
+            };
+
+            const audio = getAudio();
+            audio.play = () => {
+                audio._paused = false;
+                audio.dispatchEvent(new Event('playing'));
+                return Promise.resolve();
+            };
+
+            playAllInPlaylist('Mix');
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            return {
+                requests,
+                nextIsCached: document.querySelector(
+                    '[data-track-key="mix-1"]'
+                ).dataset.isCached
+            };
+        }
+        """
+    )
+
+    assert result == {
+        "requests": [
+            {"url": "/tubio/audio/202/cache", "method": "POST"},
+            {"url": "/audio/202", "method": "GET"},
+        ],
+        "nextIsCached": "true",
+    }
+
+
+def test_surprise_playlist_converts_and_prefetches_next_track(tubio_player_page):
+    result = tubio_player_page.evaluate(
+        """
+        async () => {
+            const items = document.querySelectorAll('.playlist-track');
+            items.forEach(item => {
+                item.dataset.playlist = 'Surprise Playlist';
+                item.dataset.playlistKind = 'surprise';
+            });
+
+            const requests = [];
+            window.fetch = async (url, options = {}) => {
+                requests.push({
+                    url: String(url),
+                    method: options.method || 'GET'
+                });
+                if (String(url).endsWith('/cache')) {
+                    return {
+                        ok: true,
+                        status: 200,
+                        json: async () => ({ success: true, is_cached: true })
+                    };
+                }
+                return {
+                    ok: true,
+                    status: 200,
+                    blob: async () => new Blob(['audio'])
+                };
+            };
+
+            surprisePlaylist = { audio_crcs: [101, 202] };
+            surpriseExhausted = true;
+            const audio = getAudio();
+            audio.play = () => {
+                audio._paused = false;
+                audio.dispatchEvent(new Event('playing'));
+                return Promise.resolve();
+            };
+
+            playSurpriseTrack(0);
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            return {
+                requests,
+                nextIsCached: document.querySelector(
+                    '[data-track-key="mix-1"]'
+                ).dataset.isCached
+            };
+        }
+        """
+    )
+
+    assert result == {
+        "requests": [
+            {"url": "/tubio/audio/202/cache", "method": "POST"},
+            {"url": "/audio/202", "method": "GET"},
+        ],
+        "nextIsCached": "true",
     }
 
 

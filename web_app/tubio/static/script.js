@@ -1073,6 +1073,7 @@ function toggleShuffle() {
         const played = currentPlaylistQueue.slice(0, currentPlaylistIndex + 1);
         const upcoming = currentPlaylistQueue.slice(currentPlaylistIndex + 1);
         currentPlaylistQueue = played.concat(globalShuffle ? shuffleArray(upcoming) : upcoming);
+        prefetchNextPlaylistTrack();
     }
 }
 
@@ -1105,6 +1106,7 @@ function cycleLoopMode() {
         btn.innerHTML = '<i class="bi bi-arrow-repeat"></i><small>1</small>';
         btn.title = 'Loop: Single';
     }
+    if (isPlayingPlaylist || surpriseMode) prefetchNextPlaylistTrack();
 }
 
 function formatTime(seconds) {
@@ -1229,6 +1231,7 @@ function commitLoadedPlayback(audio) {
     updateMediaSessionMetadata(item);
     updateMediaSessionPlaybackState('playing');
     updateMediaSessionPositionState();
+    prefetchNextPlaylistTrack();
 
     if (document.visibilityState === 'visible') {
         item.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1412,6 +1415,7 @@ async function fillSurpriseBuffer({ requirePlayback = true } = {}) {
             if (!response.ok || !data.playlist) break;
             surprisePlaylist = normalizeSurprisePlaylist(data.playlist, 'grow');
             renderSurprisePlaylist();
+            prefetchNextPlaylistTrack();
         }
     } finally {
         surpriseFilling = false;
@@ -1440,6 +1444,117 @@ function sleep(milliseconds) {
     return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
+const trackConversionPromises = new Map();
+const trackPrefetchPromises = new Map();
+const prefetchedAudioSources = new Set();
+
+function markTrackCached(crc) {
+    getTrackItems()
+        .filter(item => item.dataset.audioCrc === String(crc))
+        .forEach(item => {
+            item.dataset.isCached = 'true';
+            item.querySelector('.track-cache-badge')?.remove();
+        });
+}
+
+function convertTrackForPlayback(item) {
+    if (!item) return Promise.reject(new Error('Track is no longer available'));
+    if (item.dataset.isCached !== 'false') return Promise.resolve(true);
+
+    const crc = String(item.dataset.audioCrc);
+    const existing = trackConversionPromises.get(crc);
+    if (existing) return existing;
+
+    const conversion = (async () => {
+        while (true) {
+            const response = await jsonPost(
+                `/tubio/audio/${encodeURIComponent(crc)}/cache`
+            );
+            const data = await response.json();
+            if (response.status === 202) {
+                await sleep(surpriseCachePollIntervalMs());
+                continue;
+            }
+            if (!response.ok || !data.is_cached) {
+                throw new Error(data.error || 'Could not convert this track');
+            }
+            markTrackCached(crc);
+            return true;
+        }
+    })();
+
+    trackConversionPromises.set(crc, conversion);
+    conversion.finally(() => {
+        if (trackConversionPromises.get(crc) === conversion) {
+            trackConversionPromises.delete(crc);
+        }
+    }).catch(() => {});
+    return conversion;
+}
+
+function prefetchTrackAudio(item) {
+    if (!item?.dataset.audioSrc) return Promise.resolve(false);
+
+    const source = item.dataset.audioSrc;
+    if (prefetchedAudioSources.has(source)) return Promise.resolve(true);
+
+    const existing = trackPrefetchPromises.get(source);
+    if (existing) return existing;
+
+    const prefetch = (async () => {
+        await convertTrackForPlayback(item);
+        const response = await fetch(source, {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'audio/mp4' }
+        });
+        if (!response.ok) {
+            throw new Error(`Could not prefetch track (${response.status})`);
+        }
+        // Consuming the full response lets the browser retain the complete,
+        // cacheable audio resource for the upcoming media request.
+        await response.blob();
+        prefetchedAudioSources.add(source);
+        return true;
+    })();
+
+    trackPrefetchPromises.set(source, prefetch);
+    prefetch.finally(() => {
+        if (trackPrefetchPromises.get(source) === prefetch) {
+            trackPrefetchPromises.delete(source);
+        }
+    }).catch(() => {});
+    return prefetch;
+}
+
+function getNextPlaylistTrackItem() {
+    if (surpriseMode) {
+        return getSurpriseTrackItem(surpriseCurrentIndex + 1);
+    }
+    if (!isPlayingPlaylist || currentPlaylistQueue.length === 0) return null;
+
+    let nextIndex = currentPlaylistIndex + 1;
+    if (nextIndex >= currentPlaylistQueue.length) {
+        if (globalLoopMode !== 'playlist' || globalShuffle) return null;
+        nextIndex = 0;
+    }
+    return resolveTrackItem(currentPlaylistQueue[nextIndex]);
+}
+
+function prefetchNextPlaylistTrack() {
+    const item = getNextPlaylistTrackItem();
+    if (!item) return Promise.resolve(false);
+
+    return prefetchTrackAudio(item).catch(error => {
+        console.error('Could not prepare next Tubio track:', error);
+        reportTubioClientError('track-prefetch', error, {
+            crc: item.dataset.audioCrc,
+            trackKey: item.dataset.trackKey,
+            playlistKind: item.dataset.playlistKind,
+        });
+        return false;
+    });
+}
+
 async function ensureSurpriseTrackCached(crc) {
     const item = getTrackItems().find(
         track => track.dataset.playlistKind === 'surprise' &&
@@ -1459,40 +1574,26 @@ async function ensureSurpriseTrackCached(crc) {
     if (needsDownload) {
         setSurpriseStatus(`Converting “${item.dataset.title || 'track'}”…`);
     }
+    const videoId = item.dataset.videoId;
+    const progress = needsDownload && videoId
+        ? new EventSource(`/tubio/download_progress/${encodeURIComponent(videoId)}`)
+        : null;
+    if (progress) {
+        progress.onmessage = event => {
+            const data = JSON.parse(event.data);
+            if (typeof data.percent === 'number') {
+                setSurpriseStatus(`Converting “${item.dataset.title || 'track'}”… ${Math.round(data.percent)}%`);
+            }
+        };
+    }
     try {
-        while (true) {
-            const request = jsonPost(`/tubio/audio/${encodeURIComponent(crc)}/cache`);
-            const videoId = item.dataset.videoId;
-            const progress = needsDownload && videoId
-                ? new EventSource(`/tubio/download_progress/${encodeURIComponent(videoId)}`)
-                : null;
-            if (progress) {
-                progress.onmessage = event => {
-                    const data = JSON.parse(event.data);
-                    if (typeof data.percent === 'number') {
-                        setSurpriseStatus(`Converting “${item.dataset.title || 'track'}”… ${Math.round(data.percent)}%`);
-                    }
-                };
-            }
-            const response = await request;
-            const data = await response.json();
-            if (progress) progress.close();
-            if (response.status === 202) {
-                await sleep(surpriseCachePollIntervalMs());
-                continue;
-            }
-            if (!response.ok || !data.is_cached) {
-                throw new Error(data.error || 'Could not convert this track');
-            }
-            item.dataset.isCached = 'true';
-            item.querySelector('.track-cache-badge')?.remove();
-            return true;
-        }
+        return await convertTrackForPlayback(item);
     } catch (error) {
         showNotification(error.message, 'error');
         setSurpriseStatus(error.message);
         return false;
     } finally {
+        if (progress) progress.close();
         if (button && needsDownload) {
             button.disabled = false;
             button.innerHTML = original;
