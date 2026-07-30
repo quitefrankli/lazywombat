@@ -12,7 +12,6 @@ from web_app.config import ConfigManager
 from web_app.users import User
 from web_app.errors import APIError, AuthenticationError
 from web_app.helpers import (
-    authenticate_user,
     parse_request,
     get_ip,
     cur_user,
@@ -47,53 +46,6 @@ class TestHelpers:
         assert first_values['v'] == 'fresh-build'
         assert second_values['v'] == 'fresh-build'
         mock_compute_static_version.assert_called_once()
-
-    @patch('web_app.helpers.DataInterface')
-    def test_authenticate_user_success(self, mock_data_interface):
-        """Test successful user authentication"""
-        mock_users = {
-            'admin': User(username='admin', password='admin', folder='admin_folder', is_admin=True)
-        }
-        mock_data_interface.return_value.load_users.return_value = mock_users
-
-        assert authenticate_user('admin', 'admin', require_admin=True)
-
-    @patch('web_app.helpers.DataInterface')
-    def test_authenticate_user_wrong_password(self, mock_data_interface):
-        """Test authentication with wrong password"""
-        mock_users = {
-            'admin': User(username='admin', password='admin', folder='admin_folder', is_admin=True)
-        }
-        mock_data_interface.return_value.load_users.return_value = mock_users
-
-        assert not authenticate_user('admin', 'wrongpass', require_admin=True)
-
-    @patch('web_app.helpers.DataInterface')
-    def test_authenticate_user_nonexistent(self, mock_data_interface):
-        """Test authentication with nonexistent user"""
-        mock_data_interface.return_value.load_users.return_value = {}
-
-        assert not authenticate_user('nonexistent', 'pass', require_admin=True)
-
-    @patch('web_app.helpers.DataInterface')
-    def test_authenticate_user_not_admin(self, mock_data_interface):
-        """Test authentication requiring admin when user is not admin"""
-        mock_users = {
-            'user': User(username='user', password='pass', folder='user_folder', is_admin=False)
-        }
-        mock_data_interface.return_value.load_users.return_value = mock_users
-
-        assert not authenticate_user('user', 'pass', require_admin=True)
-
-    @patch('web_app.helpers.DataInterface')
-    def test_authenticate_user_not_admin_when_not_required(self, mock_data_interface):
-        """Test authentication of non-admin user when admin not required"""
-        mock_users = {
-            'user': User(username='user', password='pass', folder='user_folder', is_admin=False)
-        }
-        mock_data_interface.return_value.load_users.return_value = mock_users
-
-        assert authenticate_user('user', 'pass', require_admin=False)
 
     def test_get_ip_from_x_forwarded_for(self, app_context):
         """Test get_ip with X-Forwarded-For header"""

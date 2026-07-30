@@ -148,7 +148,7 @@ class DataInterface:
         for _ in range(100):
             folder = self.generate_random_string()
             if folder not in used_folders:
-                return User(username, password, folder)
+                return User.create(username, password, folder)
         raise RuntimeError("Could not generate unique folder")
     
     def generate_metadata_file(self, backup_dir: Path) -> None:

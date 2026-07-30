@@ -6,7 +6,7 @@ from pathlib import Path
 
 import web_app.__main__ as main_module
 from web_app.app import app
-from web_app.users import User
+from web_app.users import User, UsersFile
 
 
 @pytest.fixture
@@ -80,8 +80,15 @@ class TestAPIAdminOnly:
 
     @patch('web_app.helpers.DataInterface')
     def test_api_push_rejects_non_admin(self, mock_di, client):
-        non_admin = User(username='user', password='pass', folder='uf', is_admin=False)
-        mock_di.return_value.load_users.return_value = {'user': non_admin}
+        non_admin = User.create(
+            username='user',
+            password='pass',
+            folder='uf',
+            is_admin=False,
+        )
+        mock_di.return_value.edit_users.return_value.__enter__.return_value = (
+            UsersFile(root=[non_admin])
+        )
         response = client.post('/api/push', json={
             'username': 'user', 'password': 'pass',
             'name': 'test.txt', 'data': 'dGVzdA=='

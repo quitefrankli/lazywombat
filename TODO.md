@@ -1,18 +1,5 @@
 # TODO
 
-## Codebase refactor and improvement roadmap
-
-Current baseline: 384 non-FFmpeg unit tests pass, with 432 default tests and
-49 separately collected UI tests.
-
-### P0 — security-sensitive storage
-
-- [ ] Replace plaintext user passwords with password hashes.
-  - Centralize password creation and verification on the user model.
-  - Transparently migrate legacy plaintext passwords after successful login.
-  - Cover registration, login, account deletion, API authentication, migration,
-    and incorrect-password behavior with tests before implementation.
-
 ## Hammock gallery media support
 
 ### High priority

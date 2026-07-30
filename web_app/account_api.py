@@ -25,11 +25,22 @@ def login():
     
     username = from_req('username')
     password = from_req('password')
-    existing_users = DataInterface().load_users()
-    if username in existing_users and password == existing_users[username].password:
-        user = existing_users[username]
+    with DataInterface().edit_users() as users:
+        user = users.get(username)
+        password_before = user.password if user is not None else None
+        authenticated = user is not None and user.verify_password(password)
+        password_migrated = (
+            authenticated and user.password != password_before
+        )
+
+    if authenticated:
         flask_login.login_user(user, remember=True)
-        log_event("account", "account.login_succeeded", user=user)
+        log_event(
+            "account",
+            "account.login_succeeded",
+            user=user,
+            password_migrated=password_migrated,
+        )
         # Validate next_url to prevent open redirect vulnerabilities
         if next_url and next_url.startswith('/') and not next_url.startswith('//'):
             return flask.redirect(next_url)
@@ -91,7 +102,7 @@ def delete_account():
             flask.flash('Account not found', category='error')
             return get_default_redirect()
 
-        if password != user.password:
+        if not user.verify_password(password):
             log_event(
                 "account",
                 "account.delete_rejected",

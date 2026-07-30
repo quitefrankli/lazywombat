@@ -545,6 +545,8 @@ class ConfigManager:
         self.debug_mode = False
         self.site_url = getenv("SITE_URL") or "https://nabicat.site"
         self.redis_url = getenv("REDIS_URL") or "redis://127.0.0.1:6379/0"
+        self.password_hash_method = "scrypt"
+        self.password_hash_prefix = "nabicat$"
         self.gunicorn_workers = 4
         self.gunicorn_request_timeout_s = 300
         self.gunicorn_graceful_timeout_s = 300

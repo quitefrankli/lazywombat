@@ -211,15 +211,27 @@ def cur_user() -> User:
 def authenticate_user(username: str, password: str, require_admin: bool = True) -> bool:
     if not username or not password:
         return False
-    users = DataInterface().load_users()
-    user = users.get(username)
-    if not user or user.password != password:
-        return False
 
-    if require_admin and not user.is_admin:
-        return False
-    
-    return True
+    authenticated = False
+    password_migrated = False
+    with DataInterface().edit_users() as users:
+        user = users.get(username)
+        if user:
+            password_before = user.password
+            password_valid = user.verify_password(password)
+            password_migrated = user.password != password_before
+            authenticated = password_valid and (
+                not require_admin or user.is_admin
+            )
+
+    if password_migrated:
+        log_event(
+            "account",
+            "account.password_migrated",
+            user=user,
+        )
+
+    return authenticated
 
 def generate_ephemeral_keypair() -> tuple[str, str]:
     """

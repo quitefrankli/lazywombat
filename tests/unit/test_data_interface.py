@@ -158,7 +158,8 @@ class TestDataInterface:
 
         new_user = interface.generate_new_user('newuser', 'newpass')
         assert new_user.id == 'newuser'
-        assert new_user.password == 'newpass'
+        assert new_user.password != 'newpass'
+        assert new_user.verify_password('newpass')
         assert new_user.folder != 'existing_folder'
         assert len(new_user.folder) == 10
 
