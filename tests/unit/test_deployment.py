@@ -11,6 +11,13 @@ def test_nginx_forwards_original_https_scheme():
     assert nginx_config.count("proxy_set_header X-Forwarded-Proto $scheme;") == 2
 
 
+def test_ci_excludes_ffmpeg_tests_without_installing_ffmpeg():
+    workflow = Path(".github/workflows/cicd.yml").read_text()
+
+    assert 'pytest -q -m "not ffmpeg"' in workflow
+    assert "apt-get install --yes redis-server\n" in workflow
+
+
 def test_health_reports_commit_loaded_by_worker(client, app):
     import web_app.__main__  # noqa: F401
 

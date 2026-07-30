@@ -75,7 +75,6 @@ class LLMConfig:
 @dataclass
 class TubioConfig:
     _save_data_path: Callable[[], Path] = field(repr=False)
-    static_asset_version: str = "surprise-playlist-v5"
     search_prefix: str = ""
     max_results: int = 10
     max_search_pages: int = 3

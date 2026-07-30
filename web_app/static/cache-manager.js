@@ -25,6 +25,7 @@ class CacheManager {
         try {
             this.swRegistration = await navigator.serviceWorker.register('/service-worker.js', {
                 scope: '/',
+                updateViaCache: 'none',
             });
 
             console.log('[Cache] Service Worker registered');

@@ -603,6 +603,7 @@ class TestGalleryUploadAndDelete:
         with pytest.raises(APIError, match="quota"):
             di.add_gallery_images(alice, proj, post, [_png_file_storage("big.png", size=(200, 200))])
 
+    @pytest.mark.ffmpeg
     def test_non_media_bytes_with_image_extension_are_rejected(self, projects_dir):
         """A misleading extension must not allow invalid bytes to be published."""
         di = DataInterface()

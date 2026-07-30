@@ -235,7 +235,13 @@ def privacy():
 @app.route('/service-worker.js')
 def service_worker():
     """Serve service worker from root for proper scope"""
-    return send_from_directory('static', 'service-worker.js', mimetype='application/javascript')
+    response = send_from_directory(
+        'static',
+        'service-worker.js',
+        mimetype='application/javascript',
+    )
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
 
 @app.route('/sitemap.xml')
 def sitemap():

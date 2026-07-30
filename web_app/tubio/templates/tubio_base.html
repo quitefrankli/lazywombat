@@ -48,6 +48,6 @@
 
 {% block scripts %}
   {{ super() }}
-  <script src="{{ url_for('.static', filename='script.js', v=tubio_static_asset_version) }}"></script>
-  <link rel="stylesheet" href="{{ url_for('.static', filename='style.css', v=tubio_static_asset_version) }}">
+  <script src="{{ url_for('.static', filename='script.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('.static', filename='style.css') }}">
 {% endblock %}

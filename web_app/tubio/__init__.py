@@ -54,7 +54,6 @@ def inject_app_name():
             buffer_size=cfg.surprise_buffer_size,
             cache_poll_interval_ms=cfg.surprise_cache_poll_interval_ms,
         ),
-        tubio_static_asset_version=cfg.static_asset_version,
     )
 
 def get_cached_yt_vid_ids(user: User|None = None) -> Set[str]:

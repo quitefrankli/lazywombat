@@ -12,6 +12,8 @@
 
 * Production resource safety: when working on the production server, do not start a separate debug/test web app. Reuse existing diagnostics, keep tests and investigative commands narrowly scoped, and avoid full test suites, large generated media/transcodes, load tests, or other resource-intensive work unless explicitly requested.
 
+* GitHub Actions intentionally does not install FFmpeg to keep CI fast. Mark every test that requires or invokes `ffmpeg` or `ffprobe` with `@pytest.mark.ffmpeg`; the CI workflow excludes these tests with `-m "not ffmpeg"`. Prefer mocked media commands for non-transcoding behavior where practical.
+
 * Project Architecture:
     - this project contains a collection of smaller subapps/subpages under web_app/ all of which share a similar ui/ux theme and share the same domain and host
     - Each subapp is a Flask Blueprint with its own templates/ and static/ folders

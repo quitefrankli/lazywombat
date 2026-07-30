@@ -16,6 +16,13 @@ class TestCacheFiles:
         assert 'fetch' in content
         assert 'caches' in content
 
+    def test_static_assets_are_network_first(self):
+        """A deployment's JS/CSS must be fetched on the first refresh."""
+        content = Path('web_app/static/service-worker.js').read_text()
+
+        assert "networkFirst: /\\/(api|account|static)\\//" in content
+        assert "cacheWithUpdate: /\\/(download|thumbnail|audio)\\//" in content
+
     def test_cache_manager_exists(self):
         """Verify cache manager file exists"""
         cm_path = Path('web_app/static/cache-manager.js')
@@ -25,6 +32,7 @@ class TestCacheFiles:
         assert 'CacheManager' in content
         assert 'downloadWithCache' in content
         assert 'serviceWorker' in content
+        assert "updateViaCache: 'none'" in content
 
     def test_cache_manager_loaded_in_base_template(self):
         """Verify cache manager is loaded in root template"""
@@ -33,6 +41,12 @@ class TestCacheFiles:
 
         content = template_path.read_text()
         assert 'cache-manager.js' in content
+
+    def test_tubio_uses_site_wide_asset_version(self):
+        """Tubio must not override the Git-based static asset version."""
+        content = Path('web_app/tubio/templates/tubio_base.html').read_text()
+
+        assert 'tubio_static_asset_version' not in content
 
 
 class TestCacheHeaders:
@@ -66,6 +80,15 @@ class TestCacheHeaders:
 
         # Restore original user_loader
         helpers.login_manager._user_callback = original_user_loader
+
+    def test_service_worker_is_always_revalidated(self, client):
+        response = client.get('/service-worker.js')
+
+        assert response.status_code == 200
+        cache_control = response.headers.get('Cache-Control', '')
+        assert 'no-cache' in cache_control
+        assert 'no-store' in cache_control
+        assert 'must-revalidate' in cache_control
 
     def test_download_is_not_cached(self, client, auth_mock, tmp_path, monkeypatch):
         """Private file downloads must not enter shared browser caches."""

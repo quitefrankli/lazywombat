@@ -9,17 +9,15 @@ const MAX_CACHE_SIZE = 10 * 1024 * 1024 * 1024; // 10GB limit
 
 // URLs that should be cached
 const CACHE_STRATEGIES = {
-    // Network-first with cache fallback (default)
-    networkFirst: /\/(api|account)\//,
+    // App static assets must be revalidated on every visit so a deployment is
+    // visible on the first refresh. The cache remains an offline fallback.
+    networkFirst: /\/(api|account|static)\//,
 
     // Cache-first for truly immutable assets (fonts, etc.)
     cacheFirst: /\/(fonts)\//,
 
-    // Cache with network update — used for app static assets (JS/CSS/images)
-    // and for heavy media (audio, downloads, thumbnails). Stale-while-revalidate
-    // means updates always reach the browser on the next visit without manual
-    // cache clears, while large files still load instantly from cache.
-    cacheWithUpdate: /\/(static|download|thumbnail|audio)\//,
+    // Heavy media can be served immediately while its cached copy is updated.
+    cacheWithUpdate: /\/(download|thumbnail|audio)\//,
 };
 
 self.addEventListener('install', (event) => {
