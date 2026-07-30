@@ -28,6 +28,12 @@ function switchTab(tabName) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-dev-tab]').forEach((tab) => {
+        tab.addEventListener('click', (event) => {
+            event.preventDefault();
+            switchTab(tab.dataset.devTab);
+        });
+    });
     new LogViewer();
     _terminalView = new TerminalView();
     _mapView = new MapView();

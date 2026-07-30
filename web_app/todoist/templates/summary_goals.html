@@ -25,8 +25,8 @@
                         <input class="form-check-input goal-state-check"
                                type="checkbox"
                                id="checkbox-{{ goal.id }}"
+                               data-goal-state-id="{{ goal.id }}"
                                {{ "checked" if goal.state.name == "COMPLETED" else "" }}
-                               onchange="toggleGoalState(this, {{ goal.id }})"
                                title="Mark as {{ 'incomplete' if goal.state.name == 'COMPLETED' else 'complete' }}">
                     </div>
                 </div>
@@ -67,7 +67,7 @@
                             {% if goal.parent is not none %}
                             <button type="button"
                                     class="btn btn-outline-primary btn-sm"
-                                    onclick="unparentGoal({{ goal.id }})"
+                                    data-unparent-goal-id="{{ goal.id }}"
                                     title="Unparent goal">
                                 <i class="bi bi-arrow-up-circle me-1"></i>Unparent
                             </button>

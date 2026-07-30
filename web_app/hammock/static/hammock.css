@@ -593,3 +593,6 @@ body.hammock-video-expanded {
     .hammock-actions { justify-content: stretch; }
     .hammock-actions .hammock-btn { flex: 1; justify-content: center; }
 }
+.hammock-inline-form {
+    display: inline;
+}

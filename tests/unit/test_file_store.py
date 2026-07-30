@@ -216,7 +216,7 @@ class TestDataInterface:
             upload_date=datetime.now().isoformat()
         )
 
-        data_interface.save_metadata(metadata)
+        data_interface._save_metadata(metadata)
 
         loaded = data_interface.get_metadata()
         assert 'user1' in loaded.users

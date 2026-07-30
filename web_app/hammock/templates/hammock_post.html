@@ -21,8 +21,8 @@
                 </a>
                 <form method="post"
                       action="{{ url_for('.delete_post', project=project_name, post=post_name) }}"
-                      onsubmit="return confirm('Delete this post permanently?');"
-                      style="display:inline;">
+                      class="hammock-inline-form"
+                      data-confirm="Delete this post permanently?">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="hammock-btn hammock-btn-danger-ghost">
                         <i class="bi bi-trash"></i> Delete

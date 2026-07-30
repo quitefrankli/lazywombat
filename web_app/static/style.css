@@ -30,6 +30,19 @@
   --hw-text-secondary: #5A6B5A;
   --hw-text-muted: #8A9A8A;
   --hw-border: rgba(135, 168, 120, 0.2);
+  --hw-surface: rgba(255, 255, 255, 0.9);
+  --hw-surface-strong: rgba(255, 255, 255, 0.98);
+  --hw-sage-soft: rgba(135, 168, 120, 0.1);
+  --hw-sage-faint: rgba(135, 168, 120, 0.05);
+  --hw-sage-tint: rgba(168, 198, 134, 0.2);
+  --hw-gold-soft: rgba(233, 196, 106, 0.15);
+  --hw-bg-inverse: #080907;
+  --hw-surface-inverse: rgba(250, 255, 244, 0.08);
+  --hw-surface-inverse-strong: rgba(250, 255, 244, 0.14);
+  --hw-text-inverse: #F7FFE9;
+  --hw-text-inverse-muted: rgba(247, 255, 233, 0.68);
+  --hw-text-inverse-soft: rgba(247, 255, 233, 0.42);
+  --hw-border-inverse: rgba(247, 255, 233, 0.16);
   
   /* Gradients */
   --hw-gradient-warm: linear-gradient(135deg, #F0FFF0 0%, #FAF9F6 50%, #F5F5DC 100%);
@@ -49,6 +62,19 @@
   --hw-radius-lg: 16px;
   --hw-radius-xl: 24px;
   --hw-radius-full: 9999px;
+
+  /* Spacing */
+  --hw-space-0: 0;
+  --hw-space-1: 0.25rem;
+  --hw-space-2: 0.5rem;
+  --hw-space-3: 0.75rem;
+  --hw-space-4: 1rem;
+  --hw-space-5: 1.25rem;
+  --hw-space-6: 1.5rem;
+  --hw-space-8: 2rem;
+  --hw-space-10: 2.5rem;
+  --hw-space-12: 3rem;
+  --hw-space-16: 4rem;
   
   /* Transitions */
   --hw-transition-fast: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);

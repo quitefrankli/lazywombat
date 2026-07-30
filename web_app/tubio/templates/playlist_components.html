@@ -16,21 +16,21 @@
             <button class="btn btn-sm btn-play-all"
                     id="play-all-btn-{{ slug }}"
                     {% if kind == "surprise" %}
-                    onclick="toggleSurprisePlaylistPlayback()"
+                    data-tubio-action="toggle-surprise-playlist"
                     {% else %}
-                    onclick='togglePlaylistPlayback({{ playlist_name|tojson }})'
+                    data-tubio-action="toggle-playlist"
                     {% endif %}
                     title="Play All">
                 <i class="bi bi-play-fill"></i>
             </button>
             {% endif %}
             {% if kind == "surprise" %}
-            <button class="btn btn-sm btn-primary" type="button" onclick="saveSurprisePlaylist()">
+            <button class="btn btn-sm btn-primary" type="button" data-tubio-action="save-surprise">
                 <i class="bi bi-save me-1"></i>Save playlist
             </button>
             {% elif playlist_name != "Favourites" %}
             <form method="post" action="{{ url_for('tubio.delete_playlist') }}" class="playlist-delete-form"
-                  onsubmit="return confirm('Are you sure you want to delete this playlist? All songs will remain in your Favourites.');">
+                  data-confirm="Are you sure you want to delete this playlist? All songs will remain in your Favourites.">
                 <input type="hidden" name="playlist_name" value="{{ playlist_name }}">
                 <button type="submit" class="btn btn-sm btn-playlist-delete" title="Delete Playlist">
                     <i class="bi bi-trash"></i>
@@ -75,9 +75,9 @@
                         </div>
                         <button class="btn btn-sm btn-outline-primary track-play-btn"
                                 {% if kind == "surprise" %}
-                                onclick="toggleSurpriseTrack(this.closest('.playlist-track'))"
+                                data-tubio-action="toggle-surprise-track"
                                 {% else %}
-                                onclick="togglePlayTrack(this.closest('.playlist-track'))"
+                                data-tubio-action="toggle-track"
                                 {% endif %}
                                 title="Play/Pause track">
                             <i class="bi bi-play-fill"></i>
@@ -119,19 +119,19 @@
                                     </a>
                                     {% endif %}
                                     <button class="btn btn-sm btn-outline-primary track-action-btn"
-                                            type="button" onclick="suggestMoreFromTrack(this)">
+                                            type="button" data-tubio-action="suggest-more">
                                         <i class="bi bi-stars me-1"></i>Suggest more
                                     </button>
                                     {% if kind == "surprise" %}
                                     <button class="btn btn-sm {% if track.is_favourite %}btn-success{% else %}btn-outline-primary{% endif %} track-action-btn"
-                                            type="button" onclick="favouriteSurpriseTrack('{{ crc }}', this)"
+                                            type="button" data-tubio-action="favourite-surprise"
                                             {% if track.is_favourite %}disabled{% endif %}>
                                         <i class="bi bi-heart{% if track.is_favourite %}-fill{% endif %} me-1"></i>
                                         {% if track.is_favourite %}Favourited{% else %}Favourite{% endif %}
                                     </button>
                                     {% else %}
                                     {% if track.source_url %}
-                                    <button class="btn btn-sm btn-outline-warning track-action-btn" onclick="resyncTrack('{{ crc }}', this)">
+                                    <button class="btn btn-sm btn-outline-warning track-action-btn" data-tubio-action="resync-track">
                                         <i class="bi bi-arrow-clockwise me-1"></i>Resync
                                     </button>
                                     {% endif %}
@@ -139,10 +139,10 @@
                                         <i class="bi bi-file-earmark-arrow-down me-1"></i>Save file
                                     </a>
                                     <button class="btn btn-sm btn-outline-primary track-action-btn"
-                                            onclick='openTrimModal("{{ crc }}", {{ track.title|tojson }}, {{ track.trim_start_s }}, {{ track.trim_end_s }})'>
+                                            data-tubio-action="open-trim">
                                         <i class="bi bi-scissors me-1"></i>Trim
                                     </button>
-                                    <button class="btn btn-sm btn-outline-danger track-action-btn" onclick="removeTrack('{{ crc }}', this)">
+                                    <button class="btn btn-sm btn-outline-danger track-action-btn" data-tubio-action="remove-track">
                                         <i class="bi bi-trash me-1"></i>Remove
                                     </button>
                                     {% endif %}

@@ -33,7 +33,7 @@ _active_lock = threading.RLock()
 _CANCEL_PREFIX = "nabicat:sentinel:cancel:"
 
 
-def render_report_pdf(html: str) -> bytes:
+def render_report_pdf(html: str, stylesheet_paths: tuple[Path, ...] = ()) -> bytes:
     """Render an HTML string to PDF bytes using headless Chromium (Playwright)."""
     from playwright.sync_api import sync_playwright
 
@@ -54,6 +54,8 @@ def render_report_pdf(html: str) -> bytes:
             context = browser.new_context()
             page = context.new_page()
             page.set_content(html, wait_until="load")
+            for stylesheet_path in stylesheet_paths:
+                page.add_style_tag(path=str(stylesheet_path))
             return page.pdf(
                 format="A4",
                 print_background=True,
@@ -113,7 +115,7 @@ def _save(report: Report) -> None:
     # (appending steps/findings) after this returns, and a shallow copy would
     # alias those lists into the cached entry, so a concurrent reader via
     # get_run() could observe half-written state.
-    DataInterface().save_report(report)
+    DataInterface()._save_report(report)
     with _active_lock:
         _active_runs[report.run_id] = report.model_copy(deep=True)
 

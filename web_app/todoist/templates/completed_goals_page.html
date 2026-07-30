@@ -42,7 +42,7 @@
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="bi bi-x-circle me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.innerHTML='<i class=&quot;bi bi-hourglass-split me-1&quot;></i>Creating...'; this.form.submit();">
+                    <button type="submit" class="btn btn-primary" data-submit-once>
                         <i class="bi bi-check-circle me-1"></i>Create Goal
                     </button>
                 </div>
@@ -60,7 +60,7 @@
 
 {% if has_more %}
 <div class="d-flex justify-content-center mt-4">
-	<button class="btn btn-outline-primary" id="load-more-btn" onclick="loadMoreCompletedGoals()">
+	<button class="btn btn-outline-primary" id="load-more-btn" data-load-more="completed">
 		<i class="bi bi-arrow-down me-2"></i>Load More
 	</button>
 </div>

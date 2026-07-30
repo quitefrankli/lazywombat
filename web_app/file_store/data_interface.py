@@ -67,9 +67,9 @@ class DataInterface(BaseDataInterface):
         """Read-only load. For mutations use edit_metadata() so the write is locked."""
         return self.load_model(self.metadata_file, Metadata, sync=False) or Metadata()
 
-    def save_metadata(self, metadata: Metadata) -> None:
-        """Save metadata to file. Prefer edit_metadata() for read-modify-write."""
-        self.save_model(self.metadata_file, metadata)
+    def _save_metadata(self, metadata: Metadata) -> None:
+        """Internal whole-model write used only for non-RMW initialization."""
+        self._save_model(self.metadata_file, metadata)
 
     def edit_metadata(self):
         """Transactional edit of the shared file_store metadata blob.

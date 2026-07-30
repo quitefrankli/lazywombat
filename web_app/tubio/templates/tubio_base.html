@@ -5,19 +5,19 @@
 
 {% block page_nav_items %}
   <li class="nav-item mx-1">
-    <a class="nav-link d-flex align-items-center gap-2" href="#" id="playlists-nav-tab" onclick="switchTab('playlists')">
+    <a class="nav-link d-flex align-items-center gap-2" href="#playlists" id="playlists-nav-tab" data-tubio-action="switch-tab" data-tab="playlists">
       <i class="bi bi-music-note-list"></i>
       <span>Playlists</span>
     </a>
   </li>
   <li class="nav-item mx-1">
-    <a class="nav-link d-flex align-items-center gap-2" href="#" id="search-nav-tab" onclick="switchTab('search')">
+    <a class="nav-link d-flex align-items-center gap-2" href="#search" id="search-nav-tab" data-tubio-action="switch-tab" data-tab="search">
       <i class="bi bi-search"></i>
       <span>Search</span>
     </a>
   </li>
   <li class="nav-item mx-1">
-    <a class="nav-link d-flex align-items-center gap-2" href="#" id="discover-nav-tab" onclick="switchTab('discover')">
+    <a class="nav-link d-flex align-items-center gap-2" href="#discover" id="discover-nav-tab" data-tubio-action="switch-tab" data-tab="discover">
       <i class="bi bi-stars"></i>
       <span>Discover</span>
     </a>
@@ -32,14 +32,14 @@
     </button>
   </li>
   <li class="tubio-playlists-action">
-    <button type="button" class="dropdown-item d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#addToPlaylistModal" onclick="preparePlaylistModal()">
+    <button type="button" class="dropdown-item d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#addToPlaylistModal" data-tubio-action="prepare-playlist">
       <i class="bi bi-plus-square text-info"></i>
       <span>Move to Playlist</span>
     </button>
   </li>
   <li class="tubio-discover-action d-none">
     <button type="button" class="dropdown-item d-flex align-items-center gap-2"
-            id="refresh-surprise-action" onclick="refreshSurprisePlaylist(this)">
+            id="refresh-surprise-action" data-tubio-action="refresh-surprise">
       <i class="bi bi-arrow-clockwise text-primary"></i>
       <span>Refresh Surprise Playlist</span>
     </button>

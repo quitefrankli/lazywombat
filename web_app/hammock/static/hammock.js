@@ -1,4 +1,10 @@
 document.addEventListener("DOMContentLoaded", function() {
+    document.querySelectorAll("form[data-confirm]").forEach(form => {
+        form.addEventListener("submit", event => {
+            if (!window.confirm(form.dataset.confirm)) event.preventDefault();
+        });
+    });
+
     const openParam = new URLSearchParams(window.location.search).get("open");
     if (openParam) {
         history.replaceState(null, "", window.location.pathname);

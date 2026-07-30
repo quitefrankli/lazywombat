@@ -7,10 +7,10 @@ class CacheManager {
     constructor() {
         this.swRegistration = null;
         this.isSupported = 'serviceWorker' in navigator && 'caches' in window;
-        const config = window.NABICAT_CACHE_CONFIG || {};
-        this.MAX_CACHE_SIZE = config.maxCacheSize || 0;
-        this.readyTimeoutMs = config.serviceWorkerReadyTimeoutMs || 5000;
-        this.messageTimeoutMs = config.serviceWorkerMessageTimeoutMs || 5000;
+        const config = document.getElementById('nabicat-cache-config')?.dataset || {};
+        this.MAX_CACHE_SIZE = Number(config.maxCacheSize) || 0;
+        this.readyTimeoutMs = Number(config.serviceWorkerReadyTimeoutMs) || 5000;
+        this.messageTimeoutMs = Number(config.serviceWorkerMessageTimeoutMs) || 5000;
     }
 
     /**

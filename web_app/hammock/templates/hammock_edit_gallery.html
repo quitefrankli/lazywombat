@@ -59,7 +59,7 @@
                         {% endif %}
                         <form method="post"
                               action="{{ url_for('.delete_gallery_image', project=project_name, post=post_name, filename=filename) }}"
-                              onsubmit="return confirm('Remove this media item?');">
+                              data-confirm="Remove this media item?">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="hammock-tile-delete" aria-label="Delete media">×</button>
                         </form>

@@ -46,7 +46,7 @@ class DataInterface(BaseDataInterface):
     def screenshot_thumbnail_path(self, run_id: str, filename: str) -> Path:
         return self.screenshots_dir(run_id) / "thumbs" / filename
 
-    def save_report(self, report: Report) -> None:
+    def _save_report(self, report: Report) -> None:
         run_id = self._safe_run_id(report.run_id)
         report.updated_at = utc_now_iso()
         # Credentials/card are written to disk only when the user opted in via

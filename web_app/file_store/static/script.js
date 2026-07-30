@@ -247,6 +247,9 @@ function setupGalleryDensity() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.storage-fill[data-usage-percent]').forEach((fill) => {
+        fill.style.width = `${Number(fill.dataset.usagePercent) || 0}%`;
+    });
     setupFolderUpload();
     setupBulkActions();
     setupImageModal();

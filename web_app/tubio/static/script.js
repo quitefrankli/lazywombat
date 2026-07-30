@@ -2593,6 +2593,50 @@ function initializeLazyThumbnails() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('click', function(event) {
+        const actionElement = event.target.closest('[data-tubio-action]');
+        if (!actionElement) return;
+
+        const action = actionElement.dataset.tubioAction;
+        const track = actionElement.closest('.playlist-track');
+        const panel = actionElement.closest('.playlist-panel');
+        const actions = {
+            'switch-tab': () => switchTab(actionElement.dataset.tab),
+            'prepare-playlist': () => preparePlaylistModal(),
+            'refresh-surprise': () => refreshSurprisePlaylist(actionElement),
+            'close-sidebar': () => closeSidebar(),
+            'toggle-sidebar': () => toggleSidebar(),
+            'select-playlist': () => selectPlaylist(actionElement.dataset.playlistSlug),
+            'toggle-surprise-playlist': () => toggleSurprisePlaylistPlayback(),
+            'toggle-playlist': () => togglePlaylistPlayback(panel?.dataset.playlistName),
+            'save-surprise': () => saveSurprisePlaylist(),
+            'toggle-surprise-track': () => toggleSurpriseTrack(track),
+            'toggle-track': () => togglePlayTrack(track),
+            'suggest-more': () => suggestMoreFromTrack(actionElement),
+            'favourite-surprise': () => favouriteSurpriseTrack(track?.dataset.audioCrc, actionElement),
+            'resync-track': () => resyncTrack(track?.dataset.audioCrc, actionElement),
+            'open-trim': () => openTrimModal(
+                track?.dataset.audioCrc,
+                track?.dataset.title,
+                Number(track?.dataset.trimStart) || 0,
+                Number(track?.dataset.trimEnd) || 0
+            ),
+            'remove-track': () => removeTrack(track?.dataset.audioCrc, actionElement),
+            'toggle-shuffle': () => toggleShuffle(),
+            'previous-track': () => prevTrack(),
+            'toggle-playback': () => togglePlayPause(),
+            'next-track': () => nextTrack(),
+            'cycle-loop': () => cycleLoopMode(),
+        };
+        if (!actions[action]) return;
+        if (actionElement.matches('a')) event.preventDefault();
+        actions[action]();
+    });
+    document.addEventListener('submit', function(event) {
+        const form = event.target.closest('form[data-confirm]');
+        if (form && !window.confirm(form.dataset.confirm)) event.preventDefault();
+    });
+
     initializeMediaSession();
     initializeAudioEventListeners();
     initializeLazyThumbnails();

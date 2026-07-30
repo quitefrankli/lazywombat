@@ -29,3 +29,17 @@
 .input-group:focus-within .form-control {
   border-color: var(--hw-sage, #87A878);
 }
+.proxy-current-url {
+  max-width: 31.25rem;
+}
+
+.proxy-empty-icon {
+  width: 6.25rem;
+  height: 6.25rem;
+  background: var(--hw-sage-soft);
+}
+
+.proxy-empty-icon i {
+  color: var(--hw-sage);
+  font-size: 3rem;
+}

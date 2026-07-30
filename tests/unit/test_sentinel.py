@@ -581,7 +581,7 @@ def test_save_excludes_runtime_private_attrs():
     captured = {}
 
     class FakeData:
-        def save_report(self, report):
+        def _save_report(self, report):
             captured["json"] = report.model_dump_json()
 
     report = _mk_report(run_id="r1", status="running")
@@ -610,7 +610,7 @@ def test_save_report_persists_credentials_only_when_remember_flag_set(tmp_path):
         card_details=CardDetails(card_number="4242424242424242", expiry="12/30", cvv="123"),
         remember_account=True,
     )
-    data.save_report(report)
+    data._save_report(report)
     on_disk = data.report_path("a" * 32).read_text()
 
     assert "qatester" in on_disk          # account remembered -> persisted

@@ -6,8 +6,8 @@
 <!-- Upload Audio Modal -->
 <div class="modal fade" id="uploadAudioModal" tabindex="-1" aria-labelledby="uploadAudioModalLabel" aria-hidden="true">
     <div class="modal-dialog">
-        <div class="modal-content border-0" style="border-radius: 16px;">
-            <div class="modal-header text-white" style="background: linear-gradient(135deg, var(--hw-sage, #87A878) 0%, var(--hw-sage-dark, #6B8E5A) 100%); border-radius: 16px 16px 0 0;">
+        <div class="modal-content border-0 tubio-modal-content">
+            <div class="modal-header text-white tubio-modal-header-sage">
                 <h1 class="modal-title fs-5 d-flex align-items-center" id="uploadAudioModalLabel">
                     <i class="bi bi-cloud-upload me-2"></i>Upload Audio File
                 </h1>
@@ -30,13 +30,13 @@
                             <i class="bi bi-pencil me-2 text-sage"></i>Audio Title (Optional)
                         </label>
                     </div>
-                    <div class="alert" role="alert" style="background: rgba(135, 168, 120, 0.1); color: var(--hw-text-secondary, #5A6B5A); border: none;">
+                    <div class="alert tubio-alert-sage" role="alert">
                         <i class="bi bi-info-circle me-2 text-sage"></i>
                         <strong>Supported formats:</strong> MP3, MP4, M4A<br>
                         <small>If no title is provided, the filename will be used.</small>
                     </div>
                 </div>
-                <div class="modal-footer border-0" style="background: rgba(135, 168, 120, 0.05); border-radius: 0 0 16px 16px;">
+                <div class="modal-footer border-0 tubio-modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="bi bi-x-circle me-1"></i>Cancel
                     </button>
@@ -52,8 +52,8 @@
 <!-- New Playlist Modal -->
 <div class="modal fade" id="newPlaylistModal" tabindex="-1" aria-labelledby="newPlaylistModalLabel" aria-hidden="true">
     <div class="modal-dialog">
-        <div class="modal-content border-0" style="border-radius: 16px;">
-            <div class="modal-header text-white" style="background: linear-gradient(135deg, var(--hw-gold, #E9C46A) 0%, var(--hw-peach, #F4A261) 100%); border-radius: 16px 16px 0 0;">
+        <div class="modal-content border-0 tubio-modal-content">
+            <div class="modal-header text-white tubio-modal-header-gold">
                 <h1 class="modal-title fs-5 d-flex align-items-center" id="newPlaylistModalLabel">
                     <i class="bi bi-plus-circle me-2"></i>Create New Playlist
                 </h1>
@@ -67,12 +67,12 @@
                             <i class="bi bi-music-note-list me-2 text-sage"></i>Playlist Name
                         </label>
                     </div>
-                    <div class="alert" role="alert" style="background: rgba(233, 196, 106, 0.15); color: var(--hw-text-secondary, #5A6B5A); border: none;">
-                        <i class="bi bi-info-circle me-2" style="color: var(--hw-gold, #E9C46A);"></i>
+                    <div class="alert tubio-alert-gold" role="alert">
+                        <i class="bi bi-info-circle me-2 text-gold"></i>
                         Create a new playlist to organize your music collection.
                     </div>
                 </div>
-                <div class="modal-footer border-0" style="background: rgba(135, 168, 120, 0.05); border-radius: 0 0 16px 16px;">
+                <div class="modal-footer border-0 tubio-modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="bi bi-x-circle me-1"></i>Cancel
                     </button>
@@ -99,7 +99,7 @@
             <div class="row justify-content-center">
                 <div class="col-lg-10">
                     <form id="search-form" class="mb-4">
-                        <div class="tubio-search-wrap" style="max-width: 800px; margin: 0 auto;">
+                        <div class="tubio-search-wrap">
                             <div class="input-group">
                                 <input type="text" class="form-control" id="youtube-query" name="youtube_query"
                                        placeholder="Search YouTube..." required autocomplete="off"
@@ -175,19 +175,19 @@
     </div>
     <div class="trackbar-center">
         <div class="trackbar-controls">
-            <button class="trackbar-btn trackbar-btn-secondary" id="trackbar-shuffle" onclick="toggleShuffle()" title="Shuffle: Off">
+            <button class="trackbar-btn trackbar-btn-secondary" id="trackbar-shuffle" data-tubio-action="toggle-shuffle" title="Shuffle: Off">
                 <i class="bi bi-shuffle"></i>
             </button>
-            <button class="trackbar-btn trackbar-btn-secondary" id="trackbar-prev" onclick="prevTrack()" title="Previous">
+            <button class="trackbar-btn trackbar-btn-secondary" id="trackbar-prev" data-tubio-action="previous-track" title="Previous">
                 <i class="bi bi-skip-start-fill"></i>
             </button>
-            <button class="trackbar-btn trackbar-btn-primary" id="trackbar-playpause" onclick="togglePlayPause()" title="Play/Pause">
+            <button class="trackbar-btn trackbar-btn-primary" id="trackbar-playpause" data-tubio-action="toggle-playback" title="Play/Pause">
                 <i class="bi bi-play-fill"></i>
             </button>
-            <button class="trackbar-btn trackbar-btn-secondary" id="trackbar-next" onclick="nextTrack()" title="Next">
+            <button class="trackbar-btn trackbar-btn-secondary" id="trackbar-next" data-tubio-action="next-track" title="Next">
                 <i class="bi bi-skip-end-fill"></i>
             </button>
-            <button class="trackbar-btn trackbar-btn-secondary" id="trackbar-loop" onclick="cycleLoopMode()" title="Loop: Off">
+            <button class="trackbar-btn trackbar-btn-secondary" id="trackbar-loop" data-tubio-action="cycle-loop" title="Loop: Off">
                 <i class="bi bi-arrow-repeat"></i>
             </button>
         </div>
@@ -213,7 +213,7 @@
                        aria-label="Volume">
             </div>
         </div>
-        <button class="trackbar-btn trackbar-btn-secondary" onclick="toggleSidebar()" title="All Playlists">
+        <button class="trackbar-btn trackbar-btn-secondary" data-tubio-action="toggle-sidebar" title="All Playlists">
             <i class="bi bi-collection-play"></i>
         </button>
     </div>
@@ -222,8 +222,8 @@
 <!-- Move to Playlist Modal -->
 <div class="modal fade" id="addToPlaylistModal" tabindex="-1" aria-labelledby="moveToPlaylistModalLabel" aria-hidden="true">
     <div class="modal-dialog">
-        <div class="modal-content border-0" style="border-radius: 16px;">
-            <div class="modal-header text-white" style="background: linear-gradient(135deg, var(--hw-sage, #87A878) 0%, var(--hw-sage-dark, #6B8E5A) 100%); border-radius: 16px 16px 0 0;">
+        <div class="modal-content border-0 tubio-modal-content">
+            <div class="modal-header text-white tubio-modal-header-sage">
                 <h1 class="modal-title fs-5 d-flex align-items-center" id="moveToPlaylistModalLabel">
                     <i class="bi bi-plus-square me-2"></i>Move to Playlist
                 </h1>
@@ -244,7 +244,7 @@
                     </div>
                     <input type="hidden" name="song_crcs" id="move_playlist_tracks_crcs">
                 </div>
-                <div class="modal-footer border-0" style="background: rgba(135, 168, 120, 0.05); border-radius: 0 0 16px 16px;">
+                <div class="modal-footer border-0 tubio-modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="bi bi-x-circle me-1"></i>Cancel
                     </button>

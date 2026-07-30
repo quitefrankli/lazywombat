@@ -112,7 +112,7 @@ class TestDataInterface:
             User(username='user1', password='pass1', folder='folder1', is_admin=True),
             User(username='user2', password='pass2', folder='folder2', is_admin=False),
         ]
-        interface.save_users(users)
+        interface._save_users(users)
 
         # Verify file was created
         assert interface.users_file.exists()
@@ -154,7 +154,7 @@ class TestDataInterface:
         initial_users = [
             User(username='existing', password='pass', folder='existing_folder', is_admin=False)
         ]
-        interface.save_users(initial_users)
+        interface._save_users(initial_users)
 
         new_user = interface.generate_new_user('newuser', 'newpass')
         assert new_user.id == 'newuser'
@@ -177,7 +177,7 @@ class TestDataInterface:
             initial_users = [
                 User(username='existing', password='pass', folder='existing_folder', is_admin=False)
             ]
-            interface.save_users(initial_users)
+            interface._save_users(initial_users)
 
             new_user = interface.generate_new_user('newuser', 'newpass')
             assert new_user.folder == 'unique_folder'
@@ -380,7 +380,7 @@ class TestDataInterface:
         assert interface.load_model(path, Sample, sync=False) is None
 
         original = Sample(name="widget", count=3, tags=["a", "b"])
-        interface.save_model(path, original)
+        interface._save_model(path, original)
         loaded = interface.load_model(path, Sample, sync=False)
         assert loaded == original
 

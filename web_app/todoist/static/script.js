@@ -399,19 +399,26 @@ function loadMoreCompletedGoals() {
 
 // Initialize pagination based on which page we're on
 document.addEventListener('DOMContentLoaded', function() {
-	const summaryGoalsPage = document.querySelector('body').classList.contains('summary-goals-page');
-	const completedGoalsPage = document.querySelector('body').classList.contains('completed-goals-page');
-	
-	if (summaryGoalsPage) {
-		const btn = document.getElementById('load-more-btn');
-		if (btn) {
-			btn.onclick = loadMoreSummaryGoals;
-		}
-	} else if (completedGoalsPage) {
-		const btn = document.getElementById('load-more-btn');
-		if (btn) {
-			btn.onclick = loadMoreCompletedGoals;
-		}
+	document.addEventListener('change', function(event) {
+		const checkbox = event.target.closest('[data-goal-state-id]');
+		if (checkbox) toggleGoalState(checkbox, Number(checkbox.dataset.goalStateId));
+	});
+	document.addEventListener('click', function(event) {
+		const button = event.target.closest('[data-unparent-goal-id]');
+		if (button) unparentGoal(Number(button.dataset.unparentGoalId));
+	});
+	document.querySelectorAll('button[data-submit-once]').forEach(function(button) {
+		button.form?.addEventListener('submit', function() {
+			button.disabled = true;
+			button.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Creating...';
+		});
+	});
+
+	const loadMoreButton = document.querySelector('[data-load-more]');
+	if (loadMoreButton?.dataset.loadMore === 'summary') {
+		loadMoreButton.addEventListener('click', loadMoreSummaryGoals);
+	} else if (loadMoreButton?.dataset.loadMore === 'completed') {
+		loadMoreButton.addEventListener('click', loadMoreCompletedGoals);
 	}
 
 	initGoalDragAndDrop();

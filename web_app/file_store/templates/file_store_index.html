@@ -54,7 +54,7 @@
   {% if storage_info %}
   <section class="storage-summary">
     <div><strong>{{ storage_info.used_formatted }}</strong> of {{ storage_info.max_formatted }}</div>
-    <div class="storage-track"><div class="storage-fill" style="width: {{ storage_info.usage_percent }}%"></div></div>
+    <div class="storage-track"><div class="storage-fill" data-usage-percent="{{ storage_info.usage_percent }}"></div></div>
     <span>{{ storage_info.remaining_formatted }} remaining</span>
   </section>
   {% endif %}

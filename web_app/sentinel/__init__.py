@@ -4,6 +4,7 @@ import base64
 import logging
 import re
 import uuid
+from pathlib import Path
 
 from flask import Blueprint, Response, abort, jsonify, redirect, render_template, request, send_from_directory, url_for
 from flask_login import current_user, login_required
@@ -814,7 +815,13 @@ def report_pdf(run_id: str):
 
     html = render_template("sentinel_report_pdf.html", report=payload)
     try:
-        pdf_bytes = render_report_pdf(html)
+        pdf_bytes = render_report_pdf(
+            html,
+            (
+                Path(__file__).parents[1] / "static" / "style.css",
+                Path(__file__).parent / "static" / "report_pdf.css",
+            ),
+        )
     except Exception as e:
         log_event(
             "sentinel",

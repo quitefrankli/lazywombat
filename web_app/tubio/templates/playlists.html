@@ -1,10 +1,10 @@
 {% if playlists %}
 <div class="tubio-layout">
-    <div class="tubio-sidebar-backdrop" onclick="closeSidebar()"></div>
+    <div class="tubio-sidebar-backdrop" data-tubio-action="close-sidebar"></div>
     <aside class="tubio-sidebar">
         <div class="sidebar-header">
             <span><i class="bi bi-collection-play me-2"></i>Playlists</span>
-            <button type="button" class="sidebar-close-btn" onclick="closeSidebar()" title="Close">
+            <button type="button" class="sidebar-close-btn" data-tubio-action="close-sidebar" title="Close">
                 <i class="bi bi-x-lg"></i>
             </button>
         </div>
@@ -15,7 +15,7 @@
                         class="sidebar-item"
                         data-playlist-slug="{{ slug }}"
                         data-playlist-name="{{ playlist_name }}"
-                        onclick="selectPlaylist('{{ slug }}')">
+                        data-tubio-action="select-playlist">
                     <i class="bi bi-music-note-list sidebar-item-icon"></i>
                     <div class="sidebar-item-text">
                         <div class="sidebar-item-name">{{ playlist_name }}</div>
@@ -49,19 +49,18 @@
     <div class="container py-5">
         <div class="row justify-content-center">
             <div class="col-md-8 col-lg-6">
-                <div class="card shadow-lg border-0" style="border-radius: 20px; background: linear-gradient(135deg, rgba(135, 168, 120, 0.1) 0%, rgba(168, 198, 134, 0.1) 100%);">
+                <div class="card shadow-lg border-0 tubio-empty-card">
                     <div class="card-body text-center p-5">
                         <div class="mb-4">
-                            <div class="rounded-circle d-inline-flex align-items-center justify-content-center"
-                                 style="width: 100px; height: 100px; background: linear-gradient(135deg, rgba(135, 168, 120, 0.2) 0%, rgba(168, 198, 134, 0.2) 100%);">
-                                <i class="bi bi-music-note-list" style="font-size: 3.5rem; color: var(--hw-sage, #87A878);"></i>
+                            <div class="rounded-circle d-inline-flex align-items-center justify-content-center tubio-empty-icon">
+                                <i class="bi bi-music-note-list"></i>
                             </div>
                         </div>
-                        <h3 class="mb-3" style="color: var(--hw-forest, #2D4A3E); font-weight: bold;">No Music Yet!</h3>
-                        <p class="lead mb-4" style="color: var(--hw-text-secondary, #5A6B5A);">
+                        <h3 class="mb-3 tubio-empty-title">No Music Yet!</h3>
+                        <p class="lead mb-4 tubio-empty-copy">
                             Your music library is empty. Search for your first song to get started!
                         </p>
-                        <button class="btn btn-primary btn-lg shadow" onclick="switchTab('search')" style="border-radius: 12px; padding: 0.75rem 2rem;">
+                        <button class="btn btn-primary btn-lg shadow tubio-empty-action" data-tubio-action="switch-tab" data-tab="search">
                             <i class="bi bi-search me-2"></i>Go to Search
                         </button>
                     </div>

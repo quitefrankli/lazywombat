@@ -23,13 +23,10 @@
     
     <!-- {{ app_name }} Honeydew Theme -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script>
-      window.NABICAT_CACHE_CONFIG = {
-        maxCacheSize: {{ cache_browser_max_size_bytes }},
-        serviceWorkerReadyTimeoutMs: {{ cache_service_worker_ready_timeout_ms }},
-        serviceWorkerMessageTimeoutMs: {{ cache_service_worker_message_timeout_ms }}
-      };
-    </script>
+    <meta id="nabicat-cache-config"
+          data-max-cache-size="{{ cache_browser_max_size_bytes }}"
+          data-service-worker-ready-timeout-ms="{{ cache_service_worker_ready_timeout_ms }}"
+          data-service-worker-message-timeout-ms="{{ cache_service_worker_message_timeout_ms }}">
     <script src="{{ url_for('static', filename='cache-manager.js') }}"></script>
 
     <!-- Favicon -->

@@ -143,7 +143,7 @@ class TestSurpriseCleanup:
         expired_user.set_surprise_playlist(
             _surprise(303, last_active=now - timedelta(hours=2))
         )
-        data.save_model(data.app_metadata_file, metadata)
+        data._save_model(data.app_metadata_file, metadata)
         for crc in (303, 404):
             (data.app_audio_dir / f"{crc}.m4a").write_bytes(b"audio")
             (data.app_thumbnails_dir / f"{crc}.jpg").write_bytes(b"image")
@@ -191,7 +191,7 @@ class TestSurpriseCleanup:
         user = metadata.get_user("alice")
         user.get_playlist("Favourites").audio_crcs = [101]
         user.set_surprise_playlist(_surprise(202))
-        data.save_model(data.app_metadata_file, metadata)
+        data._save_model(data.app_metadata_file, metadata)
 
         backup_dir = tmp_path / "backup"
         data.backup_data(backup_dir)
@@ -291,7 +291,7 @@ class TestSurpriseRoutes:
         assert 'class="surprise-loading' in html
         assert 'aria-busy="true"' in html
         assert 'id="refresh-surprise-action"' in html
-        assert "refreshSurprisePlaylist(this)" in html
+        assert 'data-tubio-action="refresh-surprise"' in html
         assert "script.js?v=" in html
         assert "style.css?v=" in html
 
@@ -327,9 +327,9 @@ class TestSurpriseRoutes:
             assert "playlist-track-details" in html
             assert "playlist-track-actions" in html
             assert "Suggest more" in html
-            assert "suggestMoreFromTrack(this)" in html
-        assert "favouriteSurpriseTrack" not in regular
-        assert "favouriteSurpriseTrack" in surprise
+            assert 'data-tubio-action="suggest-more"' in html
+        assert 'data-tubio-action="favourite-surprise"' not in regular
+        assert 'data-tubio-action="favourite-surprise"' in surprise
         assert "Converts on play" in surprise
         assert "Downloads on play" not in surprise
 

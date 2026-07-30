@@ -181,11 +181,11 @@ class DataInterface(BaseDataInterface):
             audio.export(output_path, format='mp4', bitrate="128k")
             audio_path.unlink()  # remove original file
 
-        self.save_audio_metadata(AudioMetadata(crc=crc, title=title, is_cached=True))
+        self.upsert_audio_metadata(AudioMetadata(crc=crc, title=title, is_cached=True))
 
         return crc
 
-    def save_audio_metadata(self, audio_metadata: AudioMetadata) -> None:
+    def upsert_audio_metadata(self, audio_metadata: AudioMetadata) -> None:
         """Single-shot upsert of one audio record (locked read-modify-write)."""
         with self.edit_metadata() as metadata:
             metadata.audios[audio_metadata.crc] = audio_metadata
@@ -310,4 +310,4 @@ class DataInterface(BaseDataInterface):
                 shutil.copy2(self.get_audio_path(audio.crc, metadata), 
                              audio_backup_dir / f"{audio.crc}.m4a")
 
-        self.save_model(tubio_backup_dir / "metadata.json", metadata)
+        self._save_model(tubio_backup_dir / "metadata.json", metadata)

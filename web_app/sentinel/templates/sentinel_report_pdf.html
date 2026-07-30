@@ -6,125 +6,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Playfair+Display:wght@600;700&display=swap">
-  <style>
-    body {
-      font-family: 'Nunito', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      color: #2D4A3E;
-      margin: 0;
-      padding: 8px 4px;
-      font-size: 10.5pt;
-      line-height: 1.6;
-    }
-
-    /* Keep headings attached to the content that follows so a section title
-       is never orphaned alone at the bottom of a page. */
-    h1, h2, h3, h4 {
-      font-family: 'Playfair Display', Georgia, "Times New Roman", serif;
-      color: #2D4A3E;
-      font-weight: 700;
-      break-after: avoid-page;
-      page-break-after: avoid;
-    }
-    h2, h3, h4 { break-inside: avoid; page-break-inside: avoid; }
-    h1 { font-size: 21pt; margin: 0 0 4px; line-height: 1.25; }
-    h2 {
-      font-size: 14pt;
-      margin: 24px 0 9px;
-      padding-bottom: 5px;
-      border-bottom: 1px solid #2D4A3E;
-    }
-    h3 { font-size: 12pt; margin: 16px 0 6px; }
-
-    p, ul, ol, blockquote { margin: 7px 0; orphans: 3; widows: 3; }
-    p { text-align: justify; }
-    ul, ol { padding-left: 1.4rem; }
-
-    code {
-      font-family: "SF Mono", Menlo, Consolas, monospace;
-      font-size: 9pt;
-      background: #F5F5DC;
-      color: #4A5D4A;
-      padding: 1px 5px;
-      border-radius: 3px;
-    }
-    pre {
-      background: #FAF9F6;
-      padding: 10px 12px;
-      border-radius: 3px;
-      border: 1px solid rgba(45, 74, 62, 0.18);
-      overflow-x: auto;
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }
-    pre code { background: none; padding: 0; }
-
-    img,
-    .sentinel-final-report-img {
-      display: block;
-      max-width: 100%;
-      height: auto;
-      margin: 12px auto;
-      border: 1px solid rgba(45, 74, 62, 0.2);
-      border-radius: 3px;
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }
-
-    hr { border: none; border-top: 1px solid rgba(45, 74, 62, 0.2); margin: 18px 0; }
-
-    /* Formal ruled masthead: a clean title block with a heavy rule beneath,
-       rather than a colored card. */
-    .header {
-      padding: 0 0 12px;
-      margin-bottom: 16px;
-      border-bottom: 2px solid #2D4A3E;
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }
-    .header .url { font-size: 9.5pt; margin-top: 2px; }
-    .header .url a { color: #5A6B5A; text-decoration: none; }
-
-    /* Definition-style metadata grid instead of colored pills. */
-    .meta-grid {
-      margin-top: 12px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px 28px;
-      font-size: 9pt;
-    }
-    .meta-grid .item { display: flex; flex-direction: column; line-height: 1.35; }
-    .meta-grid .k {
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      font-size: 7.5pt;
-      font-weight: 700;
-      color: #8A9A8A;
-    }
-    .meta-grid .v { color: #2D4A3E; text-transform: capitalize; }
-    .meta-grid .v a { color: #2D4A3E; text-decoration: none; }
-
-    .prompt {
-      font-style: italic;
-      color: #5A6B5A;
-      padding: 6px 14px;
-      border-left: 2px solid #87A878;
-      margin: 14px 0;
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }
-    .verdict {
-      color: #4A5D4A;
-      padding: 8px 14px;
-      border-left: 2px solid #C9A227;
-      margin: 14px 0 18px;
-      background: rgba(233, 196, 106, 0.08);
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }
-    .verdict strong { color: #2D4A3E; }
-
-    .empty { color: #8A9A8A; font-style: italic; }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('sentinel.static', filename='report_pdf.css') }}">
 </head>
 <body>
   <div class="header">
@@ -135,8 +18,8 @@
       {% if report.device_label %}<div class="item"><span class="k">Device</span><span class="v">{{ report.device_label }}</span></div>{% endif %}
       {% if report.demographic_label and report.demographic %}<div class="item"><span class="k">Demographic</span><span class="v">{{ report.demographic_label }}</span></div>{% endif %}
       {% if report.owner %}<div class="item"><span class="k">Started by</span><span class="v">{{ report.owner }}</span></div>{% endif %}
-      {% if report.created_at %}<div class="item"><span class="k">Date</span><span class="v" style="text-transform:none">{{ report.created_at }}</span></div>{% endif %}
-      {% if report.additional_domains %}<div class="item"><span class="k">Additional Domains</span><span class="v" style="text-transform:none">{{ report.additional_domains|join(', ') }}</span></div>{% endif %}
+      {% if report.created_at %}<div class="item"><span class="k">Date</span><span class="v value-verbatim">{{ report.created_at }}</span></div>{% endif %}
+      {% if report.additional_domains %}<div class="item"><span class="k">Additional Domains</span><span class="v value-verbatim">{{ report.additional_domains|join(', ') }}</span></div>{% endif %}
     </div>
   </div>
 

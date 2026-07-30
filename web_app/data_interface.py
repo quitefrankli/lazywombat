@@ -123,8 +123,8 @@ class DataInterface:
         users_file = self.load_model(self.users_file, UsersFile, sync=False) or UsersFile()
         return users_file.as_dict()
 
-    def save_users(self, users: List[User]) -> None:
-        self.save_model(self.users_file, UsersFile(root=list(users)))
+    def _save_users(self, users: List[User]) -> None:
+        self._save_model(self.users_file, UsersFile(root=list(users)))
 
     def edit_users(self):
         """Transactional edit of users.json.
@@ -200,7 +200,7 @@ class DataInterface:
             return None
         return model.model_validate_json(path.read_text(encoding="utf-8"))
 
-    def save_model(self, path: Path, obj: BaseModel, *, exclude_none: bool = False) -> None:
+    def _save_model(self, path: Path, obj: BaseModel, *, exclude_none: bool = False) -> None:
         self.atomic_write(
             path,
             data=obj.model_dump_json(indent=4, exclude_none=exclude_none),
@@ -236,7 +236,7 @@ class DataInterface:
             before = obj.model_dump_json(exclude_none=exclude_none)
             yield obj
             if obj.model_dump_json(exclude_none=exclude_none) != before:
-                self.save_model(path, obj, exclude_none=exclude_none)
+                self._save_model(path, obj, exclude_none=exclude_none)
 
     def _model_lock_name(self, path: Path) -> str:
         """Stable lock name for a data file: its path relative to the data root.
