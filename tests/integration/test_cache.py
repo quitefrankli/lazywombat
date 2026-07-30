@@ -1,6 +1,9 @@
 """Integration tests for client-side caching"""
 import pytest
 from pathlib import Path
+from unittest.mock import patch
+
+from web_app.app import SetCookieNoStoreMiddleware
 
 
 class TestCacheFiles:
@@ -16,12 +19,24 @@ class TestCacheFiles:
         assert 'fetch' in content
         assert 'caches' in content
 
-    def test_static_assets_are_network_first(self):
-        """A deployment's JS/CSS must be fetched on the first refresh."""
+    def test_cache_is_restricted_to_explicit_public_allowlist(self):
+        """Only versioned assets and intentionally public media are eligible."""
         content = Path('web_app/static/service-worker.js').read_text()
 
-        assert "networkFirst: /\\/(api|account|static)\\//" in content
-        assert "cacheWithUpdate: /\\/(download|thumbnail|audio)\\//" in content
+        assert "isVersionedStaticAsset" in content
+        assert "isIntentionallyPublicMedia" in content
+        assert "isCacheableResponse" in content
+        assert "cache-control" in content
+        assert "set-cookie" in content
+        assert "/(api|account|static)/" not in content
+        assert "/(download|thumbnail|audio)/" not in content
+
+    def test_cache_version_activation_and_logout_clear_all_app_caches(self):
+        content = Path('web_app/static/service-worker.js').read_text()
+
+        assert "name.startsWith(CACHE_PREFIX)" in content
+        assert "clearCaches" in content
+        assert "clearCache" in content
 
     def test_cache_manager_exists(self):
         """Verify cache manager file exists"""
@@ -85,6 +100,10 @@ class TestCacheHeaders:
         response = client.get('/service-worker.js')
 
         assert response.status_code == 200
+        assert '__NABICAT_CACHE_VERSION__' not in response.get_data(as_text=True)
+        assert '__NABICAT_CACHE_PREFIX__' not in response.get_data(as_text=True)
+        assert '__NABICAT_STATIC_PATH_PREFIXES__' not in response.get_data(as_text=True)
+        assert '__NABICAT_PUBLIC_MEDIA_PATH_PREFIXES__' not in response.get_data(as_text=True)
         cache_control = response.headers.get('Cache-Control', '')
         assert 'no-cache' in cache_control
         assert 'no-store' in cache_control
@@ -115,8 +134,8 @@ class TestCacheHeaders:
             assert 'private' in cache_control
             assert 'public' not in cache_control
 
-    def test_thumbnail_has_cache_headers(self, client, auth_mock, tmp_path, monkeypatch):
-        """Verify thumbnail endpoint sets cache headers"""
+    def test_user_thumbnail_is_private(self, client, auth_mock, tmp_path, monkeypatch):
+        """User-scoped thumbnails must not be shared through browser caches."""
         from unittest.mock import patch
         from PIL import Image
 
@@ -137,8 +156,44 @@ class TestCacheHeaders:
             assert response.status_code == 200
             # Check cache control headers
             assert 'Cache-Control' in response.headers
-            assert 'max-age=606461' in response.headers.get('Cache-Control', '')
-            assert 'public' in response.headers.get('Cache-Control', '')
+            cache_control = response.headers.get('Cache-Control', '')
+            assert 'private' in cache_control
+            assert 'no-store' in cache_control
+            assert 'public' not in cache_control
+
+    def test_authenticated_json_is_private(self, client, auth_mock):
+        with client.session_transaction() as sess:
+            sess['_user_id'] = auth_mock.id
+
+        with patch('web_app.file_store.DataInterface') as mock_di_class:
+            mock_di_class.return_value.list_files.return_value = []
+            response = client.get('/file_store/files_list')
+
+        assert response.status_code == 200
+        cache_control = response.headers.get('Cache-Control', '')
+        assert 'private' in cache_control
+        assert 'no-store' in cache_control
+
+
+def test_set_cookie_middleware_overrides_public_cache_headers():
+    def cookie_app(environ, start_response):
+        start_response(
+            "200 OK",
+            [
+                ("Set-Cookie", "session=secret; HttpOnly"),
+                ("Cache-Control", "public, max-age=3600"),
+            ],
+        )
+        return [b"ok"]
+
+    captured = {}
+
+    def start_response(status, headers, exc_info=None):
+        captured["headers"] = dict(headers)
+
+    list(SetCookieNoStoreMiddleware(cookie_app)({}, start_response))
+
+    assert captured["headers"]["Cache-Control"] == "private, no-store"
 
 
 class TestTubioCacheHeaders:
@@ -188,5 +243,10 @@ class TestTubioCacheHeaders:
 
             assert response.status_code == 200
             assert 'Cache-Control' in response.headers
-            assert 'max-age=606461' in response.headers.get('Cache-Control', '')
-            assert 'public' in response.headers.get('Cache-Control', '')
+            cache_control = response.headers.get('Cache-Control', '')
+            if response.headers.get('Set-Cookie'):
+                assert 'private' in cache_control
+                assert 'no-store' in cache_control
+            else:
+                assert 'max-age=606461' in cache_control
+                assert 'public' in cache_control

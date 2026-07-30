@@ -1,3 +1,9 @@
+* Prioritise simple, clear designs and clean, maintainable code. Do not knowingly
+  introduce avoidable complexity, duplication, weak abstractions, shortcuts, or
+  technical debt. If a requested change appears to require a material reduction
+  in design or code quality, stop before making that compromise, explain the
+  trade-off, and ask the user for explicit approval.
+
 * Git commits: only commit code when explicitly told to. Commit messages must be descriptive; small changes can use a one-line message, but larger changes need multiple lines or a short paragraph explaining what changed and why. When making a commit, use the dedicated commit agent: Claude Code via the `commit` subagent (`.claude/agents/commit.md`), Codex via the `commit` agent (`.codex/agents/commit.toml`).
 
 * Don't add any documentation files unless explicitly asked to.

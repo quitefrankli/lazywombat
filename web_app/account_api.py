@@ -52,7 +52,10 @@ def logout():
     flask_login.logout_user()
     log_event("account", "account.logged_out", user=user_id)
     flask.flash('You have been logged out', category='info')
-    return flask.redirect(flask.url_for('home'))
+    response = flask.redirect(flask.url_for('home', clear_cache=1))
+    response.headers["Clear-Site-Data"] = '"cache"'
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 @account_api.route('/oauth/revoke', methods=["POST"])
 @flask_login.login_required

@@ -500,6 +500,25 @@ class FileStoreConfig:
 @dataclass
 class ProxyConfig:
     request_timeout_s: int = 10
+    max_redirects: int = 5
+    response_max_bytes: int = 5 * 1024 * 1024
+    response_read_chunk_bytes: int = 64 * 1024
+    redirect_status_codes: tuple[int, ...] = (301, 302, 303, 307, 308)
+    allowed_content_types: tuple[str, ...] = (
+        "text/html",
+        "text/plain",
+        "image/avif",
+        "image/gif",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    )
+    blocked_metadata_hostnames: tuple[str, ...] = (
+        "metadata",
+        "metadata.aws.internal",
+        "metadata.azure.internal",
+        "metadata.google.internal",
+    )
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -568,8 +587,31 @@ class ConfigManager:
         }
         self.cache_max_age = 606461 # Default cache max age (1 week) in seconds, can be overridden by environment variable
         self.cache_browser_max_size_bytes = 10 * 1024 * 1024 * 1024
+        self.cache_service_worker_version = "v2"
+        self.cache_service_worker_prefix = "nabicat-cache-"
+        self.cache_versioned_static_path_prefixes = (
+            "/static/",
+            "/crosswords/static/",
+            "/dev/static/",
+            "/file_store/static/",
+            "/hammock/static/",
+            "/metrics/static/",
+            "/proxy/static/",
+            "/sentinel/static/",
+            "/simulations/static/",
+            "/todoist/static/",
+            "/tubio/static/",
+        )
+        self.cache_public_media_path_prefixes = (
+            "/tubio/audio/",
+            "/tubio/thumbnail/",
+        )
         self.cache_service_worker_ready_timeout_ms = 5000
         self.cache_service_worker_message_timeout_ms = 5000
+        self.cache_public_media_endpoints = frozenset({
+            "tubio.serve_audio",
+            "tubio.serve_thumbnail",
+        })
         self.access_denied_redirect_endpoint = "home"
         self.elevated_access_denied_message = "You need elevated access to use Sentinel."
         self.admin_access_denied_message = "You need admin access to use this app."

@@ -10,6 +10,26 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from web_app.config import ConfigManager
 
 
+class SetCookieNoStoreMiddleware:
+    """Prevent any cookie-setting response from entering browser caches."""
+
+    def __init__(self, wrapped_app):
+        self.wrapped_app = wrapped_app
+
+    def __call__(self, environ, start_response):
+        def no_store_start_response(status, headers, exc_info=None):
+            if any(name.lower() == "set-cookie" for name, _ in headers):
+                headers = [
+                    (name, value)
+                    for name, value in headers
+                    if name.lower() != "cache-control"
+                ]
+                headers.append(("Cache-Control", "private, no-store"))
+            return start_response(status, headers, exc_info)
+
+        return self.wrapped_app(environ, no_store_start_response)
+
+
 class NabicatRequest(Request):
     """Apply Hammock's upload cap before CSRF parses multipart forms."""
 
@@ -36,7 +56,9 @@ class NabicatRequest(Request):
 
 app = Flask(__name__)
 app.request_class = NabicatRequest
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+app.wsgi_app = SetCookieNoStoreMiddleware(
+    ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+)
 
 
 def _compute_static_version() -> str:

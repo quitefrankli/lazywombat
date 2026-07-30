@@ -16,6 +16,7 @@ class TargetValidationError(ValueError):
 class ValidatedTarget:
     url: str
     hostname: str
+    addresses: tuple[str, ...] = ()
 
 
 def _is_blocked_ip(value: str) -> bool:
@@ -47,9 +48,14 @@ def _resolved_ips(hostname: str, port: int | None) -> set[str]:
     return {info[4][0] for info in infos}
 
 
-def validate_public_web_url(raw_url: str) -> ValidatedTarget:
+def validate_public_web_url(
+    raw_url: str,
+    *,
+    allow_local: bool | None = None,
+) -> ValidatedTarget:
     raw = (raw_url or "").strip()
-    allow_local = ConfigManager().debug_mode
+    if allow_local is None:
+        allow_local = ConfigManager().debug_mode
     if "://" not in raw:
         # Local dev servers usually speak plain HTTP, so in debug mode default a
         # scheme-less local target to http:// rather than https:// (which fails
@@ -66,19 +72,22 @@ def validate_public_web_url(raw_url: str) -> ValidatedTarget:
     if not parsed.hostname:
         raise TargetValidationError("URL must include a valid host")
     hostname = parsed.hostname.rstrip(".").lower()
+    try:
+        addresses = (str(ipaddress.ip_address(hostname)),)
+    except ValueError:
+        addresses = tuple(sorted(_resolved_ips(hostname, parsed.port)))
+
     # In debug mode, permit local/private targets so Sentinel can QA itself
     # (e.g. localhost, 127.0.0.1, the dev server's LAN address).
     if not allow_local:
         if hostname in {"localhost", "localhost.localdomain"}:
             raise TargetValidationError("Local targets are not allowed")
 
-        try:
-            if _is_blocked_ip(hostname):
-                raise TargetValidationError("Private or local targets are not allowed")
-        except ValueError:
-            for ip in _resolved_ips(hostname, parsed.port):
-                if _is_blocked_ip(ip):
-                    raise TargetValidationError("Target resolves to a private or local address")
+        for address in addresses:
+            if _is_blocked_ip(address):
+                raise TargetValidationError(
+                    "Target resolves to a private or local address"
+                )
 
     host_for_netloc = f"[{hostname}]" if ":" in hostname else hostname
     userinfo = f"{parsed.netloc.rsplit('@', 1)[0]}@" if "@" in parsed.netloc else ""
@@ -95,4 +104,8 @@ def validate_public_web_url(raw_url: str) -> ValidatedTarget:
             "",
         )
     )
-    return ValidatedTarget(url=normalized, hostname=hostname)
+    return ValidatedTarget(
+        url=normalized,
+        hostname=hostname,
+        addresses=addresses,
+    )

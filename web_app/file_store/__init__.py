@@ -259,9 +259,8 @@ def thumbnail(filename: str):
     
     response = send_file(thumbnail_path, mimetype='image/jpeg')
 
-    # Cache thumbnails
-    response.cache_control.max_age = ConfigManager().cache_max_age
-    response.cache_control.public = True
+    response.cache_control.private = True
+    response.cache_control.no_store = True
 
     return response
 

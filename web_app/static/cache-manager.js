@@ -9,6 +9,7 @@ class CacheManager {
         this.isSupported = 'serviceWorker' in navigator && 'caches' in window;
         const config = document.getElementById('nabicat-cache-config')?.dataset || {};
         this.MAX_CACHE_SIZE = Number(config.maxCacheSize) || 0;
+        this.cachePrefix = config.cachePrefix || '';
         this.readyTimeoutMs = Number(config.serviceWorkerReadyTimeoutMs) || 5000;
         this.messageTimeoutMs = Number(config.serviceWorkerMessageTimeoutMs) || 5000;
     }
@@ -92,8 +93,19 @@ class CacheManager {
      * Clear entire cache
      */
     async clearCache() {
-        if (!this.isAvailable()) return;
+        if (!this.isSupported) return;
 
+        const cacheNames = await caches.keys();
+        await Promise.all(
+            cacheNames
+                .filter((name) => !this.cachePrefix || name.startsWith(this.cachePrefix))
+                .map((name) => caches.delete(name))
+        );
+
+        if (!this.isAvailable()) {
+            console.log('[Cache] Cache cleared');
+            return { success: true };
+        }
         const channel = new MessageChannel();
         const response = await this.sendMessage({ action: 'clearCache' }, channel);
         console.log('[Cache] Cache cleared');
@@ -174,11 +186,28 @@ class CacheManager {
 // Global instance
 window.cacheManager = new CacheManager();
 
+document.addEventListener('click', (event) => {
+    const logoutLink = event.target.closest('a[href="/account/logout"]');
+    if (!logoutLink) return;
+
+    event.preventDefault();
+    window.cacheManager.clearCache()
+        .catch((error) => console.warn('[Cache] Logout cache clear failed:', error))
+        .finally(() => window.location.assign(logoutLink.href));
+});
+
 // Auto-initialize on page load
-function _initCacheManager() {
-    window.cacheManager.init().then(() => {
-        window.dispatchEvent(new Event('cacheManagerReady'));
-    });
+async function _initCacheManager() {
+    const currentUrl = new URL(window.location.href);
+    if (currentUrl.searchParams.get('clear_cache') === '1') {
+        await window.cacheManager.clearCache()
+            .catch((error) => console.warn('[Cache] Logout cache clear failed:', error));
+        currentUrl.searchParams.delete('clear_cache');
+        window.history.replaceState({}, '', currentUrl);
+    }
+
+    await window.cacheManager.init();
+    window.dispatchEvent(new Event('cacheManagerReady'));
 
     if (window.cacheManager.isSupported) {
         navigator.serviceWorker.ready.then((registration) => {

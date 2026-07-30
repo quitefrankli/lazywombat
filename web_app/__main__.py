@@ -15,7 +15,7 @@ from packaging.version import Version
 from typing import * # type: ignore
 from pathlib import Path
 from email.mime.text import MIMEText
-from flask import Response, abort, g, render_template, request, send_from_directory, url_for
+from flask import Response, abort, g, render_template, request, url_for
 from flask_apscheduler import APScheduler
 from logging.handlers import RotatingFileHandler
 from xml.sax.saxutils import escape as xml_escape
@@ -38,6 +38,7 @@ def inject_app_name():
     return dict(
         app_name="NabiCat",
         cache_browser_max_size_bytes=config.cache_browser_max_size_bytes,
+        cache_service_worker_prefix=config.cache_service_worker_prefix,
         cache_service_worker_ready_timeout_ms=config.cache_service_worker_ready_timeout_ms,
         cache_service_worker_message_timeout_ms=config.cache_service_worker_message_timeout_ms,
     )
@@ -252,6 +253,25 @@ def after_request(response: Response) -> Response:
     if request_id:
         response.headers[config.request_id_header] = request_id
 
+    endpoint = request.endpoint or ""
+    is_versioned_static = (
+        endpoint.endswith("static")
+        and bool(request.args.get("v"))
+    )
+    is_public_media = (
+        endpoint in config.cache_public_media_endpoints
+        and response.cache_control.public
+    )
+    if (
+        response.headers.getlist("Set-Cookie")
+        or (
+            flask_login.current_user.is_authenticated
+            and not is_versioned_static
+            and not is_public_media
+        )
+    ):
+        response.headers["Cache-Control"] = "private, no-store"
+
     if not getattr(g, "request_log_suppressed", True):
         status = response.status_code
         if status >= config.request_log_error_status:
@@ -310,11 +330,22 @@ def privacy():
 @app.route('/service-worker.js')
 def service_worker():
     """Serve service worker from root for proper scope"""
-    response = send_from_directory(
-        'static',
-        'service-worker.js',
-        mimetype='application/javascript',
+    config = ConfigManager()
+    source = (Path(app.static_folder) / 'service-worker.js').read_text()
+    source = source.replace(
+        '__NABICAT_CACHE_VERSION__',
+        json.dumps(config.cache_service_worker_version),
+    ).replace(
+        '__NABICAT_CACHE_PREFIX__',
+        json.dumps(config.cache_service_worker_prefix),
+    ).replace(
+        '__NABICAT_STATIC_PATH_PREFIXES__',
+        json.dumps(config.cache_versioned_static_path_prefixes),
+    ).replace(
+        '__NABICAT_PUBLIC_MEDIA_PATH_PREFIXES__',
+        json.dumps(config.cache_public_media_path_prefixes),
     )
+    response = Response(source, mimetype='application/javascript')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response
 
