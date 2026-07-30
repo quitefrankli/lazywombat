@@ -12,6 +12,7 @@ from functools import wraps
 from urllib.parse import urlparse
 
 from web_app.config import ConfigManager
+from web_app.logging_utils import log_event
 
 _client: redis.Redis | None = None
 _local_server: subprocess.Popen | None = None
@@ -45,7 +46,7 @@ def ensure_local_redis() -> None:
     try:
         redis.Redis(host=host, port=port).ping()
         if not ConfigManager().debug_mode:
-            logging.info("Redis already reachable at %s:%s", host, port)
+            log_event("redis", "redis.reachable", host=host, port=port)
         return
     except Exception:
         pass
@@ -57,7 +58,7 @@ def ensure_local_redis() -> None:
             "`conda install -c conda-forge redis-server`) or start one manually."
         )
 
-    logging.info("Starting local redis-server on port %s", port)
+    log_event("redis", "redis.local_starting", port=port)
     _local_server = subprocess.Popen(
         [redis_bin, "--port", str(port), "--save", "", "--appendonly", "no"],
         stdout=subprocess.DEVNULL,
@@ -69,11 +70,14 @@ def ensure_local_redis() -> None:
     while time.monotonic() < deadline:
         try:
             redis.Redis(host=host, port=port).ping()
-            logging.info("Local redis-server is up")
+            log_event("redis", "redis.local_started", port=port)
             return
         except Exception:
             time.sleep(0.1)
-    logging.warning("Local redis-server did not become ready within 5s")
+    log_event(
+        "redis", "redis.local_start_failed",
+        level=logging.WARNING, port=port, reason="readiness_timeout",
+    )
 
 
 def _stop_local_redis() -> None:
@@ -156,8 +160,12 @@ def rmw_lock(name: str, timeout_s: int | None = None, blocking_timeout_s: float 
         try:
             if client.get(key) == token:
                 client.delete(key)
-        except Exception:
-            logging.exception("rmw_lock: failed to release lock %s", name)
+        except Exception as error:
+            log_event(
+                "redis", "redis.rmw_lock_release_failed",
+                level=logging.ERROR, lock=name, exc_info=error,
+                error_type=type(error).__name__,
+            )
 
 
 def run_once(job_id: str):
@@ -180,11 +188,15 @@ def run_once(job_id: str):
                 acquired = get_redis().set(
                     key, b"1", nx=True, ex=ConfigManager().scheduler_lock_ttl_s
                 )
-            except Exception:
-                logging.exception("run_once: Redis unavailable, skipping job %s", job_id)
+            except Exception as error:
+                log_event(
+                    "redis", "redis.scheduler_claim_failed",
+                    level=logging.ERROR, job_id=job_id, exc_info=error,
+                    error_type=type(error).__name__,
+                )
                 return None
             if not acquired:
-                logging.info("run_once: job %s already claimed this window, skipping", job_id)
+                log_event("redis", "redis.scheduler_job_skipped", job_id=job_id)
                 return None
             return func(*args, **kwargs)
         return wrapper

@@ -154,5 +154,5 @@ def test_prod_entry_logs_gunicorn_worker_start(caplog):
     finally:
         config.deployment_canary = previous
 
-    assert "Starting gunicorn worker" in caplog.text
-    assert "Starting server" not in caplog.text
+    assert '"event": "worker.started"' in caplog.text
+    assert '"event": "server.started"' not in caplog.text

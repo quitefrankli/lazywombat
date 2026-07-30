@@ -10,6 +10,7 @@ from web_app.users import User
 from web_app.metrics.app_data import Metric, DataPoint
 from web_app.metrics.data_interface import DataInterface
 from web_app.metrics.visualiser import plot_metric
+from web_app.logging_utils import log_event
 
 
 metrics_api = Blueprint(
@@ -46,6 +47,12 @@ def new_metric():
     description = from_req('description')
 
     if not name:
+        log_event(
+            "metrics",
+            "metric.create_rejected",
+            level=logging.WARNING,
+            reason="empty_name",
+        )
         flask.flash('Metric name cannot be empty', category='error')
         return get_default_redirect()
 
@@ -58,6 +65,7 @@ def new_metric():
                                         description=description,
                                         creation_date=datetime.now())
 
+    log_event("metrics", "metric.created", metric_id=metric_id)
     return get_default_redirect()
 
 @metrics_api.route('/delete', methods=['GET'])
@@ -67,6 +75,7 @@ def delete_metric():
     with DataInterface().edit_data(cur_user()) as tld:
         tld.metrics.pop(metric_id)
 
+    log_event("metrics", "metric.deleted", metric_id=metric_id)
     return get_default_redirect()
 
 @metrics_api.route('/edit', methods=['POST'])
@@ -76,6 +85,13 @@ def edit_metric():
     name = from_req('name')
 
     if not name:
+        log_event(
+            "metrics",
+            "metric.update_rejected",
+            level=logging.WARNING,
+            metric_id=metric_id,
+            reason="empty_name",
+        )
         flask.flash('Metric name cannot be empty', category='error')
         return get_default_redirect()
 
@@ -89,6 +105,7 @@ def edit_metric():
         metric.description = description
         metric.last_modified = datetime.now()
 
+    log_event("metrics", "metric.updated", metric_id=metric_id)
     return get_default_redirect()
 
 @metrics_api.route('/log', methods=['POST'])
@@ -98,6 +115,13 @@ def log_metric():
     try:
         value = float(from_req('value'))
     except ValueError:
+        log_event(
+            "metrics",
+            "metric.log_rejected",
+            level=logging.WARNING,
+            metric_id=metric_id,
+            reason="invalid_value",
+        )
         flask.flash('Value must be a number', category='error')
         return get_default_redirect()
 
@@ -106,6 +130,7 @@ def log_metric():
         metric.data.append(DataPoint(date=datetime.now(), value=value))
         metric.last_modified = datetime.now()
 
+    log_event("metrics", "metric.logged", metric_id=metric_id)
     return get_default_redirect()
 
 @metrics_api.route('/visualise/<int:metric_id>', methods=['GET'])
@@ -119,7 +144,14 @@ def visualise_metric(metric_id: int):
 
         return render_template('metric_plot.html', plot=embeddable_plotly_html)
     except Exception as e:
-        logging.error(f"Failed to visualise metric {metric_id}: {e}")
+        log_event(
+            "metrics",
+            "metric.visualisation_failed",
+            level=logging.ERROR,
+            metric_id=metric_id,
+            exc_info=e,
+            error_type=type(e).__name__,
+        )
         flask.flash('Failed to visualise metric', category='error')
 
         return get_default_redirect()

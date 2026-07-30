@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from web_app.crosswords.word_bank import WordClue
+from web_app.logging_utils import log_event
 
 ACROSS = "across"
 DOWN = "down"
@@ -194,27 +195,29 @@ def build_crossword(pairs: List[WordClue], rng: Optional[random.Random] = None) 
     for word, clue in ordered:
         word = word.upper()
         if not word.isalpha():
-            logging.info("Crosswords skipped non-alpha word from source: %r", word)
+            log_event(
+                "crosswords", "crosswords.word_skipped",
+                reason="non_alpha", word_length=len(word),
+            )
             continue
         placed = _try_place(grid, placements, word, clue)
         if placed is not None:
             placements.append(placed)
         else:
-            logging.info("Crosswords skipped unplaceable word: %s", word)
+            log_event(
+                "crosswords", "crosswords.word_skipped",
+                reason="unplaceable", word_length=len(word),
+            )
 
     if not placements:
         raise ValueError("No words could be placed")
 
     rows, cols, placements = _normalise(placements)
     cells, across, down = _number_clues(rows, cols, placements)
-    logging.info(
-        "Crosswords grid built: input_pairs=%s placed=%s across=%s down=%s rows=%s cols=%s",
-        len(pairs),
-        len(placements),
-        len(across),
-        len(down),
-        rows,
-        cols,
+    log_event(
+        "crosswords", "crosswords.grid_built",
+        input_pairs=len(pairs), placed=len(placements),
+        across=len(across), down=len(down), rows=rows, cols=cols,
     )
 
     # Sort clues by number for stable display.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import re
 import uuid
 
@@ -11,6 +12,7 @@ from markupsafe import Markup
 
 from web_app.config import ConfigManager
 from web_app.helpers import redirect_with_access_denied
+from web_app.logging_utils import log_event
 from web_app.sentinel.data_interface import DataInterface
 from web_app.sentinel.models import Report
 from web_app.sentinel.runner import (
@@ -449,17 +451,27 @@ def create_run():
     try:
         kwargs = _validate_run_params(payload, with_credentials=True)
     except ValueError as e:
+        log_event(
+            "sentinel",
+            "sentinel.run_rejected",
+            level=logging.WARNING,
+            reason="invalid_parameters",
+            error_type=type(e).__name__,
+        )
         return jsonify({"error": str(e)}), 400
-    return (
-        jsonify(start_run(
-            kwargs.pop("target"),
-            kwargs.pop("prompt"),
-            kwargs.pop("limit_s"),
-            owner=str(getattr(current_user, "id", "") or ""),
-            **kwargs,
-        )),
-        202,
+    result = start_run(
+        kwargs.pop("target"),
+        kwargs.pop("prompt"),
+        kwargs.pop("limit_s"),
+        owner=str(getattr(current_user, "id", "") or ""),
+        **kwargs,
     )
+    log_event(
+        "sentinel",
+        "sentinel.run_created",
+        run_id=result["run_id"],
+    )
+    return jsonify(result), 202
 
 
 @sentinel_api.route("/api/runs/<run_id>")
@@ -476,8 +488,21 @@ def cancel(run_id: str):
     if report is None:
         abort(404)
     if report.status not in {"queued", "running", "summarizing"}:
+        log_event(
+            "sentinel",
+            "sentinel.run_cancel_ignored",
+            run_id=run_id,
+            status=report.status,
+        )
         return jsonify({"run_id": run_id, "status": report.status, "cancelled": False})
     cancelled = request_cancel(run_id)
+    log_event(
+        "sentinel",
+        "sentinel.run_cancel_requested",
+        level=logging.INFO if cancelled else logging.WARNING,
+        run_id=run_id,
+        cancelled=cancelled,
+    )
     return jsonify({"run_id": run_id, "cancelled": cancelled})
 
 
@@ -487,9 +512,18 @@ def delete(run_id: str):
     if report is None:
         abort(404)
     if report.status in {"queued", "running", "summarizing"}:
+        log_event(
+            "sentinel",
+            "sentinel.run_delete_rejected",
+            level=logging.WARNING,
+            run_id=run_id,
+            reason="active",
+            status=report.status,
+        )
         return jsonify({"error": "Run is still active"}), 409
     if not delete_run(run_id):
         abort(404)
+    log_event("sentinel", "sentinel.run_deleted", run_id=run_id)
     return jsonify({"run_id": run_id, "deleted": True})
 
 
@@ -643,6 +677,13 @@ def create_batch():
     try:
         name, items = _parse_batch_payload(payload)
     except ValueError as e:
+        log_event(
+            "sentinel",
+            "sentinel.batch_rejected",
+            level=logging.WARNING,
+            reason="invalid_batch",
+            error_type=type(e).__name__,
+        )
         return jsonify({"error": str(e)}), 400
 
     raw_items = payload.get("items") or []
@@ -662,6 +703,14 @@ def create_batch():
         try:
             kwargs = _validate_run_params(merged, with_credentials=True)
         except ValueError as e:
+            log_event(
+                "sentinel",
+                "sentinel.batch_rejected",
+                level=logging.WARNING,
+                item_index=idx,
+                reason="invalid_item",
+                error_type=type(e).__name__,
+            )
             return jsonify({"error": f"Run {idx + 1}: {e}"}), 400
         result = start_run(
             kwargs.pop("target"),
@@ -674,6 +723,12 @@ def create_batch():
         )
         run_ids.append(result["run_id"])
 
+    log_event(
+        "sentinel",
+        "sentinel.batch_created",
+        batch_id=batch_id,
+        runs=len(run_ids),
+    )
     return jsonify({"batch_id": batch_id, "run_ids": run_ids}), 202
 
 
@@ -703,10 +758,23 @@ def delete_batch(batch_id: str):
     if not children:
         abort(404)
     if any(run.get("status") in {"queued", "running", "summarizing"} for run in children):
+        log_event(
+            "sentinel",
+            "sentinel.batch_delete_rejected",
+            level=logging.WARNING,
+            batch_id=batch_id,
+            reason="active_runs",
+        )
         return jsonify({"error": "Batch has active runs"}), 409
     run_ids = [str(run.get("run_id")) for run in children if run.get("run_id")]
     for run_id in run_ids:
         delete_run(run_id)
+    log_event(
+        "sentinel",
+        "sentinel.batch_deleted",
+        batch_id=batch_id,
+        runs=len(run_ids),
+    )
     return jsonify({"batch_id": batch_id, "deleted": True, "run_ids": run_ids})
 
 
@@ -748,6 +816,14 @@ def report_pdf(run_id: str):
     try:
         pdf_bytes = render_report_pdf(html)
     except Exception as e:
+        log_event(
+            "sentinel",
+            "sentinel.report_pdf_failed",
+            level=logging.ERROR,
+            run_id=run_id,
+            exc_info=e,
+            error_type=type(e).__name__,
+        )
         return jsonify({"error": f"PDF generation failed: {e}"}), 500
 
     safe_title = re.sub(r"[^A-Za-z0-9._-]+", "-", str(report_data.title or run_id)).strip("-")[:80] or run_id

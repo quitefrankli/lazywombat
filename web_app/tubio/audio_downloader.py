@@ -14,6 +14,7 @@ from web_app.config import ConfigManager
 from web_app.redis_client import get_redis
 from web_app.tubio.data_interface import Metadata, UserMetadata, AudioMetadata, DataInterface
 from web_app.users import User
+from web_app.logging_utils import log_event
 
 
 class VideoTooLongError(Exception):
@@ -158,8 +159,12 @@ class AudioDownloader:
                 }
         except VideoTooLongError:
             raise
-        except Exception:
-            logging.exception(f"Failed to get video info for {video_id}")
+        except Exception as error:
+            log_event(
+                "tubio", "tubio.video_info_failed",
+                level=logging.ERROR, video_id=video_id,
+                exc_info=error, error_type=type(error).__name__,
+            )
             return None
 
     @staticmethod
@@ -183,10 +188,10 @@ class AudioDownloader:
         length cap.
         """
         cfg = ConfigManager().tubio
-        logging.info(
-            "Tubio YouTube mix request started seed_video_id=%s max_entries=%d",
-            video_id,
-            cfg.surprise_mix_entries_per_seed,
+        log_event(
+            "tubio", "tubio.youtube_mix_started",
+            seed_video_id=video_id,
+            max_entries=cfg.surprise_mix_entries_per_seed,
         )
         url = f"https://www.youtube.com/watch?v={video_id}&list=RD{video_id}"
         ydl_opts = {
@@ -205,8 +210,12 @@ class AudioDownloader:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
             entries = (info or {}).get('entries') or []
-        except Exception:
-            logging.exception(f"Failed to fetch mix for {video_id}")
+        except Exception as error:
+            log_event(
+                "tubio", "tubio.youtube_mix_failed",
+                level=logging.ERROR, seed_video_id=video_id,
+                exc_info=error, error_type=type(error).__name__,
+            )
             return []
 
         results = []
@@ -231,11 +240,10 @@ class AudioDownloader:
                 "cached": False,
                 "thumbnail_url": thumbnail_url,
             })
-        logging.info(
-            "Tubio YouTube mix request completed seed_video_id=%s entries=%d usable=%d",
-            video_id,
-            len(entries),
-            len(results),
+        log_event(
+            "tubio", "tubio.youtube_mix_completed",
+            seed_video_id=video_id,
+            entries=len(entries), usable=len(results),
         )
         return results
 
@@ -264,8 +272,12 @@ class AudioDownloader:
             response.raise_for_status()
             suggestions = json.loads(response.text)[1]
             return [str(s) for s in suggestions][: cfg.autocomplete_max_suggestions]
-        except Exception:
-            logging.exception("Failed to fetch YouTube search suggestions")
+        except Exception as error:
+            log_event(
+                "tubio", "tubio.suggestions_failed",
+                level=logging.WARNING, exc_info=error,
+                error_type=type(error).__name__,
+            )
             return []
 
     @staticmethod
@@ -285,12 +297,20 @@ class AudioDownloader:
         # Extract ytInitialData JSON
         initial_data_match = re.search(r'var ytInitialData = (\{.*?\});', html, re.DOTALL)
         if not initial_data_match:
-            logging.warning(f"Tubio scrape: ytInitialData not found (sp={sp!r}, html_len={len(html)})")
+            log_event(
+                "tubio", "tubio.search_scrape_failed",
+                level=logging.WARNING, filter=sp,
+                html_length=len(html), reason="initial_data_missing",
+            )
             return {"results": [], "filtered_too_long": [], "raw_count": 0}
         try:
             data = json.loads(initial_data_match.group(1))
-        except Exception:
-            logging.exception("Failed to parse YouTube search results")
+        except Exception as error:
+            log_event(
+                "tubio", "tubio.search_parse_failed",
+                level=logging.WARNING, filter=sp, exc_info=error,
+                error_type=type(error).__name__,
+            )
             return {"results": [], "filtered_too_long": [], "raw_count": 0}
         # Traverse the JSON to get videoRenderer items
         sections = data.get('contents', {}) \
@@ -360,7 +380,10 @@ class AudioDownloader:
         # Check if query is a direct YouTube URL
         video_id = AudioDownloader.extract_video_id(query)
         if video_id:
-            logging.info(f"Direct YouTube URL detected, fetching video: {video_id}")
+            log_event(
+                "tubio", "tubio.direct_video_lookup_started",
+                video_id=video_id,
+            )
             # Let VideoTooLongError propagate for direct URLs
             video_info = AudioDownloader.get_video_info(video_id, cached_yt_vid_ids)
             results = [video_info] if video_info else []
@@ -379,7 +402,10 @@ class AudioDownloader:
         filtered_ids = set()
         tiers = cfg.search_length_filter_sps
         for tier_idx, sp in enumerate(tiers, start=1):
-            logging.info(f"Tubio search: query={query!r} page={page} tier={tier_idx}/{len(tiers)} sp={sp!r}")
+            log_event(
+                "tubio", "tubio.search_tier_started",
+                page=page, tier=tier_idx, tiers=len(tiers), filter=sp,
+            )
             scraped = AudioDownloader._scrape_search_page(query, cached_yt_vid_ids, sp=sp)
             new_this_tier = 0
             for vid in scraped["results"]:
@@ -389,10 +415,12 @@ class AudioDownloader:
                 combined.append(vid)
                 new_this_tier += 1
             filtered_ids.update(scraped["filtered_too_long"])
-            logging.info(
-                f"Tubio search tier {tier_idx} result: raw={scraped['raw_count']} "
-                f"survivors={len(scraped['results'])} new={new_this_tier} too_long={len(scraped['filtered_too_long'])} "
-                f"combined={len(combined)}"
+            log_event(
+                "tubio", "tubio.search_tier_completed",
+                tier=tier_idx, raw=scraped["raw_count"],
+                survivors=len(scraped["results"]), new=new_this_tier,
+                too_long=len(scraped["filtered_too_long"]),
+                combined=len(combined),
             )
 
         tiers_tried = len(tiers)
@@ -401,9 +429,12 @@ class AudioDownloader:
         start = page * page_size
         end = start + page_size
         filtered_too_long = len(filtered_ids - seen)
-        logging.info(
-            f"Tubio search done: query={query!r} tiers_tried={tiers_tried} total_results={len(combined)} "
-            f"page={page}/{total_pages} returned={len(combined[start:end])} filtered_too_long={filtered_too_long}"
+        log_event(
+            "tubio", "tubio.search_source_completed",
+            tiers_tried=tiers_tried, total_results=len(combined),
+            page=page, total_pages=total_pages,
+            returned=len(combined[start:end]),
+            filtered_too_long=filtered_too_long,
         )
         return {
             "results": combined[start:end],
@@ -422,10 +453,17 @@ class AudioDownloader:
             response = requests.get(thumbnail_url, timeout=10)
             response.raise_for_status()
             DataInterface().save_thumbnail(crc, response.content)
-            logging.info(f"Cached thumbnail for video {video_id}")
+            log_event(
+                "tubio", "tubio.thumbnail_cached",
+                video_id=video_id, crc=crc,
+            )
             return DataInterface().get_thumbnail_path(crc)
-        except Exception:
-            logging.exception(f"Failed to download thumbnail for {video_id}")
+        except Exception as error:
+            log_event(
+                "tubio", "tubio.thumbnail_download_failed",
+                level=logging.WARNING, video_id=video_id, crc=crc,
+                exc_info=error, error_type=type(error).__name__,
+            )
             return None
 
     @staticmethod
@@ -448,7 +486,7 @@ class AudioDownloader:
         if progress_hooks:
             opts['progress_hooks'] = progress_hooks
         if ConfigManager().tubio.cookie_path.exists() and not ConfigManager().debug_mode:
-            logging.info(f"Using cookie file: {ConfigManager().tubio.cookie_path}")
+            log_event("tubio", "tubio.cookie_file_enabled")
             opts['cookiefile'] = str(ConfigManager().tubio.cookie_path)
         if ConfigManager().debug_mode:
             opts['nocheckcertificate'] = True
@@ -478,9 +516,10 @@ class AudioDownloader:
             fallback_client = ConfigManager().tubio.youtube_403_fallback_player_client
             if "HTTP Error 403" not in str(e) or not fallback_client:
                 raise
-            logging.warning(
-                "YouTube media download returned HTTP 403; retrying with player_client=%s",
-                fallback_client,
+            log_event(
+                "tubio", "tubio.download_retry",
+                level=logging.WARNING, video_id=video_id,
+                reason="http_403", player_client=fallback_client,
             )
             retry_opts = AudioDownloader._with_youtube_player_client(ydl_opts, fallback_client)
             with yt_dlp.YoutubeDL(retry_opts) as ydl:
@@ -488,7 +527,10 @@ class AudioDownloader:
 
     @staticmethod
     def download_youtube_audio(video_id: str, title: str, user: User, crc: int|None = None) -> None:
-        logging.info(f"Tubio downloading video_id:={video_id}")
+        log_event(
+            "tubio", "tubio.audio_download_started",
+            user=user, video_id=video_id, requested_crc=crc,
+        )
         temp_file = DataInterface().find_avail_temp_file_path(ext=".%(ext)s")
         temp_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -531,6 +573,10 @@ class AudioDownloader:
         output_file = DataInterface().get_audio_path(crc)
         output_file.parent.mkdir(parents=True, exist_ok=True)
         os.rename(temp_file, output_file)
+        log_event(
+            "tubio", "tubio.audio_download_completed",
+            user=user, video_id=video_id, crc=crc,
+        )
 
     @staticmethod
     def cache_youtube_audio(audio_metadata: AudioMetadata) -> None:
@@ -539,10 +585,9 @@ class AudioDownloader:
         if not video_id:
             raise ValueError("Cannot cache audio without a YouTube video ID")
 
-        logging.info(
-            "Tubio lazy audio download started crc=%d video_id=%s",
-            audio_metadata.crc,
-            video_id,
+        log_event(
+            "tubio", "tubio.lazy_download_started",
+            crc=audio_metadata.crc, video_id=video_id,
         )
         temp_file = DataInterface().find_avail_temp_file_path(ext=".%(ext)s")
         temp_file.parent.mkdir(parents=True, exist_ok=True)
@@ -575,19 +620,19 @@ class AudioDownloader:
                     raise ValueError("Audio metadata was removed while caching")
                 current.is_cached = True
             progress.status = "complete"
-            logging.info(
-                "Tubio lazy audio download completed crc=%d video_id=%s output=%s",
-                audio_metadata.crc,
-                video_id,
-                output_file,
+            log_event(
+                "tubio", "tubio.lazy_download_completed",
+                crc=audio_metadata.crc, video_id=video_id,
+                output=output_file.name,
             )
         except Exception as exc:
             progress.status = "error"
             progress.error = str(exc)
             temp_file.with_suffix(".m4a").unlink(missing_ok=True)
-            logging.exception(
-                "Tubio lazy audio download failed crc=%d video_id=%s",
-                audio_metadata.crc,
-                video_id,
+            log_event(
+                "tubio", "tubio.lazy_download_failed",
+                level=logging.ERROR, crc=audio_metadata.crc,
+                video_id=video_id, exc_info=exc,
+                error_type=type(exc).__name__,
             )
             raise

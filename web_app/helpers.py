@@ -24,6 +24,7 @@ from web_app.redis_client import get_redis
 from web_app.data_interface import DataInterface
 from web_app.users import User
 from web_app.errors import *
+from web_app.logging_utils import log_event
 
 
 def get_all_data_interfaces() -> list[DataInterface]:
@@ -248,7 +249,10 @@ def generate_ephemeral_keypair() -> tuple[str, str]:
     # Store private key in Redis (TTL from config)
     _store_ephemeral_key(session_id, private_key)
     
-    logging.debug(f"Generated ephemeral keypair, session_id: {session_id}")
+    log_event(
+        "api", "api.ephemeral_key_generated",
+        level=logging.DEBUG, session_id=session_id,
+    )
     return session_id, public_pem
 
 
@@ -307,7 +311,11 @@ def decode_decrypt_decompress(encrypted_payload: dict) -> dict:
         return json.loads(json_data.decode('utf-8'))
         
     except Exception as e:
-        logging.warning(f"Decryption failed for session {session_id}: {e}")
+        log_event(
+            "api", "api.decryption_failed",
+            level=logging.WARNING, session_id=session_id, exc_info=e,
+            error_type=type(e).__name__,
+        )
         raise APIError(f"Failed to decrypt request: {str(e)}")
 
 def parse_request(require_login: bool = True, require_admin: bool = True) -> dict:

@@ -228,8 +228,14 @@ class TestRequestLogging:
              caplog.at_level(logging.INFO):
             main_module.before_request()
 
-        assert "Processing request: client=127.0.0.1, path=/example, method=GET" in caplog.text
-        assert "username=" not in caplog.text
+        payload = json.loads(caplog.records[-1].getMessage())
+        assert payload["event"] == "request.started"
+        assert payload["app"] == "web"
+        assert payload["ip"] == "127.0.0.1"
+        assert payload["user"] is None
+        assert payload["path"] == "/example"
+        assert payload["method"] == "GET"
+        assert payload["request_id"]
 
     def test_before_request_logs_authenticated_username(self, app_context, caplog):
         from web_app import __main__ as main_module
@@ -247,7 +253,11 @@ class TestRequestLogging:
             flask_login.login_user(user)
             main_module.before_request()
 
-        assert "Processing request: client=127.0.0.1, username=alice, path=/example, method=GET" in caplog.text
+        payload = json.loads(caplog.records[-1].getMessage())
+        assert payload["event"] == "request.started"
+        assert payload["app"] == "web"
+        assert payload["ip"] == "127.0.0.1"
+        assert payload["user"] == "alice"
 
     def test_before_request_skips_sentinel_polling_logs(self, app_context, caplog):
         from web_app import __main__ as main_module
@@ -263,7 +273,7 @@ class TestRequestLogging:
              caplog.at_level(logging.INFO):
             main_module.before_request()
 
-        assert "Processing request:" not in caplog.text
+        assert not caplog.records
 
     def test_before_request_skips_dev_terminal_input_logs(self, app_context, caplog):
         from web_app import __main__ as main_module
@@ -279,7 +289,7 @@ class TestRequestLogging:
              caplog.at_level(logging.INFO):
             main_module.before_request()
 
-        assert "Processing request:" not in caplog.text
+        assert not caplog.records
 
 
 class TestScheduledTasks:

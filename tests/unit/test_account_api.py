@@ -1,6 +1,8 @@
 """Unit tests for account API routes."""
 
 import pytest
+import json
+import logging
 from contextlib import contextmanager
 from unittest.mock import patch
 from unittest.mock import Mock
@@ -68,7 +70,8 @@ class TestDeleteAccountRoute:
                                     mock_data_interface,
                                     mock_get_all_data_interfaces,
                                     logged_in_user,
-                                    regular_user):
+                                    regular_user,
+                                    caplog):
         mock_subapp_data_interface_class = Mock()
         mock_subapp_data_interface = Mock()
         mock_subapp_data_interface_class.return_value = mock_subapp_data_interface
@@ -80,7 +83,12 @@ class TestDeleteAccountRoute:
         ])
         _mock_edit_users(mock_data_interface, users_file)
 
-        response = logged_in_user.post('/account/delete', data={'password': regular_user.password})
+        with caplog.at_level(logging.INFO):
+            response = logged_in_user.post(
+                '/account/delete',
+                data={'password': regular_user.password},
+                environ_base={'REMOTE_ADDR': '127.0.0.1'},
+            )
 
         assert response.status_code == 302
         assert response.location.endswith('/')
@@ -91,6 +99,17 @@ class TestDeleteAccountRoute:
 
         with logged_in_user.session_transaction() as session:
             assert '_user_id' not in session
+
+        events = [
+            json.loads(record.getMessage())
+            for record in caplog.records
+            if record.getMessage().startswith('{')
+        ]
+        deleted = next(event for event in events if event["event"] == "account.deleted")
+        assert deleted["app"] == "account"
+        assert deleted["user"] == regular_user.id
+        assert deleted["ip"] == "127.0.0.1"
+        assert deleted["request_id"]
 
     @patch('web_app.account_api.DataInterface')
     def test_delete_account_wrong_password(self, mock_data_interface, logged_in_user, regular_user):

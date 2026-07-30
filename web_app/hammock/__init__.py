@@ -17,7 +17,8 @@ from web_app.app import csrf
 from web_app.config import ConfigManager
 from web_app.errors import APIError
 from web_app.hammock.data_interface import DataInterface, slugify
-from web_app.helpers import cur_user, get_ip, limiter, parse_request, register_app_name
+from web_app.helpers import cur_user, limiter, parse_request, register_app_name
+from web_app.logging_utils import log_event
 
 hammock_api = Blueprint(
     'hammock',
@@ -131,9 +132,13 @@ def new_post():
         except APIError as e:
             return fail(str(e))
 
-        logging.info(
-            f"Hammock post created: {project_slug}/{post_slug} template={template} "
-            f"by={user.id} from={get_ip()}"
+        log_event(
+            "hammock",
+            "hammock.post_created",
+            user=user,
+            project=project_slug,
+            post=post_slug,
+            template=template,
         )
         if wants_json:
             return jsonify({"redirect_url": url_for('.view_post', project=project_slug, post=post_slug)})
@@ -228,9 +233,12 @@ def edit_post(project: str, post: str):
                 return jsonify({"error": str(e)}), 400
             flash(str(e), "error")
             return redirect(url_for('.edit_post', project=project, post=post))
-        logging.info(
-            f"Hammock post edited: {project}/{post} template={template} "
-            f"by={cur_user().id} from={get_ip()}"
+        log_event(
+            "hammock",
+            "hammock.post_updated",
+            project=project,
+            post=post,
+            template=template,
         )
         flash("Saved.", "success")
         if wants_json:
@@ -275,9 +283,13 @@ def add_gallery_images(project: str, post: str):
     except APIError as e:
         flash(str(e), "error")
         return redirect(url_for('.edit_post', project=project, post=post))
-    logging.info(
-        f"Hammock gallery media added: {project}/{post} count={n} "
-        f"by={user.id} from={get_ip()}"
+    log_event(
+        "hammock",
+        "hammock.gallery_media_added",
+        user=user,
+        project=project,
+        post=post,
+        count=n,
     )
     flash(f"Uploaded {n} media item{'s' if n != 1 else ''}.", "success")
     return redirect(url_for('.edit_post', project=project, post=post))
@@ -292,9 +304,12 @@ def delete_gallery_image(project: str, post: str, filename: str):
     except APIError as e:
         flash(str(e), "error")
         return redirect(url_for('.edit_post', project=project, post=post))
-    logging.info(
-        f"Hammock gallery media deleted: {project}/{post}/{filename} "
-        f"by={cur_user().id} from={get_ip()}"
+    log_event(
+        "hammock",
+        "hammock.gallery_media_deleted",
+        project=project,
+        post=post,
+        filename=filename,
     )
     return redirect(url_for('.edit_post', project=project, post=post))
 
@@ -305,9 +320,13 @@ def delete_post(project: str, post: str):
     di = DataInterface()
     meta = di.get_post_meta(project, post)
     di.delete_post(project, post)
-    logging.info(
-        f"Hammock post deleted: {project}/{post} owner={meta.owner or '<legacy>'} "
-        f"template={meta.type.value} by={cur_user().id} from={get_ip()}"
+    log_event(
+        "hammock",
+        "hammock.post_deleted",
+        project=project,
+        post=post,
+        owner=meta.owner,
+        template=meta.type.value,
     )
     flash("Post deleted.", "success")
     return redirect(url_for('.index'))
@@ -362,7 +381,13 @@ def upload_post():
         actor,
         date,
     )
-    logging.info(f"Hammock post uploaded (raw API): {project}/{post_name} by={actor} from={get_ip()}")
+    log_event(
+        "hammock",
+        "hammock.raw_post_uploaded",
+        user=actor,
+        project=project,
+        post=post_name,
+    )
     return jsonify({"success": True, "message": f"Post {project}/{post_name} uploaded"}), 200
 
 

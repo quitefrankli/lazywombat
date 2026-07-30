@@ -19,6 +19,7 @@ _M = TypeVar("_M", bound=BaseModel)
 
 from web_app.users import User, UsersFile
 from web_app.config import ConfigManager
+from web_app.logging_utils import log_event
 
 
 class _S3Client:
@@ -36,19 +37,28 @@ class _S3Client:
         return str(file.relative_to(ConfigManager().save_data_path).as_posix())
 
     def download_file(self, file: Path) -> None:
-        logging.info(f"Downloading {self._get_s3_path(file)} from s3 to {file}")
+        log_event(
+            "storage", "storage.s3_download_started",
+            source=self._get_s3_path(file), destination=str(file),
+        )
         if not file.parent.exists():
             file.parent.mkdir(exist_ok=True, parents=True)
         try:
             self.s3_client.download_file(self.BUCKET_NAME, self._get_s3_path(file), str(file))
         except ClientError as e:
             if e.response['Error']['Code'] == "404":
-                logging.warning(f"File {file} not found in s3")
+                log_event(
+                    "storage", "storage.s3_file_missing",
+                    level=logging.WARNING, path=str(file),
+                )
             else:
                 raise
 
     def upload_file(self, file: Path) -> None:
-        logging.info(f"Uploading {self._get_s3_path(file)} to s3 from {file}")
+        log_event(
+            "storage", "storage.s3_upload_started",
+            source=str(file), destination=self._get_s3_path(file),
+        )
         self.s3_client.upload_file(str(file), self.BUCKET_NAME, self._get_s3_path(file))
 
 class _OfflineClient:

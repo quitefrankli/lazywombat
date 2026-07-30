@@ -12,6 +12,13 @@
 
 * Production resource safety: when working on the production server, do not start a separate debug/test web app. Reuse existing diagnostics, keep tests and investigative commands narrowly scoped, and avoid full test suites, large generated media/transcodes, load tests, or other resource-intensive work unless explicitly requested.
 
+* Logging and auditability:
+    - Emit application logs through `web_app.logging_utils.log_event`; do not call `logging.debug/info/warning/error/exception/critical/log` directly.
+    - Every event must have a stable dotted event name and the owning subapp in `app`. `log_event` always includes `app`, `ip`, and `user` (nullable), and automatically adds the request correlation ID when called during a request.
+    - Every state-changing route must log its outcome: success, handled rejection, and handled failure. Include stable resource IDs, status/reason codes, and useful counts, but do not log request bodies, credentials, tokens, cookies, card data, prompts, free-form user content, or other secrets.
+    - When catching an exception instead of re-raising it, log the handled failure with `exc_info` and `error_type`. Background work must pass the initiating user when known and include its durable correlation key (for example `run_id`, `batch_id`, or `job_id`).
+    - Generic request start/completion/exception events are provided centrally. Do not add redundant “request received” messages in individual routes; add semantic operation events that explain what the request actually changed.
+
 * GitHub Actions intentionally does not install FFmpeg to keep CI fast. Mark every test that requires or invokes `ffmpeg` or `ffprobe` with `@pytest.mark.ffmpeg`; the CI workflow excludes these tests with `-m "not ffmpeg"`. Prefer mocked media commands for non-transcoding behavior where practical.
 
 * Project Architecture:

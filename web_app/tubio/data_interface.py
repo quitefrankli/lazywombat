@@ -12,6 +12,7 @@ from pydub import AudioSegment
 from web_app.data_interface import DataInterface as BaseDataInterface
 from web_app.users import User
 from web_app.config import ConfigManager
+from web_app.logging_utils import log_event
 
 
 class Playlist(BaseModel):
@@ -162,7 +163,10 @@ class DataInterface(BaseDataInterface):
         crc = binascii.crc32(audio_data)
 
         if crc in self.get_metadata().audios:
-            logging.warning(f"Audio with crc {crc} already exists, skipping save.")
+            log_event(
+                "tubio", "tubio.audio_save_skipped",
+                level=logging.WARNING, crc=crc, reason="already_exists",
+            )
             return crc  # already exists
 
         audio_path = self.app_audio_dir / f"{crc}.{ext}"
@@ -220,10 +224,10 @@ class DataInterface(BaseDataInterface):
 
         for crc in unused_crcs:
             self.atomic_delete(self.app_audio_dir / f"{crc}.m4a")
-            logging.info("Deleted unused audio with crc %s.", crc)
-        logging.info(
-            "Tubio unused-track cleanup completed removed=%d",
-            len(unused_crcs),
+            log_event("tubio", "tubio.unused_audio_deleted", crc=crc)
+        log_event(
+            "tubio", "tubio.unused_track_cleanup_completed",
+            removed=len(unused_crcs),
         )
 
     def delete_user_data(self, user: User) -> None:
@@ -254,9 +258,9 @@ class DataInterface(BaseDataInterface):
                     ):
                         user_metadata.playlists.pop(key)
                         removed += 1
-        logging.info(
-            "Tubio Surprise playlist cleanup completed removed=%d",
-            removed,
+        log_event(
+            "tubio", "tubio.surprise_cleanup_completed",
+            removed=removed,
         )
 
     def cleanup_unused_thumbnails(self) -> None:

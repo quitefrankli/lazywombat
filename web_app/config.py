@@ -538,6 +538,9 @@ class ConfigManager:
             "%(asctime)s %(levelname)s worker=%(process)d "
             "thread=%(thread)d %(message)s"
         )
+        self.request_id_header = "X-Request-ID"
+        self.request_log_warning_status = 400
+        self.request_log_error_status = 500
         # TTL for the per-job exactly-once lock guarding scheduled cron jobs so
         # they run once across gunicorn workers. Must exceed the longest job
         # runtime and matches the jobs' misfire_grace_time.

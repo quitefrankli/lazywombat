@@ -1,3 +1,5 @@
+import json
+
 from pathlib import Path
 
 from flask import jsonify, request
@@ -30,7 +32,22 @@ def _iter_recent_log_files(logs_dir: Path, file_count: int) -> list[Path]:
 
 
 def _line_has_suppressed_path(line: str, suppressed_paths: set[str]) -> bool:
-    return any(f"path={path}," in line or f"path={path} " in line for path in suppressed_paths)
+    if any(f"path={path}," in line or f"path={path} " in line for path in suppressed_paths):
+        return True
+
+    json_start = line.find("{")
+    if json_start == -1:
+        return False
+    try:
+        payload = json.loads(line[json_start:])
+    except (json.JSONDecodeError, TypeError):
+        return False
+
+    return (
+        isinstance(payload, dict)
+        and payload.get("event") in {"request.started", "request.completed", "request.exception"}
+        and payload.get("path") in suppressed_paths
+    )
 
 
 def _read_log_lines(logs_dir: Path, file_count: int | None = None) -> list[str]:

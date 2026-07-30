@@ -11,6 +11,7 @@ import logging
 from web_app.config import ConfigManager
 from web_app.crosswords.word_bank import InvalidThemeError
 from web_app.helpers import MeridianError, CodexCLIError, meridian_text, codex_cli_text
+from web_app.logging_utils import log_event
 
 _SYSTEM = (
     "You are a strict validator. You are given a single English word and must decide "
@@ -34,11 +35,18 @@ def is_real_word(theme: str, timeout_s: float | None = None) -> bool:
             agent="crosswords-theme",
         )
     except MeridianError as e:
-        logging.warning("theme_check: %s - allowing theme", e)
+        log_event(
+            "crosswords", "crosswords.theme_check_failed_open",
+            level=logging.WARNING, provider="meridian",
+            exc_info=e, error_type=type(e).__name__,
+        )
         return True
 
     ok = text.strip().upper().startswith("YES")
-    logging.info("Crosswords Meridian theme check: theme=%s accepted=%s", theme, ok)
+    log_event(
+        "crosswords", "crosswords.theme_checked",
+        provider="meridian", theme_length=len(theme), accepted=ok,
+    )
     return ok
 
 
@@ -57,11 +65,18 @@ def is_real_word_codex(theme: str, timeout_s: float | None = None) -> bool | Non
             timeout_s=timeout_s or config.crosswords.llm_theme_check_timeout_s,
         )
     except CodexCLIError as e:
-        logging.warning("theme_check_codex: %s", e)
+        log_event(
+            "crosswords", "crosswords.theme_check_unavailable",
+            level=logging.WARNING, provider="codex",
+            exc_info=e, error_type=type(e).__name__,
+        )
         return None
 
     ok = text.strip().upper().startswith("YES")
-    logging.info("Crosswords Codex theme check: theme=%s accepted=%s", theme, ok)
+    log_event(
+        "crosswords", "crosswords.theme_checked",
+        provider="codex", theme_length=len(theme), accepted=ok,
+    )
     return ok
 
 
@@ -69,7 +84,10 @@ def require_real_word(theme: str) -> None:
     """Raise InvalidThemeError when the configured provider rejects the theme."""
     config = ConfigManager()
     if config.debug_mode:
-        logging.info("Crosswords theme check skipped in debug mode: theme=%s", theme)
+        log_event(
+            "crosswords", "crosswords.theme_check_skipped",
+            theme_length=len(theme), reason="debug_mode",
+        )
         return
 
     if config.llm.api_source == "codex":

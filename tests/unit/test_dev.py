@@ -31,6 +31,24 @@ def test_extract_request_path_and_glob_filter():
     assert not _path_matches_filter("/metrics/", "/hammock/*")
 
 
+def test_extract_request_fields_from_structured_start_event_only():
+    started = (
+        '2026-07-30 10:00:00,000 INFO worker=1 thread=2 '
+        '{"app":"hammock","event":"request.started","ip":"8.8.8.8",'
+        '"path":"/hammock/cats","user":null}\n'
+    )
+    completed = (
+        '2026-07-30 10:00:00,010 INFO worker=1 thread=2 '
+        '{"app":"hammock","event":"request.completed","ip":"8.8.8.8",'
+        '"path":"/hammock/cats","status":200,"user":null}\n'
+    )
+
+    assert _extract_client_ip(started) == "8.8.8.8"
+    assert _extract_request_path(started) == "/hammock/cats"
+    assert _extract_client_ip(completed) is None
+    assert _extract_request_path(completed) is None
+
+
 def test_build_hit_series_buckets_events_by_hour():
     events = [
         (_extract_timestamp("2026-05-12 10:15:00,000 INFO Processing request: client=1.1.1.1, path=/"), "1.1.1.1"),
@@ -81,6 +99,30 @@ def test_read_log_lines_hides_suppressed_request_paths(tmp_path):
     assert _read_log_lines(tmp_path) == [
         "2026-05-25 17:41:10,281 INFO Processing request: client=1.1.1.1, path=/example, method=GET"
     ]
+
+
+def test_read_log_lines_hides_structured_lifecycle_logs_for_suppressed_paths(tmp_path):
+    lifecycle_started = (
+        '2026-07-30 10:00:00,000 INFO {"app":"dev","event":"request.started",'
+        '"path":"/dev/terminal/input"}'
+    )
+    lifecycle_completed = (
+        '2026-07-30 10:00:00,010 INFO {"app":"dev","event":"request.completed",'
+        '"path":"/dev/terminal/input","status":200}'
+    )
+    audit_event = (
+        '2026-07-30 10:00:00,005 INFO {"app":"dev","event":"terminal.input_written",'
+        '"bytes":4}'
+    )
+    regular_request = (
+        '2026-07-30 10:00:01,000 INFO {"app":"dev","event":"request.started",'
+        '"path":"/example"}'
+    )
+    (tmp_path / "web_app.log").write_text(
+        "\n".join((lifecycle_started, audit_event, lifecycle_completed, regular_request))
+    )
+
+    assert _read_log_lines(tmp_path) == [audit_event, regular_request]
 
 
 def test_get_logs_returns_all_selected_files_without_default_line_limit(tmp_path):

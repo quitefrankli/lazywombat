@@ -1,6 +1,7 @@
 import base64
 from contextlib import contextmanager
 from datetime import datetime
+import json
 import logging
 from urllib.parse import quote_plus
 from unittest.mock import patch
@@ -177,9 +178,16 @@ def test_invalid_client_logs_safe_diagnostics(
         )
 
     assert response.status_code == 401
-    assert "method=basic" in caplog.text
-    assert "reason=secret_mismatch" in caplog.text
-    assert "client_id_match=True" in caplog.text
+    event = next(
+        json.loads(record.getMessage())
+        for record in caplog.records
+        if record.getMessage().startswith("{")
+        and json.loads(record.getMessage()).get("event")
+        == "oauth.client_authentication_failed"
+    )
+    assert event["method"] == "basic"
+    assert event["reason"] == "secret_mismatch"
+    assert event["client_id_match"] is True
     assert supplied_secret not in caplog.text
     assert "do-not-log-code" not in caplog.text
 

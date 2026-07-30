@@ -516,8 +516,8 @@ class TestFileStoreRoutes:
         response = client.post('/file_store/upload', data=data, content_type='multipart/form-data')
 
         assert response.status_code == 302  # Redirect
-        assert 'file_store.upload user=' in caplog.text
-        assert 'files=1' in caplog.text
+        assert '"event": "file_store.upload"' in caplog.text
+        assert '"files": 1' in caplog.text
 
     @patch('web_app.file_store.DataInterface')
     def test_upload_file_rejection_is_logged(self, mock_di_class, client, auth_mock, caplog):
@@ -528,7 +528,7 @@ class TestFileStoreRoutes:
         response = client.post('/file_store/upload', data={}, content_type='multipart/form-data')
 
         assert response.status_code == 302
-        assert 'file_store.upload_rejected user=' in caplog.text
+        assert '"event": "file_store.upload_rejected"' in caplog.text
 
     @patch('web_app.file_store.DataInterface')
     def test_download_file(self, mock_di_class, client, auth_mock, tmp_path, caplog):
@@ -547,8 +547,8 @@ class TestFileStoreRoutes:
         response = client.get('/file_store/download/test.txt')
 
         assert response.status_code == 200
-        assert 'file_store.download user=' in caplog.text
-        assert "path='test.txt'" in caplog.text
+        assert '"event": "file_store.download"' in caplog.text
+        assert '"path": "test.txt"' in caplog.text
 
     @patch('web_app.file_store.DataInterface')
     def test_download_file_uses_display_filename(self, mock_di_class, client, auth_mock, tmp_path):
@@ -596,8 +596,8 @@ class TestFileStoreRoutes:
         response = client.get('/file_store/download-folder/reports')
 
         assert response.status_code == 200
-        assert 'file_store.download_folder user=' in caplog.text
-        assert "path='reports'" in caplog.text
+        assert '"event": "file_store.download_folder"' in caplog.text
+        assert '"path": "reports"' in caplog.text
         with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
             assert archive.read('reports/2026/budget.csv') == b'budget'
 
@@ -641,8 +641,8 @@ class TestFileStoreRoutes:
         # The user's file/folder entries were cleared in the transaction.
         assert metadata.users[auth_mock.id].files == []
         assert metadata.users[auth_mock.id].folders == []
-        assert 'file_store.delete_all user=' in caplog.text
-        assert 'files=2' in caplog.text
+        assert '"event": "file_store.delete_all"' in caplog.text
+        assert '"files": 2' in caplog.text
 
 
 class TestFileStoreBlueprint:

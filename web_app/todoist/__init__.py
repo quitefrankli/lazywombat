@@ -12,6 +12,7 @@ from web_app.users import User
 from web_app.todoist.data_interface import DataInterface, GoalState, Goal
 from web_app.todoist.visualiser import plot_velocity
 from web_app.todoist.goals import goals
+from web_app.logging_utils import log_event
 
 
 PAGE_SIZE = ConfigManager().todoist.default_page_size
@@ -158,7 +159,10 @@ def visualise_goal_velocity():
     try:
         embeddable_plotly_html = plot_velocity(goals)
     except Exception as e:
-        logging.error(f"Failed to plot velocity: {e}")
+        log_event(
+            "todoist", "todoist.velocity_plot_failed",
+            level=logging.ERROR, exc_info=e, error_type=type(e).__name__,
+        )
         flask.flash('Failed to plot velocity, try completing more goals and/or wait a couple days', category='error')
         return get_default_redirect()
 

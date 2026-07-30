@@ -30,6 +30,7 @@ from web_app.crosswords.word_bank import (
     WordClue,
 )
 from web_app.helpers import MeridianError, CodexCLIError, meridian_text, codex_cli_text
+from web_app.logging_utils import log_event
 
 
 class WordSource(ABC):
@@ -48,9 +49,16 @@ class DebugSource(WordSource):
     def get_pairs(self, theme: str, difficulty: int, count: int) -> List[WordClue]:
         pairs = DEBUG_SETS.get((theme.lower(), difficulty))
         if pairs:
-            logging.info("Crosswords DebugSource returned %s pairs for theme=%s difficulty=%s", len(pairs), theme, difficulty)
+            log_event(
+                "crosswords", "crosswords.word_source_completed",
+                source="DebugSource", pairs=len(pairs),
+                theme_length=len(theme), difficulty=difficulty,
+            )
             return list(pairs)
-        logging.info("Crosswords DebugSource has no fixture for theme=%s difficulty=%s", theme, difficulty)
+        log_event(
+            "crosswords", "crosswords.word_source_empty",
+            source="DebugSource", theme_length=len(theme), difficulty=difficulty,
+        )
         return []
 
 
@@ -63,7 +71,10 @@ class FallbackSource(WordSource):
     def get_pairs(self, theme: str, difficulty: int, count: int) -> List[WordClue]:
         count = max(2, min(count, len(FALLBACK_POOL)))
         pairs = self._rng.sample(FALLBACK_POOL, count)
-        logging.info("Crosswords FallbackSource returned %s hardcoded pairs", len(pairs))
+        log_event(
+            "crosswords", "crosswords.word_source_completed",
+            source="FallbackSource", pairs=len(pairs),
+        )
         return pairs
 
 
@@ -111,11 +122,19 @@ class MeridianSource(WordSource):
                 agent="crosswords",
             )
         except MeridianError as e:
-            logging.warning("MeridianSource: %s", e)
+            log_event(
+                "crosswords", "crosswords.word_source_failed",
+                level=logging.WARNING, source="MeridianSource",
+                exc_info=e, error_type=type(e).__name__,
+            )
             return []
 
         pairs = _parse_pairs(text)
-        logging.info("Crosswords MeridianSource returned %s usable pairs for theme=%s difficulty=%s", len(pairs), theme, difficulty)
+        log_event(
+            "crosswords", "crosswords.word_source_completed",
+            source="MeridianSource", pairs=len(pairs),
+            theme_length=len(theme), difficulty=difficulty,
+        )
         return pairs
 
 
@@ -142,11 +161,19 @@ class CodexSource(WordSource):
                 timeout_s=self._timeout or config.crosswords.llm_generation_timeout_s,
             )
         except CodexCLIError as e:
-            logging.warning("CodexSource: %s", e)
+            log_event(
+                "crosswords", "crosswords.word_source_failed",
+                level=logging.WARNING, source="CodexSource",
+                exc_info=e, error_type=type(e).__name__,
+            )
             return []
 
         pairs = _parse_pairs(text)
-        logging.info("Crosswords CodexSource returned %s usable pairs for theme=%s difficulty=%s", len(pairs), theme, difficulty)
+        log_event(
+            "crosswords", "crosswords.word_source_completed",
+            source="CodexSource", pairs=len(pairs),
+            theme_length=len(theme), difficulty=difficulty,
+        )
         return pairs
 
 
@@ -161,16 +188,22 @@ class ChainedSource(WordSource):
         min_pairs = self._min_pairs if self._min_pairs is not None else ConfigManager().crosswords.min_placed_words
         for source in self._sources:
             source_name = source.__class__.__name__
-            logging.info("Crosswords trying %s for theme=%s difficulty=%s count=%s", source_name, theme, difficulty, count)
+            log_event(
+                "crosswords", "crosswords.word_source_started",
+                source=source_name, theme_length=len(theme),
+                difficulty=difficulty, count=count,
+            )
             pairs = source.get_pairs(theme, difficulty, count)
             if len(pairs) >= min_pairs:
-                logging.info("Crosswords selected %s with %s pairs", source_name, len(pairs))
+                log_event(
+                    "crosswords", "crosswords.word_source_selected",
+                    source=source_name, pairs=len(pairs),
+                )
                 return pairs
-            logging.warning(
-                "Crosswords %s returned too few pairs: got=%s required=%s",
-                source_name,
-                len(pairs),
-                min_pairs,
+            log_event(
+                "crosswords", "crosswords.word_source_insufficient",
+                level=logging.WARNING, source=source_name,
+                pairs=len(pairs), required=min_pairs,
             )
         return []
 
@@ -193,7 +226,10 @@ def _parse_pairs(text: str) -> List[WordClue]:
         try:
             items = json.loads(text[start:end + 1])
         except json.JSONDecodeError:
-            logging.warning("MeridianSource: could not parse JSON")
+            log_event(
+                "crosswords", "crosswords.word_source_parse_failed",
+                level=logging.WARNING, source="llm",
+            )
             return []
 
     if not isinstance(items, list):

@@ -13,6 +13,7 @@ from web_app.crosswords.word_bank import (
 )
 from web_app.crosswords.word_source import default_source
 from web_app.helpers import register_app_name
+from web_app.logging_utils import log_event
 
 crosswords_api = Blueprint(
     'crosswords',
@@ -49,35 +50,37 @@ def new_crossword():
         theme = validate_theme(payload.get('theme'))
         require_real_word(theme)
     except InvalidThemeError as e:
-        logging.info("Crosswords rejected theme: raw=%r reason=%s", payload.get('theme'), e)
+        log_event(
+            "crosswords", "crosswords.generation_rejected",
+            level=logging.WARNING, reason="invalid_theme",
+            error_type=type(e).__name__,
+        )
         return jsonify({'error': str(e), 'criteria': theme_criteria()}), 400
 
     difficulty = clamp_difficulty(payload.get('difficulty'))
     count = cfg.crosswords.word_count
-    logging.info(
-        "Crosswords generation requested: theme=%s difficulty=%s source=%s count=%s",
-        theme,
-        difficulty,
-        cfg.llm.api_source,
-        count,
+    log_event(
+        "crosswords", "crosswords.generation_started",
+        theme_length=len(theme), difficulty=difficulty,
+        source=cfg.llm.api_source, count=count,
     )
     pairs = default_source().get_pairs(theme=theme, difficulty=difficulty, count=count)
     if not pairs:
-        logging.warning("Crosswords generation failed: no word pairs theme=%s difficulty=%s source=%s", theme, difficulty, cfg.llm.api_source)
+        log_event(
+            "crosswords", "crosswords.generation_failed",
+            level=logging.WARNING, theme_length=len(theme), difficulty=difficulty,
+            source=cfg.llm.api_source, reason="no_word_pairs",
+        )
         return jsonify({'error': 'Could not generate words for that theme. Try another.'}), 503
 
     puzzle = build_crossword(pairs)
     puzzle['theme'] = theme
     puzzle['difficulty'] = difficulty
     placed = len(puzzle['clues']['across']) + len(puzzle['clues']['down'])
-    logging.info(
-        "Crosswords generated: theme=%s difficulty=%s source=%s pairs=%s placed=%s grid=%sx%s",
-        theme,
-        difficulty,
-        cfg.llm.api_source,
-        len(pairs),
-        placed,
-        puzzle['rows'],
-        puzzle['cols'],
+    log_event(
+        "crosswords", "crosswords.generation_completed",
+        theme_length=len(theme), difficulty=difficulty, source=cfg.llm.api_source,
+        pairs=len(pairs), placed=placed,
+        rows=puzzle["rows"], cols=puzzle["cols"],
     )
     return jsonify(puzzle)

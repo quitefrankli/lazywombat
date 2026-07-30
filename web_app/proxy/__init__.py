@@ -1,3 +1,4 @@
+import logging
 import requests
 from bs4 import BeautifulSoup
 from flask import Blueprint, render_template, request, Response, url_for
@@ -5,6 +6,7 @@ from urllib.parse import urljoin, urlparse
 
 from web_app.config import ConfigManager
 from web_app.helpers import register_app_name, require_admin_blueprint
+from web_app.logging_utils import log_event
 
 
 proxy_api = Blueprint(
@@ -106,6 +108,12 @@ def browse():
         headers = {'User-Agent': proxy_cfg.user_agent}
 
         resp = requests.get(url, headers=headers, timeout=proxy_cfg.request_timeout_s, allow_redirects=True)
+        log_event(
+            "proxy",
+            "proxy.fetch_completed",
+            target_host=urlparse(resp.url).hostname,
+            upstream_status=resp.status_code,
+        )
 
         # Get content type
         content_type = resp.headers.get('Content-Type', 'text/html')
@@ -128,10 +136,38 @@ def browse():
             return Response(resp.content, resp.status_code, headers)
 
     except requests.exceptions.Timeout:
+        log_event(
+            "proxy",
+            "proxy.fetch_failed",
+            level=logging.WARNING,
+            target_host=urlparse(url).hostname,
+            reason="timeout",
+        )
         return render_template("proxy_index.html", url=url, error="Request timed out")
     except requests.exceptions.ConnectionError:
+        log_event(
+            "proxy",
+            "proxy.fetch_failed",
+            level=logging.WARNING,
+            target_host=urlparse(url).hostname,
+            reason="connection_error",
+        )
         return render_template("proxy_index.html", url=url, error="Could not connect to the URL")
     except requests.exceptions.InvalidURL:
+        log_event(
+            "proxy",
+            "proxy.fetch_failed",
+            level=logging.WARNING,
+            reason="invalid_url",
+        )
         return render_template("proxy_index.html", url=url, error="Invalid URL format")
     except Exception as e:
+        log_event(
+            "proxy",
+            "proxy.fetch_failed",
+            level=logging.ERROR,
+            target_host=urlparse(url).hostname,
+            exc_info=e,
+            error_type=type(e).__name__,
+        )
         return render_template("proxy_index.html", url=url, error=f"Error: {str(e)}")

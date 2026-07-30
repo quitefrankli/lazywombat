@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
@@ -259,8 +260,22 @@ class TestSurpriseRoutes:
         )
 
         assert response.status_code == 200
-        assert "Tubio client error" in caplog.text
-        assert "discover-initialize" in caplog.text
+        event = next(
+            json.loads(record.getMessage())
+            for record in caplog.records
+            if record.getMessage().startswith("{")
+            and json.loads(record.getMessage()).get("event") == "tubio.client_error"
+        )
+        assert event["app"] == "tubio"
+        assert event["user"] == auth_mock.id
+        assert event["ip"] == "127.0.0.1"
+        assert event["scope"] == "discover-initialize"
+        assert event["message_length"] == len("Cannot read properties of undefined")
+        assert event["stack_present"] is True
+        assert event["context_present"] is True
+        assert "message" not in event
+        assert "stack" not in event
+        assert "context" not in event
 
     @patch("web_app.tubio.get_playlists_data", return_value=[])
     def test_discover_has_loading_shell_and_contextual_refresh_action(

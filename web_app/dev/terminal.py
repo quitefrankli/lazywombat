@@ -1,4 +1,5 @@
 import fcntl
+import logging
 import os
 import pty
 import select
@@ -15,6 +16,7 @@ from flask import jsonify, request
 from web_app.app import csrf
 from web_app.config import ConfigManager
 from web_app.helpers import limiter
+from web_app.logging_utils import log_event
 
 
 _sessions: dict[str, "TerminalSession"] = {}
@@ -142,10 +144,17 @@ def register_terminal_routes(dev_api):
         with _sessions_lock:
             _reap_idle_sessions()
             if len(_sessions) >= config.dev.terminal_max_sessions:
+                log_event(
+                    "dev",
+                    "terminal.start_rejected",
+                    level=logging.WARNING,
+                    reason="session_limit",
+                )
                 return jsonify({'error': 'session limit reached'}), 429
             sid = uuid.uuid4().hex
             sess = TerminalSession(sid, config.dev.terminal_shell, config.dev.terminal_buffer_bytes)
             _sessions[sid] = sess
+        log_event("dev", "terminal.started", session_id=sid)
         return jsonify({'sid': sid})
 
     @dev_api.route('/terminal/output', methods=['GET'])
@@ -168,8 +177,22 @@ def register_terminal_routes(dev_api):
     def terminal_input():
         sess = _get_session(request.args.get('sid'))
         if not sess or not sess.alive:
+            log_event(
+                "dev",
+                "terminal.input_rejected",
+                level=logging.WARNING,
+                session_id=request.args.get('sid'),
+                reason="no_session",
+            )
             return jsonify({'error': 'no session'}), 404
-        sess.write(request.get_data())
+        data = request.get_data()
+        sess.write(data)
+        log_event(
+            "dev",
+            "terminal.input_written",
+            session_id=sess.sid,
+            bytes=len(data),
+        )
         return ('', 204)
 
     @dev_api.route('/terminal/resize', methods=['POST'])
@@ -183,6 +206,13 @@ def register_terminal_routes(dev_api):
         rows = max(1, min(int(body.get('rows', 24)), 500))
         cols = max(1, min(int(body.get('cols', 80)), 500))
         sess.resize(rows, cols)
+        log_event(
+            "dev",
+            "terminal.resized",
+            session_id=sess.sid,
+            rows=rows,
+            cols=cols,
+        )
         return ('', 204)
 
     @dev_api.route('/terminal/close', methods=['POST'])
@@ -194,4 +224,10 @@ def register_terminal_routes(dev_api):
             sess = _sessions.pop(sid, None)
         if sess:
             sess.close()
+        log_event(
+            "dev",
+            "terminal.closed",
+            session_id=sid,
+            existed=sess is not None,
+        )
         return ('', 204)

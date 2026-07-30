@@ -14,6 +14,7 @@ from web_app.helpers import cur_user, register_app_name, require_login_blueprint
 from web_app.helpers import limiter
 from web_app.config import ConfigManager
 from web_app.file_store.data_interface import DataInterface, format_file_size
+from web_app.logging_utils import log_event
 
 
 file_store_api = Blueprint(
@@ -52,11 +53,6 @@ def _file_size(file: FileStorage) -> int:
     size = file.tell()
     file.seek(0)
     return size
-
-
-def _log_event(level: int, event: str, user, **details) -> None:
-    fields = ' '.join(f'{key}={value!r}' for key, value in sorted(details.items()))
-    logging.log(level, 'file_store.%s user=%s %s', event, user.id, fields)
 
 
 @file_store_api.route('/')
@@ -109,13 +105,19 @@ def upload_file():
     files = request.files.getlist('file')
     archive = request.files.get('folder_archive')
     if not files and not archive:
-        _log_event(logging.WARNING, 'upload_rejected', user, reason='no_file')
+        log_event(
+            "file_store", "file_store.upload_rejected",
+            level=logging.WARNING, user=user, reason="no_file",
+        )
         if is_ajax:
             return {'error': 'No file part'}, 400
         flash('No file part', 'error')
         return redirect(url_for('.index'))
     if files and any(not file.filename for file in files):
-        _log_event(logging.WARNING, 'upload_rejected', user, reason='empty_filename')
+        log_event(
+            "file_store", "file_store.upload_rejected",
+            level=logging.WARNING, user=user, reason="empty_filename",
+        )
         if is_ajax:
             return {'error': 'No selected file'}, 400
         flash('No selected file', 'error')
@@ -166,17 +168,24 @@ def upload_file():
             data_interface.validate_batch_quota(paths, total_bytes, user)
             data_interface.save_files([(file, file.filename) for file in files], [], user)
     except (ValueError, zipfile.BadZipFile) as error:
-        _log_event(logging.WARNING, 'upload_rejected', user, reason=str(error), source=source)
+        log_event(
+            "file_store", "file_store.upload_rejected",
+            level=logging.WARNING, user=user, reason="invalid_upload",
+            source=source, error_type=type(error).__name__,
+        )
         if is_ajax:
             return {'error': str(error)}, 413
         flash(f'Upload failed: {error}', 'error')
         return redirect(url_for('.index'))
     except Exception:
-        logging.exception('file_store.upload_error user=%s source=%s', user.id, source)
+        log_event(
+            "file_store", "file_store.upload_failed",
+            level=logging.ERROR, user=user, source=source, exc_info=True,
+        )
         raise
 
-    _log_event(
-        logging.INFO, 'upload', user, base_path=base_path or '/', bytes=total_bytes,
+    log_event(
+        "file_store", "file_store.upload", user=user, base_path=base_path or '/', bytes=total_bytes,
         files=len(paths), folders=folder_count, source=source,
     )
 
@@ -191,7 +200,10 @@ def upload_file():
 def download_file(filename: str):
     user = cur_user()
     file_path = DataInterface().get_file_path(filename, user)
-    _log_event(logging.INFO, 'download', user, bytes=file_path.stat().st_size, path=filename)
+    log_event(
+        "file_store", "file_store.download",
+        user=user, bytes=file_path.stat().st_size, path=filename,
+    )
     response = send_file(file_path, as_attachment=True, download_name=PurePosixPath(filename).name)
 
     response.cache_control.private = True
@@ -204,8 +216,9 @@ def download_file(filename: str):
 def download_folder(folder_path: str):
     user = cur_user()
     files = DataInterface().get_folder_files(folder_path, user)
-    _log_event(
-        logging.INFO, 'download_folder', user, bytes=sum(file_path.stat().st_size for _, file_path in files),
+    log_event(
+        "file_store", "file_store.download_folder",
+        user=user, bytes=sum(file_path.stat().st_size for _, file_path in files),
         files=len(files), path=folder_path,
     )
     output: queue.Queue[bytes | None] = queue.Queue(
@@ -265,10 +278,13 @@ def delete_file(filename):
     try:
         DataInterface().delete_file(filename, user)
     except FileNotFoundError:
-        _log_event(logging.WARNING, 'delete_missing', user, path=filename)
+        log_event(
+            "file_store", "file_store.delete_missing",
+            level=logging.WARNING, user=user, path=filename,
+        )
         flash('File not found or could not be deleted.', 'error')
         return redirect(url_for('.index'))
-    _log_event(logging.INFO, 'delete', user, path=filename)
+    log_event("file_store", "file_store.delete", user=user, path=filename)
     flash('File deleted successfully!', 'success')
 
     return redirect(url_for('.index'))
@@ -283,10 +299,14 @@ def create_folder():
     try:
         DataInterface().create_folder(path, user)
     except ValueError as error:
-        _log_event(logging.WARNING, 'folder_create_rejected', user, path=path, reason=str(error))
+        log_event(
+            "file_store", "file_store.folder_create_rejected",
+            level=logging.WARNING, user=user, path=path,
+            reason="invalid_path", error_type=type(error).__name__,
+        )
         flash(str(error), 'error')
     else:
-        _log_event(logging.INFO, 'folder_create', user, path=path)
+        log_event("file_store", "file_store.folder_create", user=user, path=path)
     return redirect(url_for('.index', path=request.form.get('parent', '')))
 
 
@@ -298,10 +318,18 @@ def move_path():
     try:
         DataInterface().move_path(source, destination, user)
     except (ValueError, FileNotFoundError) as error:
-        _log_event(logging.WARNING, 'move_rejected', user, destination=destination, reason=str(error), source=source)
+        log_event(
+            "file_store", "file_store.move_rejected",
+            level=logging.WARNING, user=user, destination=destination,
+            reason="invalid_move", source=source,
+            error_type=type(error).__name__,
+        )
         flash(str(error), 'error')
     else:
-        _log_event(logging.INFO, 'move', user, destination=destination, source=source)
+        log_event(
+            "file_store", "file_store.move",
+            user=user, destination=destination, source=source,
+        )
     return redirect(url_for('.index', path=request.form.get('parent', '')))
 
 
@@ -313,10 +341,18 @@ def move_selected():
     try:
         DataInterface().move_paths(paths, destination, user)
     except (ValueError, FileNotFoundError) as error:
-        _log_event(logging.WARNING, 'bulk_move_rejected', user, destination=destination, files=len(paths), reason=str(error))
+        log_event(
+            "file_store", "file_store.bulk_move_rejected",
+            level=logging.WARNING, user=user, destination=destination,
+            files=len(paths), reason="invalid_move",
+            error_type=type(error).__name__,
+        )
         flash(str(error), 'error')
     else:
-        _log_event(logging.INFO, 'bulk_move', user, destination=destination or '/', files=len(paths))
+        log_event(
+            "file_store", "file_store.bulk_move",
+            user=user, destination=destination or '/', files=len(paths),
+        )
         flash(f'Moved {len(paths)} item(s) successfully!', 'success')
     return redirect(url_for('.index', path=request.form.get('parent', ''), mode='list'))
 
@@ -328,10 +364,17 @@ def delete_selected():
     try:
         DataInterface().delete_paths(paths, user)
     except (ValueError, FileNotFoundError) as error:
-        _log_event(logging.WARNING, 'bulk_delete_rejected', user, files=len(paths), reason=str(error))
+        log_event(
+            "file_store", "file_store.bulk_delete_rejected",
+            level=logging.WARNING, user=user, files=len(paths),
+            reason="invalid_delete", error_type=type(error).__name__,
+        )
         flash(str(error), 'error')
     else:
-        _log_event(logging.INFO, 'bulk_delete', user, files=len(paths))
+        log_event(
+            "file_store", "file_store.bulk_delete",
+            user=user, files=len(paths),
+        )
         flash(f'Deleted {len(paths)} item(s) successfully!', 'success')
     return redirect(url_for('.index', path=request.form.get('parent', ''), mode='list'))
 
@@ -350,6 +393,9 @@ def delete_all_files():
             user_metadata.folders = []
             data_interface._cleanup_unreferenced(metadata)
 
-    _log_event(logging.INFO, 'delete_all', user, files=file_count)
+    log_event(
+        "file_store", "file_store.delete_all",
+        user=user, files=file_count,
+    )
     flash('All files deleted successfully!', 'success')
     return redirect(url_for('.index'))

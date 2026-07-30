@@ -1,5 +1,6 @@
 import fnmatch
 import ipaddress
+import json
 import re
 import time
 
@@ -21,22 +22,51 @@ _TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d{3}")
 _geo_cache: dict[str, tuple[float, dict | None]] = {}
 
 
+def _extract_structured_event(line: str) -> dict | None:
+    json_start = line.find("{")
+    if json_start == -1:
+        return None
+    try:
+        payload = json.loads(line[json_start:])
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _normalize_client_ip(raw: object) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    try:
+        return str(ipaddress.ip_address(raw.strip("[]")))
+    except ValueError:
+        return None
+
+
 def _iter_log_files(logs_dir: Path) -> list[Path]:
     return sorted(p for p in logs_dir.glob("web_app.log*") if p.is_file())
 
 
 def _extract_client_ip(line: str) -> str | None:
+    payload = _extract_structured_event(line)
+    if payload is not None:
+        if payload.get("event") != "request.started":
+            return None
+        return _normalize_client_ip(payload.get("ip"))
+
     match = _CLIENT_RE.search(line)
     if not match:
         return None
-    raw = match.group(1).strip("[]")
-    try:
-        return str(ipaddress.ip_address(raw))
-    except ValueError:
-        return None
+    return _normalize_client_ip(match.group(1))
 
 
 def _extract_request_path(line: str) -> str | None:
+    payload = _extract_structured_event(line)
+    if payload is not None:
+        if payload.get("event") != "request.started":
+            return None
+        path = payload.get("path")
+        return path if isinstance(path, str) else None
+
     match = _PATH_RE.search(line)
     if not match:
         return None

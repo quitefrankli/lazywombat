@@ -30,6 +30,7 @@ from web_app.hammock.image_processing import (
 )
 from web_app.redis_client import rmw_lock
 from web_app.users import User
+from web_app.logging_utils import log_event
 
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -550,9 +551,10 @@ class DataInterface(BaseDataInterface):
         try:
             owner = BaseDataInterface().load_users().get(storage_owner_id)
         except (OSError, ValueError) as error:
-            logging.warning(
-                "Could not load Hammock gallery owner for quota "
-                f"calculation: {error}"
+            log_event(
+                "hammock", "hammock.gallery_owner_load_failed",
+                level=logging.WARNING, user=storage_owner_id,
+                exc_info=error, error_type=type(error).__name__,
             )
             owner = None
         # Falling back to non-elevated is conservative when an old post refers
@@ -574,9 +576,10 @@ class DataInterface(BaseDataInterface):
                 # Another worker may clean the same abandoned entry.
                 continue
             except OSError as error:
-                logging.warning(
-                    f"Could not clean stale Hammock upload staging "
-                    f"{entry}: {error}"
+                log_event(
+                    "hammock", "hammock.gallery_staging_cleanup_failed",
+                    level=logging.WARNING, path=entry.name,
+                    exc_info=error, error_type=type(error).__name__,
                 )
 
     def _prepare_gallery_uploads(
@@ -837,17 +840,21 @@ class DataInterface(BaseDataInterface):
                     self.atomic_delete(moved_path)
                 except OSError as rollback_error:
                     rollback_failed = True
-                    logging.error(
-                        "Could not roll back Hammock gallery file "
-                        f"{moved_path}: {rollback_error}"
+                    log_event(
+                        "hammock", "hammock.gallery_rollback_failed",
+                        level=logging.ERROR, path=moved_path.name,
+                        exc_info=rollback_error,
+                        error_type=type(rollback_error).__name__,
                     )
             if journal_path is not None and not rollback_failed:
                 try:
                     self.atomic_delete(journal_path)
                 except OSError as cleanup_error:
-                    logging.warning(
-                        "Could not remove Hammock gallery publish journal "
-                        f"{journal_path}: {cleanup_error}"
+                    log_event(
+                        "hammock", "hammock.gallery_journal_cleanup_failed",
+                        level=logging.WARNING, path=journal_path.name,
+                        exc_info=cleanup_error,
+                        error_type=type(cleanup_error).__name__,
                     )
             if isinstance(error, OSError):
                 raise APIError(
@@ -861,9 +868,11 @@ class DataInterface(BaseDataInterface):
             except OSError as error:
                 # The committed metadata is authoritative. A later upload will
                 # see that the journal's filenames are referenced and remove it.
-                logging.warning(
-                    "Could not remove committed Hammock gallery publish "
-                    f"journal {journal_path}: {error}"
+                log_event(
+                    "hammock", "hammock.gallery_journal_cleanup_failed",
+                    level=logging.WARNING, path=journal_path.name,
+                    committed=True, exc_info=error,
+                    error_type=type(error).__name__,
                 )
 
         return len(prepared)
@@ -914,9 +923,10 @@ class DataInterface(BaseDataInterface):
                                 self.atomic_delete(post_dir / filename)
                             self.atomic_delete(journal_path)
                         except (OSError, ValueError, TypeError) as error:
-                            logging.warning(
-                                "Could not recover Hammock gallery publish "
-                                f"journal {journal_path}: {error}"
+                            log_event(
+                                "hammock", "hammock.gallery_journal_recovery_failed",
+                                level=logging.WARNING, path=journal_path.name,
+                                exc_info=error, error_type=type(error).__name__,
                             )
 
     def delete_gallery_image(self, project: str, post: str, filename: str) -> None:
@@ -945,9 +955,11 @@ class DataInterface(BaseDataInterface):
         try:
             return normalize_image_to_webp(source)
         except APIError as error:
-            logging.warning(
-                f"Hammock image normalization failed for "
-                f"{display_name}: {error}"
+            log_event(
+                "hammock", "hammock.image_normalization_failed",
+                level=logging.WARNING, filename=display_name,
+                reason="normalization_error",
+                error_type=type(error).__name__,
             )
             if "pixel limit" in str(error):
                 raise APIError(
@@ -971,7 +983,11 @@ class DataInterface(BaseDataInterface):
         except subprocess.TimeoutExpired as e:
             raise APIError(error_message) from e
         except subprocess.CalledProcessError as e:
-            logging.warning(f"Hammock media command failed: {e.stderr}")
+            log_event(
+                "hammock", "hammock.media_command_failed",
+                level=logging.WARNING, executable=Path(cmd[0]).name,
+                returncode=e.returncode,
+            )
             raise APIError(error_message) from e
 
     def _probe_video_info(self, src: Path, display_name: str) -> VideoInfo:

@@ -1,5 +1,6 @@
 import flask
 import flask_login
+import logging
 
 from typing import * # type: ignore
 from flask import request, Blueprint
@@ -7,6 +8,7 @@ from datetime import datetime
 
 from web_app.helpers import limiter, from_req, cur_user
 from web_app.todoist.data_interface import DataInterface, GoalState, Goal, Goals
+from web_app.logging_utils import log_event
 
 
 goals = Blueprint('goals', __name__, url_prefix='/goal')
@@ -89,6 +91,12 @@ def new_goal():
         if parent_id:
             tld.goals[int(parent_id)].children.append(goal_id)
 
+    log_event(
+        "todoist",
+        "todoist.goal_created",
+        goal_id=goal_id,
+        parent_id=int(parent_id) if parent_id else None,
+    )
     return _default_redirect()
 
 @goals.route('/fail', methods=["GET"])
@@ -100,6 +108,7 @@ def fail_goal():
     with DataInterface().edit_goals(cur_user()) as tld:
         tld.goals[goal_id].state = GoalState.FAILED
 
+    log_event("todoist", "todoist.goal_failed", goal_id=goal_id)
     return _default_redirect()
 
 @goals.route('/log', methods=["POST"])
@@ -114,6 +123,7 @@ def log_goal():
         goal.description += f"\n\n{'-'*10}\n{today_date}\n{from_req('log')}\n{'-'*10}"
         goal.last_modified = datetime.now()
 
+    log_event("todoist", "todoist.goal_log_appended", goal_id=goal_id)
     return _default_redirect()
 
 @goals.route('/toggle_state', methods=['POST'])
@@ -131,7 +141,14 @@ def toggle_goal_state():
             goal.completion_date = None
         else:
             raise ValueError(f"Cannot toggle goal state for goal in state {goal.state}")
+        new_state = goal.state.name.lower()
 
+    log_event(
+        "todoist",
+        "todoist.goal_state_changed",
+        goal_id=req_data["goal_id"],
+        state=new_state,
+    )
     return flask.jsonify(success=True)
 
 @goals.route('/reparent', methods=['POST'])
@@ -151,8 +168,24 @@ def reparent_goal():
             # edit_model skips the write automatically when nothing changed.
             changed = reparent_goal_in_tree(tld, goal_id, parent_id)
         except (KeyError, ValueError) as exc:
+            log_event(
+                "todoist",
+                "todoist.goal_reparent_rejected",
+                level=logging.WARNING,
+                goal_id=goal_id,
+                parent_id=parent_id,
+                reason="invalid_parent",
+                error_type=type(exc).__name__,
+            )
             return flask.jsonify(success=False, error=str(exc)), 400
 
+    log_event(
+        "todoist",
+        "todoist.goal_reparented",
+        goal_id=goal_id,
+        parent_id=parent_id,
+        changed=changed,
+    )
     return flask.jsonify(success=True, changed=changed)
 
 @goals.route('/edit', methods=["POST"])
@@ -172,6 +205,7 @@ def edit_goal():
         goal.description = description
         goal.last_modified = datetime.now()
 
+    log_event("todoist", "todoist.goal_updated", goal_id=goal_id)
     return _default_redirect()
 
 @goals.route('/delete', methods=["GET"])
@@ -199,4 +233,5 @@ def delete_goal():
 
         delete_descendants(goal_id)
 
+    log_event("todoist", "todoist.goal_deleted", goal_id=goal_id)
     return _default_redirect()

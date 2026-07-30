@@ -10,6 +10,7 @@ from web_app.config import ConfigManager
 from web_app.oauth import bearer_user
 from web_app.redis_client import get_redis
 from web_app.todoist.data_interface import DataInterface, Goal, GoalState
+from web_app.logging_utils import log_event
 
 
 actions_api = Blueprint("actions_api", __name__, url_prefix="/actions")
@@ -211,6 +212,14 @@ def create_goal():
             if parent_id is not None:
                 goals.goals[parent_id].children.append(goal_id)
             body = {"goal": _serialize_goal(goal, goals.goals)}
+        log_event(
+            "todoist",
+            "todoist.goal_created",
+            user=flask.g.oauth_user,
+            goal_id=goal_id,
+            parent_id=parent_id,
+            source="actions",
+        )
         return body, 201
 
     return _idempotent(payload, mutation)
@@ -264,6 +273,13 @@ def update_goal(goal_id: int):
                 )
             goal.last_modified = datetime.now()
             body = {"goal": _serialize_goal(goal, goals.goals)}
+        log_event(
+            "todoist",
+            "todoist.goal_updated",
+            user=flask.g.oauth_user,
+            goal_id=goal_id,
+            source="actions",
+        )
         return body, 200
 
     return _idempotent(payload, mutation)
@@ -284,6 +300,13 @@ def complete_goal(goal_id: int):
                 goal.completion_date = datetime.now()
                 goal.last_modified = datetime.now()
             body = {"goal": _serialize_goal(goal, goals.goals)}
+        log_event(
+            "todoist",
+            "todoist.goal_completed",
+            user=flask.g.oauth_user,
+            goal_id=goal_id,
+            source="actions",
+        )
         return body, 200
 
     return _idempotent(payload, mutation)
@@ -310,6 +333,13 @@ def log_goal(goal_id: int):
             goal.description += f"\n\n{'-' * 10}\n{date}\n{log.strip()}\n{'-' * 10}"
             goal.last_modified = datetime.now()
             body = {"goal": _serialize_goal(goal, goals.goals)}
+        log_event(
+            "todoist",
+            "todoist.goal_log_appended",
+            user=flask.g.oauth_user,
+            goal_id=goal_id,
+            source="actions",
+        )
         return body, 200
 
     return _idempotent(payload, mutation)

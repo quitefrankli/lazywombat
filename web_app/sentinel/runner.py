@@ -24,6 +24,7 @@ from web_app.sentinel.models import (
 )
 from web_app.sentinel.providers import _get_provider
 from web_app.sentinel.target_policy import ValidatedTarget, validate_public_web_url
+from web_app.logging_utils import log_event
 
 
 _active_runs: dict[str, Report] = {}
@@ -82,8 +83,12 @@ def request_cancel(run_id: str) -> bool:
         # Only set if the run is still active — start_run arms the key with a
         # sentinel value; NX-less set would resurrect a cleared/expired run.
         updated = get_redis().set(_CANCEL_PREFIX + run_id, b"1", xx=True, keepttl=True)
-    except Exception:
-        logging.exception("request_cancel: Redis unavailable for run %s", run_id)
+    except Exception as error:
+        log_event(
+            "sentinel", "sentinel.cancel_signal_failed",
+            level=logging.ERROR, run_id=run_id, exc_info=error,
+            error_type=type(error).__name__,
+        )
         return False
     return bool(updated)
 
@@ -91,8 +96,12 @@ def request_cancel(run_id: str) -> bool:
 def _is_cancelled(run_id: str) -> bool:
     try:
         return get_redis().get(_CANCEL_PREFIX + run_id) == b"1"
-    except Exception:
-        logging.exception("_is_cancelled: Redis unavailable for run %s", run_id)
+    except Exception as error:
+        log_event(
+            "sentinel", "sentinel.cancel_check_failed",
+            level=logging.ERROR, run_id=run_id, exc_info=error,
+            error_type=type(error).__name__,
+        )
         return False
 
 
@@ -197,6 +206,10 @@ def start_run(
             extras=dict(account_credentials.get("extras") or {}),
         )
     _save(report)
+    log_event(
+        "sentinel", "sentinel.run_queued",
+        user=report.owner or None, run_id=run_id, batch_id=batch_id or None,
+    )
     # Arm the cancel flag as "not cancelled" so request_cancel (SET XX) can flip
     # it. TTL outlives the longest run and self-cleans if the process dies.
     get_redis().set(
@@ -208,11 +221,17 @@ def start_run(
 
 
 def _run_background(report: Report) -> None:
+    started_ns = time.monotonic_ns()
     report.status = RunStatus.RUNNING
     report.started_at = utc_now_iso()
     if not report.title:
         report.title = _generate_title(report.target_url, report.prompt, report.target_hostname)
     _save(report)
+    log_event(
+        "sentinel", "sentinel.run_started",
+        user=report.owner or None, run_id=report.run_id,
+        batch_id=report.batch_id or None,
+    )
     try:
         _execute_browser_run(report)
         if _is_cancelled(report.run_id):
@@ -237,7 +256,12 @@ def _run_background(report: Report) -> None:
                 report.run_outcome = outcome_status
             report.status = outcome_status
     except Exception as e:
-        logging.exception("Sentinel run failed")
+        log_event(
+            "sentinel", "sentinel.run_failed",
+            level=logging.ERROR, user=report.owner or None,
+            run_id=report.run_id, batch_id=report.batch_id or None,
+            exc_info=e, error_type=type(e).__name__,
+        )
         report.status = RunStatus.FAILED
         report.error = str(e)
     finally:
@@ -245,6 +269,17 @@ def _run_background(report: Report) -> None:
         _save(report)
         get_redis().delete(_CANCEL_PREFIX + report.run_id)
         DataInterface().prune_reports()
+        log_event(
+            "sentinel", "sentinel.run_finished",
+            level=logging.ERROR if report.status == RunStatus.FAILED else logging.INFO,
+            user=report.owner or None,
+            run_id=report.run_id,
+            batch_id=report.batch_id or None,
+            status=report.status.value,
+            steps=len(report.steps),
+            findings=len(report.findings),
+            duration_ms=round((time.monotonic_ns() - started_ns) / 1_000_000, 3),
+        )
 
 
 def _host_allowed(hostname: str, target_hostname: str) -> bool:
@@ -446,7 +481,10 @@ def _generate_title(target_url: str, prompt: str, target_hostname: str = "") -> 
     try:
         return _clean_title(_get_provider().title_text(payload)) or _fallback_title(target_url, target_hostname)
     except Exception as e:
-        logging.warning("Sentinel title generation failed: %s", e)
+        log_event(
+            "sentinel", "sentinel.title_generation_failed",
+            level=logging.WARNING, exc_info=e, error_type=type(e).__name__,
+        )
         return _fallback_title(target_url, target_hostname)
 
 
@@ -476,7 +514,11 @@ def _classify_run_verdict(report: Report) -> RunStatus:
         raw = _get_provider().verdict_text(_verdict_prompt(report))
         parsed = _parse_verdict_payload(raw)
     except Exception as e:
-        logging.warning("Sentinel verdict classification failed: %s", e)
+        log_event(
+            "sentinel", "sentinel.verdict_classification_failed",
+            level=logging.WARNING, user=report.owner or None,
+            run_id=report.run_id, exc_info=e, error_type=type(e).__name__,
+        )
         return RunStatus.COMPLETED
     if not parsed:
         return RunStatus.COMPLETED
@@ -531,7 +573,11 @@ def _add_final_report(report: Report) -> None:
             image_paths=_final_report_image_paths(report, picked),
         )
     except Exception as e:
-        logging.warning("Sentinel final report generation failed: %s", e)
+        log_event(
+            "sentinel", "sentinel.final_report_generation_failed",
+            level=logging.WARNING, user=report.owner or None,
+            run_id=report.run_id, exc_info=e, error_type=type(e).__name__,
+        )
         text = _fallback_final_report(report)
     text = _ensure_summary_heading(text)
     report.final_report = _truncate_text(text, ConfigManager().sentinel.final_report_max_chars)
@@ -605,7 +651,11 @@ def _pick_final_report_screenshots(report: Report) -> list[str]:
     try:
         raw = _get_provider().screenshot_picker_text(payload)
     except Exception as e:
-        logging.warning("Sentinel screenshot picker failed: %s", e)
+        log_event(
+            "sentinel", "sentinel.screenshot_picker_failed",
+            level=logging.WARNING, user=report.owner or None,
+            run_id=report.run_id, exc_info=e, error_type=type(e).__name__,
+        )
         return fallback
     chosen = _parse_picker_payload(raw, set(available), budget)
     return chosen or fallback
@@ -722,8 +772,12 @@ def ensure_screenshot_thumbnail(run_id: str, filename: str) -> Path | None:
         return None
     try:
         from PIL import Image
-    except Exception:
-        logging.warning("Pillow unavailable; skipping screenshot thumbnail")
+    except Exception as error:
+        log_event(
+            "sentinel", "sentinel.thumbnail_skipped",
+            level=logging.WARNING, run_id=run_id, filename=filename,
+            reason="pillow_unavailable", error_type=type(error).__name__,
+        )
         return None
 
     try:
@@ -734,7 +788,11 @@ def ensure_screenshot_thumbnail(run_id: str, filename: str) -> Path | None:
         thumb_path.parent.mkdir(parents=True, exist_ok=True)
         thumb.save(thumb_path, format="PNG", optimize=True)
     except Exception as e:
-        logging.warning("Failed to create screenshot thumbnail %s: %s", thumb_path, e)
+        log_event(
+            "sentinel", "sentinel.thumbnail_create_failed",
+            level=logging.WARNING, run_id=run_id, filename=filename,
+            exc_info=e, error_type=type(e).__name__,
+        )
         return None
     return thumb_path
 
@@ -803,14 +861,22 @@ def _annotate_screenshot(
         return None
     try:
         from PIL import Image, ImageDraw, ImageFont
-    except Exception:
-        logging.warning("Pillow unavailable; skipping screenshot annotation")
+    except Exception as error:
+        log_event(
+            "sentinel", "sentinel.annotation_skipped",
+            level=logging.WARNING, path=raw_path.name,
+            reason="pillow_unavailable", error_type=type(error).__name__,
+        )
         return None
     cfg = ConfigManager()
     try:
         img = Image.open(raw_path).convert("RGB")
     except Exception as e:
-        logging.warning("Failed to open screenshot %s: %s", raw_path, e)
+        log_event(
+            "sentinel", "sentinel.screenshot_open_failed",
+            level=logging.WARNING, path=raw_path.name,
+            exc_info=e, error_type=type(e).__name__,
+        )
         return None
 
     img_w, img_h = img.size
@@ -862,7 +928,11 @@ def _annotate_screenshot(
     try:
         img.save(out_path, format="PNG")
     except Exception as e:
-        logging.warning("Failed to save annotated screenshot %s: %s", out_path, e)
+        log_event(
+            "sentinel", "sentinel.annotation_save_failed",
+            level=logging.WARNING, path=out_path.name,
+            exc_info=e, error_type=type(e).__name__,
+        )
         return None
     return out_path
 
@@ -1167,7 +1237,13 @@ def _request_agent_action(report, observation, image_paths, allow_external, know
             last_error = e
             last_text = agent_text
             if attempt + 1 < attempts:
-                logging.warning("Sentinel agent parse failure, retrying: %s", e)
+                log_event(
+                    "sentinel", "sentinel.agent_parse_retry",
+                    level=logging.WARNING, user=report.owner or None,
+                    run_id=report.run_id, attempt=attempt + 1,
+                    reason="invalid_agent_output",
+                    error_type=type(e).__name__,
+                )
     _record_step(report, "invalid", str(last_error), {"agent_text": last_text})
     _add_finding(report, "warning", "Agent response unparseable", str(last_error))
     return None

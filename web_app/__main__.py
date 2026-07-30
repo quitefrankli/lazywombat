@@ -4,6 +4,8 @@ import click
 import logging
 import smtplib
 import tempfile
+import time
+import uuid
 import flask_login
 import http.cookiejar
 import urllib.request
@@ -13,15 +15,16 @@ from packaging.version import Version
 from typing import * # type: ignore
 from pathlib import Path
 from email.mime.text import MIMEText
-from flask import Response, abort, render_template, request, send_from_directory, url_for
+from flask import Response, abort, g, render_template, request, send_from_directory, url_for
 from flask_apscheduler import APScheduler
 from logging.handlers import RotatingFileHandler
 from xml.sax.saxutils import escape as xml_escape
 
 from web_app.config import ConfigManager
 from web_app.data_interface import DataInterface
-from web_app.helpers import get_ip, get_all_data_interfaces, register_all_blueprints
+from web_app.helpers import get_all_data_interfaces, register_all_blueprints
 from web_app.redis_client import run_once, ensure_local_redis
+from web_app.logging_utils import log_event
 from web_app.hammock.data_interface import DataInterface as HammockDataInterface
 from web_app.tubio.audio_downloader import AudioDownloader
 from web_app.app import app
@@ -48,18 +51,18 @@ scheduler = APScheduler()
 @scheduler.task('cron', id='scheduled_backup', day_of_week='sun', hour=0, minute=0, misfire_grace_time=3600)
 @run_once('scheduled_backup')
 def scheduled_backup():
-    logging.info("Running scheduled backup")
+    log_event("system", "backup.started", source="scheduler")
     backup_dir = DataInterface().generate_backup_dir()
     DataInterface().backup_data(backup_dir)
     for data_interface_class in get_all_data_interfaces():
         data_interface_class().backup_data(backup_dir)
-    logging.info("Backup complete")
+    log_event("system", "backup.completed", source="scheduler")
 
 
 @scheduler.task('cron', id='scheduled_cookie_keepalive', day='*', hour=4, minute=0, misfire_grace_time=3600)
 @run_once('scheduled_cookie_keepalive')
 def run_cookie_keepalive() -> None:
-    logging.info("Running scheduled cookie keepalive")
+    log_event("tubio", "cookie_keepalive.started", source="scheduler")
     cookie_path = ConfigManager().tubio.cookie_path
 
     jar = http.cookiejar.MozillaCookieJar(cookie_path)
@@ -73,9 +76,16 @@ def run_cookie_keepalive() -> None:
     try:
         response = opener.open("https://www.youtube.com/feed/subscriptions", timeout=30)
         jar.save(ignore_discard=True, ignore_expires=True)
-        logging.info(f"Cookie keepalive OK - status {response.status}")
-    except Exception:
-        logging.exception("Cookie keepalive failed")
+        log_event(
+            "tubio", "cookie_keepalive.completed",
+            source="scheduler", status=response.status,
+        )
+    except Exception as error:
+        log_event(
+            "tubio", "cookie_keepalive.failed",
+            level=logging.ERROR, source="scheduler", exc_info=error,
+            error_type=type(error).__name__,
+        )
 
 
 def send_alert_email(subject: str, body: str) -> None:
@@ -103,10 +113,13 @@ def _check_and_update_ytdlp() -> None:
     latest_ver = json.loads(resp.read())["info"]["version"]
 
     if Version(latest_ver) <= Version(current_ver):
-        logging.info(f"yt-dlp is up to date ({current_ver})")
+        log_event("tubio", "ytdlp_update_not_needed", version=current_ver)
         return
 
-    logging.info(f"Updating yt-dlp: {current_ver} -> {latest_ver}")
+    log_event(
+        "tubio", "ytdlp_update_started",
+        current_version=current_ver, target_version=latest_ver,
+    )
     req_path.write_text(req_text.replace(f"yt-dlp[default]>={current_ver}", f"yt-dlp[default]>={latest_ver}"))
 
     repo = Repo(req_path.parent)
@@ -121,12 +134,15 @@ def _check_and_update_ytdlp() -> None:
 @scheduler.task('cron', id='scheduled_download_health_check', day='*', hour=4, minute=10, misfire_grace_time=3600)
 @run_once('scheduled_download_health_check')
 def run_download_health_check() -> None:
-    logging.info("Running download health check")
+    log_event("tubio", "download_health_check.started", source="scheduler")
 
     try:
         _check_and_update_ytdlp()
     except Exception as e:
-        logging.exception("yt-dlp update check failed")
+        log_event(
+            "tubio", "ytdlp_update_check.failed",
+            level=logging.ERROR, exc_info=e, error_type=type(e).__name__,
+        )
 
     config = ConfigManager()
     video_id = config.tubio.test_video_id
@@ -144,15 +160,21 @@ def run_download_health_check() -> None:
                     "Tubio Health Check: OK",
                     f"Download health check passed for video {video_id}.\nFile size: {result_file.stat().st_size} bytes."
                 )
-                logging.info("Download health check passed")
+                log_event("tubio", "download_health_check.completed", result="passed")
             else:
                 send_alert_email(
                     "Tubio Health Check: FAIL",
                     f"Download completed but output file is missing or empty for video {video_id}."
                 )
-                logging.error("Download health check failed: output file missing or empty")
+                log_event(
+                    "tubio", "download_health_check.failed",
+                    level=logging.ERROR, reason="missing_or_empty_output",
+                )
         except Exception as e:
-            logging.exception("Download health check failed")
+            log_event(
+                "tubio", "download_health_check.failed",
+                level=logging.ERROR, exc_info=e, error_type=type(e).__name__,
+            )
             send_alert_email(
                 "Tubio Health Check: FAIL",
                 f"Download health check failed for video {video_id}.\nError: {e}"
@@ -174,9 +196,22 @@ def _skip_request_log(path: str, method: str, config: ConfigManager) -> bool:
     return False
 
 
+def _request_app() -> str:
+    blueprint = request.blueprint or "web"
+    return blueprint.split(".", 1)[0].removesuffix("_api")
+
+
 @app.before_request
 def before_request():
     config = ConfigManager()
+    g.request_id = uuid.uuid4().hex
+    g.request_started_ns = time.monotonic_ns()
+    g.request_app = _request_app()
+    # Avoid resolving current_user recursively if a low-level event is emitted
+    # while Flask-Login's user loader is still running.
+    g.request_user = None
+    # Scanner paths abort before normal logging and must remain suppressed.
+    g.request_log_suppressed = True
     if any(request.path.startswith(p) for p in config.known_bot_prefixes) or request.method in config.known_bot_methods:
         abort(404)
 
@@ -189,30 +224,70 @@ def before_request():
                 user = di.generate_new_user("admin", "admin")
                 user.is_admin = True
                 users.add(user)
-                logging.info("Debug mode: created admin user")
+                log_event("account", "account.debug_admin_created", user=user)
         flask_login.login_user(user, remember=True)
 
-    if _skip_request_log(request.path, request.method, config):
+    if flask_login.current_user.is_authenticated:
+        g.request_user = str(flask_login.current_user.id)
+    else:
+        g.request_user = None
+
+    g.request_log_suppressed = _skip_request_log(request.path, request.method, config)
+    if g.request_log_suppressed:
         return
 
-    message = f"Processing request: client={get_ip()}"
-    if flask_login.current_user.is_authenticated:
-        message += f", username={flask_login.current_user.id}"
-    message += f", path={request.path}, method={request.method}"
+    log_event(
+        g.request_app,
+        "request.started",
+        method=request.method,
+        path=request.path,
+        route=request.url_rule.rule if request.url_rule else None,
+    )
 
-    _REDACTED_KEYS = {'password', 'csrf_token', 'cookie', 'secret', 'token'}
-    if request.method == 'POST':
-        if request.is_json:
-            raw = request.get_json(silent=True) or {}
-            safe = {k: ('***' if k.lower() in _REDACTED_KEYS else v) for k, v in raw.items()}
-            message += f", json={safe}"
-        elif request.form:
-            safe = {k: ('***' if k.lower() in _REDACTED_KEYS else v) for k, v in request.form.items()}
-            message += f", form={safe}"
 
-    if len(message) > 500:
-        message = message[:500] + f"... (truncated {len(message) - 500} characters)"
-    logging.info(message)
+@app.after_request
+def after_request(response: Response) -> Response:
+    config = ConfigManager()
+    request_id = getattr(g, "request_id", None)
+    if request_id:
+        response.headers[config.request_id_header] = request_id
+
+    if not getattr(g, "request_log_suppressed", True):
+        status = response.status_code
+        if status >= config.request_log_error_status:
+            level = logging.ERROR
+        elif status >= config.request_log_warning_status:
+            level = logging.WARNING
+        else:
+            level = logging.INFO
+        started_ns = getattr(g, "request_started_ns", time.monotonic_ns())
+        log_event(
+            getattr(g, "request_app", _request_app()),
+            "request.completed",
+            level=level,
+            method=request.method,
+            path=request.path,
+            route=request.url_rule.rule if request.url_rule else None,
+            status=status,
+            duration_ms=round((time.monotonic_ns() - started_ns) / 1_000_000, 3),
+        )
+    return response
+
+
+@app.teardown_request
+def teardown_request(error: BaseException | None) -> None:
+    if error is None or getattr(g, "request_log_suppressed", True):
+        return
+    log_event(
+        getattr(g, "request_app", _request_app()),
+        "request.exception",
+        level=logging.ERROR,
+        exc_info=error,
+        method=request.method,
+        path=request.path,
+        route=request.url_rule.rule if request.url_rule else None,
+        error_type=type(error).__name__,
+    )
 
 @app.route('/')
 def home():
@@ -301,7 +376,7 @@ def cli_start(debug: bool, port: int, llm_source: str | None):
 
     ensure_local_redis()
 
-    logging.info("Starting server (llm_source=%s)", cfg.llm.api_source)
+    log_event("system", "server.started", llm_source=cfg.llm.api_source, mode="debug")
     # Under --debug, Werkzeug's reloader re-execs this whole module in a child
     # process, so everything from here up runs twice: once in the supervising
     # parent and once in the serving child (WERKZEUG_RUN_MAIN=true). The parent
@@ -315,7 +390,7 @@ def prod_entry():
     ConfigManager().debug_mode = False
     app.config["DEPLOY_COMMIT"] = Repo(".").head.commit.hexsha
 
-    logging.info("Starting gunicorn worker")
+    log_event("system", "worker.started", mode="production")
     if not ConfigManager().deployment_canary:
         start_scheduler()
     return app

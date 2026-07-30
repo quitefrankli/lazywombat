@@ -14,6 +14,7 @@ from werkzeug.datastructures import FileStorage
 from web_app.data_interface import DataInterface as BaseDataInterface
 from web_app.config import ConfigManager
 from web_app.users import User
+from web_app.logging_utils import log_event
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -697,7 +698,11 @@ class DataInterface(BaseDataInterface):
 
                 return thumbnail_path
         except Exception as e:
-            logging.error(f"Failed to create thumbnail for CRC {crc}: {e}")
+            log_event(
+                "file_store", "file_store.thumbnail_create_failed",
+                level=logging.ERROR, crc=crc, exc_info=e,
+                error_type=type(e).__name__,
+            )
             return None
 
     def get_thumbnail_for_file(self, filename: str, user: User) -> Optional[Path]:
@@ -713,7 +718,11 @@ class DataInterface(BaseDataInterface):
 
             return self.get_thumbnail_path(crc)
         except Exception as e:
-            logging.error(f"Failed to get thumbnail for {filename}: {e}")
+            log_event(
+                "file_store", "file_store.thumbnail_lookup_failed",
+                level=logging.ERROR, filename=filename, exc_info=e,
+                error_type=type(e).__name__,
+            )
             return None
 
     def backup_data(self, backup_dir: Path) -> None:

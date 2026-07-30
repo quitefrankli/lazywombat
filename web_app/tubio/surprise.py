@@ -3,6 +3,7 @@ import logging
 
 from web_app.config import ConfigManager
 from web_app.tubio.data_interface import AudioMetadata, Metadata
+from web_app.logging_utils import log_event
 
 
 def _candidate_crc(video_id: str, attempt: int) -> int:
@@ -14,11 +15,9 @@ def reserve_audio_metadata(metadata: Metadata, candidate: dict) -> int:
     video_id = candidate["video_id"]
     for audio in metadata.audios.values():
         if audio.yt_video_id == video_id:
-            logging.info(
-                "Tubio Surprise reused audio metadata crc=%d video_id=%s cached=%s",
-                audio.crc,
-                video_id,
-                audio.is_cached,
+            log_event(
+                "tubio", "tubio.surprise_metadata_reused",
+                crc=audio.crc, video_id=video_id, cached=audio.is_cached,
             )
             return audio.crc
 
@@ -32,11 +31,9 @@ def reserve_audio_metadata(metadata: Metadata, candidate: dict) -> int:
                 is_cached=False,
                 source_url=f"https://www.youtube.com/watch?v={video_id}",
             )
-            logging.info(
-                "Tubio Surprise reserved audio metadata crc=%d video_id=%s collision_attempt=%d",
-                crc,
-                video_id,
-                attempt,
+            log_event(
+                "tubio", "tubio.surprise_metadata_reserved",
+                crc=crc, video_id=video_id, collision_attempt=attempt,
             )
             return crc
     raise RuntimeError("Could not reserve a unique audio identifier")
