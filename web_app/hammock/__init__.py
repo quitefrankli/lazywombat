@@ -11,8 +11,10 @@ import flask_login
 from flask import (
     Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, url_for,
 )
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from web_app.app import csrf
+from web_app.config import ConfigManager
 from web_app.errors import APIError
 from web_app.hammock.data_interface import DataInterface, slugify
 from web_app.helpers import cur_user, get_ip, limiter, parse_request, register_app_name
@@ -27,6 +29,30 @@ hammock_api = Blueprint(
 
 
 register_app_name(hammock_api, 'Hammock')
+
+
+@hammock_api.context_processor
+def inject_hammock_config():
+    return {"hammock_config": ConfigManager().hammock}
+
+
+def _gallery_request_is_too_large() -> bool:
+    request.max_content_length = (
+        ConfigManager().hammock.gallery_request_max_bytes
+    )
+    content_length = request.content_length
+    return bool(
+        content_length is not None
+        and content_length > ConfigManager().hammock.gallery_request_max_bytes
+    )
+
+
+@hammock_api.errorhandler(RequestEntityTooLarge)
+def gallery_request_too_large(error):
+    message = "Selected media exceeds the upload request size limit"
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"error": message}), 413
+    return message, 413
 
 
 def _require_post_owner(project: str, post: str):
@@ -64,6 +90,13 @@ def new_post():
         return redirect(url_for('.new_post'))
 
     if request.method == 'POST':
+        if _gallery_request_is_too_large():
+            message = "Selected media exceeds the upload request size limit"
+            if wants_json:
+                return jsonify({"error": message}), 413
+            flash(message, "error")
+            return redirect(url_for('.new_post'))
+
         project_input = (request.form.get('project_existing') or request.form.get('project_new') or '').strip()
         template = (request.form.get('template') or '').strip()
         title = (request.form.get('title') or '').strip()
@@ -87,10 +120,14 @@ def new_post():
                 if files:
                     try:
                         di.add_gallery_images(user, project_slug, post_slug, files)
-                    except APIError:
+                    except (APIError, OSError) as error:
                         # Roll back the empty post so create-with-images is atomic.
                         di.delete_post(project_slug, post_slug)
-                        raise
+                        if isinstance(error, APIError):
+                            raise
+                        raise APIError(
+                            "Could not store gallery upload"
+                        ) from error
         except APIError as e:
             return fail(str(e))
 
@@ -149,6 +186,15 @@ def edit_post(project: str, post: str):
     wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
     if request.method == 'POST':
+        if _gallery_request_is_too_large():
+            message = "Selected media exceeds the upload request size limit"
+            if wants_json:
+                return jsonify({"error": message}), 413
+            flash(message, "error")
+            return redirect(
+                url_for('.edit_post', project=project, post=post)
+            )
+
         title = (request.form.get('title') or '').strip()
         try:
             if template == 'markdown':
@@ -217,6 +263,10 @@ def edit_post(project: str, post: str):
 @hammock_api.route('/<project>/<post>/images', methods=['POST'])
 @owner_or_admin
 def add_gallery_images(project: str, post: str):
+    if _gallery_request_is_too_large():
+        flash("Selected media exceeds the upload request size limit", "error")
+        return redirect(url_for('.edit_post', project=project, post=post))
+
     di = DataInterface()
     files = request.files.getlist('files')
     user = cur_user()

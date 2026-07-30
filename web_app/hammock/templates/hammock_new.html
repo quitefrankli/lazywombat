@@ -73,7 +73,14 @@
                     <div class="hammock-field" data-template-field="gallery" hidden>
                         <label class="hammock-label">Media</label>
                         <input type="file" name="files" multiple accept="image/*,video/*" class="hammock-input">
-                        <div class="hammock-field-hint">Images are saved as display-size WebP only. Common phone videos up to 1 minute are compressed to looping 720p MP4.</div>
+                        <div class="hammock-field-hint">
+                            JPEG, PNG, WebP, GIF, BMP, TIFF, HEIC, and AVIF images are saved
+                            as display-size WebP using the first frame. Upload up to
+                            {{ hammock_config.gallery_max_files_per_upload }} items at once,
+                            with {{ hammock_config.gallery_max_videos_per_upload }} video up to
+                            {{ hammock_config.gallery_video_max_duration_s }} seconds; video is
+                            converted to looping {{ hammock_config.gallery_video_max_height_px }}p MP4.
+                        </div>
                     </div>
 
                     <div class="hammock-upload-progress" data-gallery-upload-progress hidden>

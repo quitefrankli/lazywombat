@@ -60,3 +60,4 @@ cryptography>=44.0.0
 beautifulsoup4>=4.12.0
 audioop-lts>=0.2.2; python_version >= "3.13"
 pillow>=11.3.0
+pillow-heif>=0.18.0

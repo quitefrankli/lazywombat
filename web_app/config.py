@@ -370,14 +370,108 @@ class SentinelConfig:
 
 @dataclass
 class HammockConfig:
+    request_path_prefix: str = "/hammock/"
     non_admin_quota_bytes: int = 50 * 1024 * 1024
     admin_quota_bytes: int = 10 * 1024 * 1024 * 1024
+    gallery_max_files_per_upload: int = 20
+    gallery_max_videos_per_upload: int = 1
+    gallery_media_filename_max_chars: int = 100
+    gallery_upload_stream_chunk_bytes: int = 1024 * 1024
+    gallery_upload_max_total_bytes: int = 250 * 1024 * 1024
+    gallery_request_max_bytes: int = 252 * 1024 * 1024
+    gallery_quota_lock_timeout_s: int = 30
+    gallery_quota_lock_blocking_timeout_s: float = 10.0
+    gallery_staging_root: Path | None = None
+    gallery_staging_dirname: str = "hammock-gallery-upload-staging"
+    gallery_staging_dir_mode: int = 0o700
+    gallery_staging_max_age_s: int = 3600
+    gallery_publish_journal_prefix: str = ".gallery-publish-"
+    gallery_publish_journal_suffix: str = ".json"
+    gallery_backup_excluded_names: tuple[str, ...] = (
+        ".gallery-upload-staging",
+    )
+    gallery_image_max_upload_bytes: int = 25 * 1024 * 1024
+    gallery_image_allowed_formats: tuple[str, ...] = (
+        "AVIF",
+        "BMP",
+        "GIF",
+        "HEIF",
+        "JPEG",
+        "MPO",
+        "PNG",
+        "TIFF",
+        "WEBP",
+    )
     gallery_thumb_max_px: int = 1400
     gallery_thumb_quality: int = 80
     max_image_pixels: int = 40_000_000
+    gallery_image_max_batch_pixels: int = 80_000_000
     gallery_video_max_upload_bytes: int = 100 * 1024 * 1024
     gallery_video_max_duration_s: int = 60
+    gallery_video_allowed_demuxers: tuple[str, ...] = (
+        "avi",
+        "matroska",
+        "mov",
+        "webm",
+    )
+    gallery_video_protocol_whitelist: str = "file"
+    gallery_video_probe_size_bytes: int = 10 * 1024 * 1024
+    gallery_video_analyze_duration_us: int = 10 * 1_000_000
+    gallery_video_probe_timeout_s: int = 20
+    gallery_video_max_input_width_px: int = 8192
+    gallery_video_max_input_height_px: int = 8192
+    gallery_video_max_input_pixels: int = 40_000_000
+    gallery_video_max_input_fps: int = 240
+    gallery_video_max_width_px: int = 1280
     gallery_video_max_height_px: int = 720
+    gallery_video_max_output_fps: int = 60
+    gallery_video_max_output_bytes: int = 100 * 1024 * 1024
+    gallery_video_duration_tolerance_s: float = 0.5
+    gallery_video_ffmpeg_threads: int = 2
+    gallery_video_ffmpeg_max_alloc_bytes: int = 512 * 1024 * 1024
+    gallery_video_max_muxing_queue_packets: int = 1024
+    gallery_video_h264_preset: str = "veryfast"
+    gallery_video_h264_crf: int = 28
+    gallery_video_h264_profile: str = "high"
+    gallery_video_h264_level: str = "3.2"
+    gallery_video_output_encoder: str = "libx264"
+    gallery_video_output_codec: str = "h264"
+    gallery_video_output_codec_tag: str = "avc1"
+    gallery_video_output_pixel_format: str = "yuv420p"
+    gallery_video_output_audio_codec: str = "aac"
+    gallery_video_output_audio_encoder: str = "aac"
+    gallery_video_output_audio_codec_tag: str = "mp4a"
+    gallery_video_output_audio_profile: str = "aac_low"
+    gallery_video_output_color_space: str = "bt709"
+    gallery_video_output_color_range: str = "tv"
+    gallery_video_sd_input_color_space: str = "smpte170m"
+    gallery_video_hd_input_color_space: str = "bt709"
+    gallery_video_sd_max_height_px: int = 576
+    gallery_video_output_format: str = "mp4"
+    gallery_video_output_demuxer: str = "mov"
+    gallery_video_audio_bitrate: str = "96k"
+    gallery_video_audio_channels: int = 2
+    gallery_video_audio_sample_rate_hz: int = 48_000
+    gallery_video_hdr_peak_nits: int = 100
+    gallery_video_hdr_desaturation: float = 0.5
+    gallery_video_hdr_tonemap_algorithm: str = "mobius"
+    gallery_video_hdr_transfers: tuple[str, ...] = (
+        "arib-std-b67",
+        "smpte2084",
+    )
+    gallery_video_private_metadata_fragments: tuple[str, ...] = (
+        "artist",
+        "comment",
+        "copyright",
+        "creation_time",
+        "description",
+        "device",
+        "gps",
+        "location",
+        "make",
+        "model",
+        "title",
+    )
     gallery_video_transcode_timeout_s: int = 180
     gallery_image_stagger_ms: int = 200
     gallery_image_max_retries: int = 3

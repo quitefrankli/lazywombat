@@ -11,6 +11,7 @@ import pytest
 import web_app.helpers as helpers
 from PIL import Image
 from werkzeug.datastructures import FileStorage
+from werkzeug.test import EnvironBuilder
 
 from web_app.errors import APIError
 from web_app.hammock import hammock_api
@@ -400,31 +401,6 @@ class TestGalleryUploadAndDelete:
         assert 'class="hammock-video-sound"' in rendered
         assert 'aria-label="Unmute video"' in rendered
 
-    def test_probe_skips_mebx_like_unknown_audio_and_selects_real_audio(
-        self, projects_dir, tmp_path, monkeypatch
-    ):
-        payload = {
-            "format": {"duration": "0.5"},
-            "streams": [
-                {"index": 0, "codec_type": "video", "codec_name": "hevc"},
-                {"index": 1, "codec_type": "audio", "codec_name": "none", "codec_tag_string": "mebx"},
-                {"index": 2, "codec_type": "data", "codec_name": "bin_data"},
-                {"index": 3, "codec_type": "audio", "codec_name": "aac"},
-                {"index": 4, "codec_type": "audio", "codec_name": "aac"},
-            ],
-        }
-        monkeypatch.setattr(
-            DataInterface,
-            "_run_media_command",
-            staticmethod(lambda *args: subprocess.CompletedProcess(args[0], 0, json.dumps(payload), "")),
-        )
-
-        info = DataInterface()._probe_video_info(tmp_path / "phone.mov", "phone.mov")
-
-        assert info.video_index == 0
-        assert info.audio_index == 3
-        assert info.duration == 0.5
-
     @pytest.mark.parametrize(("audio_index", "expects_audio"), [(None, False), (3, True)])
     def test_transcode_maps_only_selected_media_streams(
         self, projects_dir, tmp_path, monkeypatch, audio_index, expects_audio
@@ -455,6 +431,15 @@ class TestGalleryUploadAndDelete:
         assert "0:a?" not in cmd
         assert "-dn" in cmd
         assert "-sn" in cmd
+        assert cmd[cmd.index("-protocol_whitelist") + 1] == "file"
+        assert "-format_whitelist" in cmd
+        assert cmd[cmd.index("-map_metadata") + 1] == "-1"
+        assert cmd[cmd.index("-map_chapters") + 1] == "-1"
+        assert cmd[cmd.index("-t") + 1] == str(
+            ConfigManager().hammock.gallery_video_max_duration_s
+        )
+        assert cmd[cmd.index("-pix_fmt") + 1] == "yuv420p"
+        assert cmd[cmd.index("-f") + 1] == "mp4"
 
     @pytest.mark.ffmpeg
     def test_audio_only_upload_is_rejected_and_cleaned_up(self, projects_dir, tmp_path):
@@ -537,19 +522,24 @@ class TestGalleryUploadAndDelete:
         assert height % 2 == 0
         assert height == 720
 
-    def test_video_with_missing_duration_metadata_can_continue(self, projects_dir, tmp_path, monkeypatch):
+    def test_video_with_missing_duration_metadata_is_rejected(self, projects_dir, tmp_path, monkeypatch):
         di = DataInterface()
 
         def fake_run(cmd, timeout_s, error_message):
             return subprocess.CompletedProcess(
                 cmd,
                 0,
-                stdout='{"format":{},"streams":[{"index":0,"codec_type":"video","codec_name":"h264"}]}',
+                stdout=(
+                    '{"format":{"format_name":"mov,mp4,m4a,3gp,3g2,mj2"},'
+                    '"streams":[{"index":0,"codec_type":"video",'
+                    '"codec_name":"h264","width":320,"height":240}]}'
+                ),
                 stderr="",
             )
 
         monkeypatch.setattr(DataInterface, "_run_media_command", staticmethod(fake_run))
-        di._validate_video(tmp_path / "upload.mp4", "phone-video.mp4")
+        with pytest.raises(APIError, match="duration"):
+            di._validate_video(tmp_path / "upload.mp4", "phone-video.mp4")
 
     def test_video_processing_error_uses_original_filename(self, projects_dir, tmp_path, monkeypatch):
         di = DataInterface()
@@ -562,8 +552,10 @@ class TestGalleryUploadAndDelete:
                     cmd,
                     0,
                     stdout=(
-                        '{"format":{"duration":"0.5"},"streams":'
-                        '[{"index":0,"codec_type":"video","codec_name":"h264","duration":"0.5"}]}'
+                        '{"format":{"duration":"0.5",'
+                        '"format_name":"mov,mp4,m4a,3gp,3g2,mj2"},"streams":'
+                        '[{"index":0,"codec_type":"video","codec_name":"h264",'
+                        '"duration":"0.5","width":320,"height":240}]}'
                     ),
                     stderr="",
                 )
@@ -611,8 +603,8 @@ class TestGalleryUploadAndDelete:
         with pytest.raises(APIError, match="quota"):
             di.add_gallery_images(alice, proj, post, [_png_file_storage("big.png", size=(200, 200))])
 
-    def test_non_image_bytes_with_image_extension_are_rejected(self, projects_dir):
-        """A file named .png that isn't actually a valid image must NOT be saved or listed."""
+    def test_non_media_bytes_with_image_extension_are_rejected(self, projects_dir):
+        """A misleading extension must not allow invalid bytes to be published."""
         di = DataInterface()
         alice = User("alice", "x", "fa", is_admin=False)
         proj, post = di.create_gallery_post(alice, "trip", "Album", "")
@@ -623,7 +615,7 @@ class TestGalleryUploadAndDelete:
             filename="evil.png",
             content_type="image/png",
         )
-        with pytest.raises(APIError, match="image"):
+        with pytest.raises(APIError, match="evil.png"):
             di.add_gallery_images(alice, proj, post, [evil])
 
         # Critical: the original must not be left on disk and the gallery must
@@ -639,6 +631,94 @@ class TestGalleryUploadAndDelete:
 
 
 class TestGalleryEditRoute:
+    def test_new_gallery_rejects_request_over_configured_size_before_parsing(
+        self,
+        client,
+        projects_dir,
+        monkeypatch,
+    ):
+        if "hammock" not in client.application.blueprints:
+            client.application.register_blueprint(hammock_api)
+        alice = User("alice", "x", "fa", is_admin=False)
+        monkeypatch.setattr(
+            helpers.login_manager,
+            "_user_callback",
+            lambda username: alice if username == alice.id else None,
+        )
+        monkeypatch.setattr(
+            ConfigManager().hammock,
+            "gallery_request_max_bytes",
+            1,
+        )
+        with client.session_transaction() as session:
+            session["_user_id"] = alice.id
+            session["_fresh"] = True
+
+        response = client.post(
+            "/hammock/new",
+            data={
+                "project_new": "Album",
+                "title": "Too large",
+                "template": "gallery",
+                "files": (BytesIO(b"image bytes"), "photo.jpg"),
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 413
+        assert "size limit" in response.get_json()["error"]
+        assert list(projects_dir.iterdir()) == []
+
+    def test_new_gallery_limits_unknown_length_request_stream(
+        self,
+        client,
+        projects_dir,
+        monkeypatch,
+    ):
+        if "hammock" not in client.application.blueprints:
+            client.application.register_blueprint(hammock_api)
+        alice = User("alice", "x", "fa", is_admin=False)
+        monkeypatch.setattr(
+            helpers.login_manager,
+            "_user_callback",
+            lambda username: alice if username == alice.id else None,
+        )
+        monkeypatch.setattr(
+            ConfigManager().hammock,
+            "gallery_request_max_bytes",
+            1,
+        )
+        monkeypatch.setitem(
+            client.application.config,
+            "WTF_CSRF_ENABLED",
+            True,
+        )
+        with client.session_transaction() as session:
+            session["_user_id"] = alice.id
+            session["_fresh"] = True
+
+        builder = EnvironBuilder(
+            path="/hammock/new",
+            method="POST",
+            data={
+                "project_new": "Album",
+                "title": "Unknown length",
+                "template": "gallery",
+                "files": (BytesIO(b"image bytes"), "photo.jpg"),
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        environ = builder.get_environ()
+        environ.pop("CONTENT_LENGTH", None)
+        environ["wsgi.input_terminated"] = True
+
+        response = client.open(environ)
+
+        assert response.status_code == 413
+        assert "size limit" in response.get_json()["error"]
+        assert list(projects_dir.iterdir()) == []
+
     def test_new_gallery_post_upload_uses_ajax_progress_contract(self, client, projects_dir, monkeypatch):
         if "hammock" not in client.application.blueprints:
             client.application.register_blueprint(hammock_api)
@@ -794,6 +874,36 @@ class TestGalleryEditRoute:
         assert _post_meta(projects_dir, proj, post)["title"] == "Reorder"
 
 
+class TestGalleryAssetDelivery:
+    def test_video_asset_supports_byte_ranges_and_correct_mime_type(
+        self,
+        client,
+        projects_dir,
+    ):
+        if "hammock" not in client.application.blueprints:
+            client.application.register_blueprint(hammock_api)
+        data_interface = DataInterface()
+        owner = User("alice", "x", "fa", is_admin=False)
+        project, post = data_interface.create_gallery_post(
+            owner,
+            "Album",
+            "Range request",
+            "",
+        )
+        video = projects_dir / project / post / "clip.mp4"
+        video.write_bytes(b"0123456789")
+
+        response = client.get(
+            f"/hammock/{project}/{post}/clip.mp4",
+            headers={"Range": "bytes=2-5"},
+        )
+
+        assert response.status_code == 206
+        assert response.data == b"2345"
+        assert response.content_type == "video/mp4"
+        assert response.headers["Accept-Ranges"] == "bytes"
+
+
 class TestRestrictedPostRoute:
     def test_restricted_post_direct_url_requires_elevated_user(self, client, projects_dir, monkeypatch):
         if "hammock" not in client.application.blueprints:
@@ -846,3 +956,25 @@ class TestHammockBackup:
         backup_dir.mkdir()
         di.backup_data(backup_dir)  # must not raise
         assert not (backup_dir / "hammock").exists()
+
+    def test_backup_excludes_raw_gallery_upload_staging(
+        self,
+        projects_dir,
+        tmp_path,
+    ):
+        di = DataInterface()
+        staging = di._content_dir / ".gallery-upload-staging"
+        staging.mkdir()
+        (staging / "raw-with-private-metadata.source").write_bytes(
+            b"raw EXIF/GPS/device metadata"
+        )
+        backup_dir = tmp_path / "backup"
+        backup_dir.mkdir()
+
+        di.backup_data(backup_dir)
+
+        assert not (
+            backup_dir
+            / "hammock"
+            / ".gallery-upload-staging"
+        ).exists()

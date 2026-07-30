@@ -2,12 +2,40 @@ import subprocess
 import time
 from datetime import timedelta
 from pathlib import Path
-from flask import Flask, g
+from flask import Flask, Request, g
 from flask_bootstrap import Bootstrap5
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from web_app.config import ConfigManager
+
+
+class NabicatRequest(Request):
+    """Apply Hammock's upload cap before CSRF parses multipart forms."""
+
+    @property
+    def max_content_length(self) -> int | None:
+        configured_limit = super().max_content_length
+        hammock = ConfigManager().hammock
+        if (
+            self.method == "POST"
+            and self.path.startswith(hammock.request_path_prefix)
+        ):
+            if configured_limit is None:
+                return hammock.gallery_request_max_bytes
+            return min(
+                configured_limit,
+                hammock.gallery_request_max_bytes,
+            )
+        return configured_limit
+
+    @max_content_length.setter
+    def max_content_length(self, value: int | None) -> None:
+        self._max_content_length = value
+
+
 app = Flask(__name__)
+app.request_class = NabicatRequest
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
