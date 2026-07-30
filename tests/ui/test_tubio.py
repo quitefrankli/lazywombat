@@ -140,6 +140,88 @@ def test_search_tab_content(tubio_page):
     expect(tubio_page.locator("input[placeholder*='Search']")).to_be_visible()
 
 
+@pytest.mark.parametrize("viewport_width", [375, 743])
+def test_surprise_playlist_rows_stay_within_narrow_viewport(
+    tubio_page, viewport_width
+):
+    """Long uncached track rows must not push controls or chevrons off-screen."""
+    tubio_page.set_viewport_size({"width": viewport_width, "height": 600})
+    tubio_page.locator("#tubio-tab-content").evaluate(
+        """
+        container => {
+            container.innerHTML = `
+                <div class="tubio-discover-content">
+                  <div class="surprise-playlist">
+                    <section class="playlist-panel active">
+                      <header class="playlist-panel-header">
+                        <div class="playlist-panel-title">
+                          <i class="bi bi-stars me-2"></i>
+                          <span>Surprise Playlist</span>
+                          <span class="badge bg-light ms-2 playlist-count">6 songs</span>
+                        </div>
+                        <div class="playlist-panel-controls">
+                          <button class="btn btn-sm btn-play-all">Play</button>
+                          <button class="btn btn-sm btn-primary">Save playlist</button>
+                        </div>
+                      </header>
+                      <div class="playlist-panel-body">
+                        ${[
+                            'Owl City - Fireflies (Lyrics)',
+                            'Sparkle - Your Name [Kimi no Na wa] Full Version',
+                            'OneRepublic - Counting Stars (Official Music Video)'
+                        ].map((title, index) => `
+                          <article class="accordion-item playlist-track">
+                            <h2 class="accordion-header">
+                              <div class="playlist-track-header">
+                                <div class="playlist-track-select playlist-track-select-slot"></div>
+                                <button class="btn btn-sm track-play-btn">▶</button>
+                                <button class="accordion-button collapsed playlist-track-expand">
+                                  <span class="playlist-track-name">${title}</span>
+                                  <span class="badge track-cache-badge">Converts on play</span>
+                                </button>
+                              </div>
+                            </h2>
+                          </article>
+                        `).join('')}
+                      </div>
+                    </section>
+                  </div>
+                </div>`;
+        }
+        """
+    )
+
+    layout = tubio_page.evaluate(
+        """
+        () => {
+            const panel = document.querySelector('.playlist-panel');
+            const panelRight = panel.getBoundingClientRect().right;
+            const controlsRight = document.querySelector(
+                '.playlist-panel-controls'
+            ).getBoundingClientRect().right;
+            const rowRights = [...document.querySelectorAll(
+                '.playlist-track-header'
+            )].map(row => row.getBoundingClientRect().right);
+            const buttonRights = [...document.querySelectorAll(
+                '.playlist-track-expand'
+            )].map(button => button.getBoundingClientRect().right);
+            return {
+                viewportRight: window.innerWidth,
+                panelRight,
+                controlsRight,
+                rowRights,
+                buttonRights
+            };
+        }
+        """
+    )
+
+    assert layout["panelRight"] <= layout["viewportRight"] + 1
+    assert layout["controlsRight"] <= layout["panelRight"] + 1
+    assert all(right <= layout["panelRight"] + 1 for right in layout["rowRights"])
+    assert max(layout["buttonRights"]) - min(layout["buttonRights"]) <= 1
+
+
 def test_audio_elements_have_preload_none(tubio_page):
     """Audio elements must have preload=none to avoid overwhelming server on page load."""
     audio_elements = tubio_page.locator("audio")

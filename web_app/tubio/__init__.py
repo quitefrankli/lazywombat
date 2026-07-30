@@ -558,12 +558,12 @@ def youtube_download():
         AudioDownloader.download_youtube_audio(video_id, title, cur_user())
         return {
             'success': True,
-            'message': f'Audio downloaded for: {title}',
+            'message': f'Audio converted for: {title}',
             'playlists': get_playlists_data(cur_user())
         }
     except Exception:
         logging.exception("Error downloading audio")
-        return {'error': 'Error downloading audio'}, 500
+        return {'error': 'Error converting audio'}, 500
 
 
 @tubio_api.route('/download_progress/<video_id>')
@@ -732,7 +732,7 @@ def cache_audio(crc: int):
         return {"success": True, "is_cached": True, "video_id": audio.yt_video_id}
     except Exception:
         logging.exception("Could not cache audio %s", crc)
-        return {"error": "Could not download this track"}, 500
+        return {"error": "Could not convert this track"}, 500
     finally:
         if redis.get(key) == token:
             redis.delete(key)
@@ -868,7 +868,7 @@ def resync_audio(crc: int):
         return {'error': 'Audio not found'}, 404
 
     if not metadata.yt_video_id:
-        return {'error': 'Track was not downloaded from YouTube'}, 400
+        return {'error': 'Track was not converted from YouTube'}, 400
 
     try:
         # Delete existing file to force redownload

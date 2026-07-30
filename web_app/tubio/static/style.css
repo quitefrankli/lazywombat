@@ -277,6 +277,9 @@ body {
   align-items: center;
   gap: 0.5rem;
   padding-inline: 0.5rem;
+  flex: 1 1 0;
+  min-width: 0;
+  width: 100%;
 }
 
 .playlist-track-select {
@@ -289,6 +292,8 @@ body {
 .playlist-track-expand {
   color: var(--hw-forest);
   background: var(--hw-gradient-soft);
+  flex: 1 1 0;
+  width: 100%;
 }
 
 .playlist-track-name {
@@ -315,8 +320,8 @@ body {
   max-height: 120px;
 }
 
-.track-cache-badge {
-  flex-shrink: 0;
+.playlist-track-expand > .track-cache-badge {
+  flex: 0 0 auto;
 }
 
 .surprise-loading-row {
@@ -580,15 +585,6 @@ body {
   min-width: 0;
 }
 
-/* The track row (a .d-flex inside .accordion-header) must also be allowed to
-   shrink, otherwise its accordion-button child grows to its content's
-   intrinsic width and the title's ellipsis never engages. */
-.accordion-header > .d-flex {
-  flex: 1 1 0;
-  min-width: 0;
-  width: 100%;
-}
-
 .accordion-button {
   background: transparent;
   padding: 0.5rem 0.75rem;
@@ -601,7 +597,7 @@ body {
   background: rgba(135, 168, 120, 0.08);
 }
 
-.accordion-button > span {
+.accordion-button > .playlist-track-name {
   flex: 1 1 0;
   min-width: 0;
   display: block;

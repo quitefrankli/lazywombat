@@ -313,6 +313,8 @@ class TestSurpriseRoutes:
             assert "playlist-track-actions" in html
         assert "favouriteSurpriseTrack" not in regular
         assert "favouriteSurpriseTrack" in surprise
+        assert "Converts on play" in surprise
+        assert "Downloads on play" not in surprise
 
         stylesheet = Path("web_app/tubio/static/style.css").read_text()
         assert ".surprise-playlist .btn {" not in stylesheet

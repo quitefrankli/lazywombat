@@ -748,9 +748,9 @@ async function downloadVideo(videoId, title, buttonElement) {
             progressBar.textContent = `${Math.round(percent)}%`;
         }
         if (progressStatus) {
-            const statusText = status === 'downloading' ? 'Downloading...' :
+            const statusText = status === 'downloading' ? 'Converting...' :
                                status === 'processing' ? 'Processing audio...' :
-                               status === 'complete' ? 'Complete!' : status;
+                               status === 'complete' ? 'Converted!' : status;
             progressStatus.textContent = statusText;
         }
     }
@@ -786,18 +786,18 @@ async function downloadVideo(videoId, title, buttonElement) {
             showNotification(data.message, 'success');
             await updateContent(data);
 
-            buttonElement.innerHTML = '<i class="bi bi-check-circle me-1"></i>Downloaded';
+            buttonElement.innerHTML = '<i class="bi bi-check-circle me-1"></i>Converted';
             buttonElement.style.backgroundColor = '#adb5bd';
             buttonElement.style.borderColor = '#adb5bd';
             setTimeout(hideProgress, 1500);
         } else {
-            throw new Error(data.error || 'Download failed');
+            throw new Error(data.error || 'Conversion failed');
         }
 
     } catch (error) {
         if (eventSource) eventSource.close();
-        console.error('Error downloading video:', error);
-        showNotification(error.message || 'Error downloading video', 'error');
+        console.error('Error converting video:', error);
+        showNotification(error.message || 'Error converting video', 'error');
         hideProgress();
         buttonElement.disabled = false;
         buttonElement.innerHTML = originalText;
@@ -1457,7 +1457,7 @@ async function ensureSurpriseTrackCached(crc) {
         button.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>';
     }
     if (needsDownload) {
-        setSurpriseStatus(`Downloading “${item.dataset.title || 'track'}”…`);
+        setSurpriseStatus(`Converting “${item.dataset.title || 'track'}”…`);
     }
     try {
         while (true) {
@@ -1470,7 +1470,7 @@ async function ensureSurpriseTrackCached(crc) {
                 progress.onmessage = event => {
                     const data = JSON.parse(event.data);
                     if (typeof data.percent === 'number') {
-                        setSurpriseStatus(`Downloading “${item.dataset.title || 'track'}”… ${Math.round(data.percent)}%`);
+                        setSurpriseStatus(`Converting “${item.dataset.title || 'track'}”… ${Math.round(data.percent)}%`);
                     }
                 };
             }
@@ -1482,7 +1482,7 @@ async function ensureSurpriseTrackCached(crc) {
                 continue;
             }
             if (!response.ok || !data.is_cached) {
-                throw new Error(data.error || 'Could not download this track');
+                throw new Error(data.error || 'Could not convert this track');
             }
             item.dataset.isCached = 'true';
             item.querySelector('.track-cache-badge')?.remove();

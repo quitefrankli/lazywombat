@@ -91,7 +91,7 @@
                             <i class="bi bi-musical-note me-2 text-sage"></i>
                             <span class="playlist-track-name">{{ track.title }}</span>
                             {% if kind == "surprise" and not track.is_cached %}
-                            <span class="badge bg-light text-muted ms-2 track-cache-badge">Downloads on play</span>
+                            <span class="badge bg-light text-muted ms-2 track-cache-badge">Converts on play</span>
                             {% endif %}
                         </button>
                     </div>
@@ -132,7 +132,7 @@
                                     </button>
                                     {% endif %}
                                     <a href="{{ url_for('tubio.download_audio', crc=crc) }}" class="btn btn-sm btn-outline-success track-action-btn">
-                                        <i class="bi bi-download me-1"></i>Download
+                                        <i class="bi bi-file-earmark-arrow-down me-1"></i>Save file
                                     </a>
                                     <button class="btn btn-sm btn-outline-primary track-action-btn"
                                             onclick='openTrimModal("{{ crc }}", {{ track.title|tojson }}, {{ track.trim_start_s }}, {{ track.trim_end_s }})'>
