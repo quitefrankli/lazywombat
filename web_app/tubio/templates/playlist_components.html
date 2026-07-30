@@ -118,6 +118,10 @@
                                         <i class="bi bi-box-arrow-up-right me-1"></i>View Source
                                     </a>
                                     {% endif %}
+                                    <button class="btn btn-sm btn-outline-primary track-action-btn"
+                                            type="button" onclick="suggestMoreFromTrack(this)">
+                                        <i class="bi bi-stars me-1"></i>Suggest more
+                                    </button>
                                     {% if kind == "surprise" %}
                                     <button class="btn btn-sm {% if track.is_favourite %}btn-success{% else %}btn-outline-primary{% endif %} track-action-btn"
                                             type="button" onclick="favouriteSurpriseTrack('{{ crc }}', this)"

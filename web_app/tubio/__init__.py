@@ -250,10 +250,15 @@ def _active_surprise(*, touch: bool = False) -> Playlist | None:
         return playlist.model_copy(deep=True)
 
 
-def _pick_surprise_candidates(playlist: Playlist, count: int) -> list[dict]:
+def _pick_surprise_candidates(
+    playlist: Playlist,
+    count: int,
+    *,
+    seed_video_id: str | None = None,
+) -> list[dict]:
     cfg = ConfigManager().tubio
     owned_ids = {vid for vid in get_cached_yt_vid_ids(cur_user()) if vid}
-    if not owned_ids:
+    if not owned_ids and seed_video_id is None:
         logging.info(
             "Tubio Surprise candidate selection empty library user_id=%s",
             cur_user().id,
@@ -274,10 +279,14 @@ def _pick_surprise_candidates(playlist: Playlist, count: int) -> list[dict]:
         "",
     )
     skip = owned_ids | seen_video_ids
-    seeds = [last_video_id] if last_video_id else []
-    remaining = list(owned_ids - set(seeds))
-    random.shuffle(remaining)
-    seeds.extend(remaining)
+    if seed_video_id is not None:
+        seeds = [seed_video_id]
+        skip.add(seed_video_id)
+    else:
+        seeds = [last_video_id] if last_video_id else []
+        remaining = list(owned_ids - set(seeds))
+        random.shuffle(remaining)
+        seeds.extend(remaining)
     selected = []
     logging.info(
         "Tubio Surprise candidate selection started user_id=%s requested=%d owned=%d seen=%d seeds=%d",
@@ -317,6 +326,57 @@ def _pick_surprise_candidates(playlist: Playlist, count: int) -> list[dict]:
         count,
     )
     return selected
+
+
+def _resolve_surprise_seed(
+    seed_crc: int,
+) -> tuple[str | None, str | None, int | None]:
+    metadata = DataInterface().get_metadata()
+    user_metadata = metadata.users.get(cur_user().id)
+    audio = metadata.audios.get(seed_crc)
+    if user_metadata is None or audio is None:
+        return None, "Track not found", 404
+
+    accessible = any(
+        seed_crc in playlist.audio_crcs
+        for playlist in user_metadata.get_playlists()
+    )
+    surprise = user_metadata.get_surprise_playlist()
+    if (
+        surprise is not None
+        and not _surprise_is_expired(surprise)
+        and seed_crc in surprise.audio_crcs
+    ):
+        accessible = True
+    if not accessible:
+        return None, "Track not found", 404
+
+    if audio.yt_video_id:
+        return audio.yt_video_id, None, None
+
+    query = f"{ConfigManager().tubio.search_prefix}{audio.title}".strip()
+    if not query:
+        return None, "Could not match this uploaded track on YouTube", 422
+    try:
+        search_data = AudioDownloader.search_youtube(query, set(), page=0)
+    except Exception:
+        logging.exception(
+            "Tubio Surprise seed title match failed user_id=%s crc=%d",
+            cur_user().id,
+            seed_crc,
+        )
+        return None, "Could not match this uploaded track on YouTube", 422
+    match = next(
+        (
+            result.get("video_id")
+            for result in search_data.get("results", [])
+            if result.get("video_id")
+        ),
+        None,
+    )
+    if match is None:
+        return None, "Could not match this uploaded track on YouTube", 422
+    return match, None, None
 
 
 def _grow_surprise(playlist: Playlist, count: int | None = None):
@@ -379,14 +439,31 @@ def get_surprise_playlist():
 @limiter.limit(lambda: ConfigManager().tubio.surprise_media_rate_limit)
 def create_surprise_playlist():
     cfg = ConfigManager().tubio
+    seed_crc_raw = request.form.get("seed_crc")
+    seed_crc = None
+    seed_video_id = None
+    if seed_crc_raw is not None:
+        try:
+            seed_crc = int(seed_crc_raw)
+        except (TypeError, ValueError):
+            return {"error": "Invalid seed track"}, 400
+        seed_video_id, seed_error, seed_error_status = _resolve_surprise_seed(
+            seed_crc
+        )
+        if seed_error:
+            assert seed_error_status is not None
+            return {"error": seed_error}, seed_error_status
+
     playlist = Playlist(
         name=cfg.surprise_playlist_name,
         last_active=datetime.now(timezone.utc),
     )
     logging.info(
-        "Tubio Surprise create started user_id=%s initial_tracks=%d",
+        "Tubio Surprise create started user_id=%s initial_tracks=%d seed_crc=%s seed_video_id=%s",
         cur_user().id,
         cfg.surprise_buffer_size,
+        seed_crc,
+        seed_video_id,
     )
     data = DataInterface()
     try:
@@ -399,11 +476,13 @@ def create_surprise_playlist():
         candidates = _pick_surprise_candidates(
             playlist,
             cfg.surprise_buffer_size,
+            seed_video_id=seed_video_id,
         )
         if not candidates:
             empty_reason = (
                 "no_library"
-                if not get_cached_yt_vid_ids(cur_user())
+                if seed_video_id is None
+                and not get_cached_yt_vid_ids(cur_user())
                 else None
             )
             logging.warning(

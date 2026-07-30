@@ -224,6 +224,70 @@ def test_surprise_playlist_rows_stay_within_narrow_viewport(
     assert max(layout["buttonRights"]) - min(layout["buttonRights"]) <= 1
 
 
+def test_suggest_more_switches_to_discover_and_posts_track_seed(
+    tubio_player_page,
+):
+    result = tubio_player_page.evaluate(
+        """
+        async () => {
+            document.getElementById('playlists').classList.add('tab-pane');
+            document.body.insertAdjacentHTML('afterbegin', `
+                <a id="playlists-nav-tab"></a>
+                <a id="search-nav-tab"></a>
+                <a id="discover-nav-tab"></a>
+                <div id="discover" class="tab-pane">
+                    <div id="surprise-status"></div>
+                    <div id="surprise-playlist"
+                         data-buffer-size="5"
+                         data-cache-poll-interval-ms="750"></div>
+                </div>
+            `);
+            const track = document.querySelector('[data-track-key="mix-0"]');
+            track.insertAdjacentHTML(
+                'beforeend',
+                '<button id="suggest-more">Suggest more</button>'
+            );
+
+            const posts = [];
+            window.jsonPost = async (url, fields = {}) => {
+                posts.push({ url, fields });
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        playlist: {
+                            audio_crcs: [303],
+                            html: '<section id="seeded-playlist"></section>'
+                        }
+                    })
+                };
+            };
+
+            await suggestMoreFromTrack(
+                document.getElementById('suggest-more')
+            );
+
+            return {
+                hash: window.location.hash,
+                posts,
+                rendered: Boolean(document.getElementById('seeded-playlist')),
+                status: document.getElementById('surprise-status').textContent
+            };
+        }
+        """
+    )
+
+    assert result == {
+        "hash": "#discover",
+        "posts": [{
+            "url": "/tubio/surprise",
+            "fields": {"seed_crc": "101"},
+        }],
+        "rendered": True,
+        "status": "1 track ready to play.",
+    }
+
+
 def test_audio_elements_have_preload_none(tubio_page):
     """Audio elements must have preload=none to avoid overwhelming server on page load."""
     audio_elements = tubio_page.locator("audio")
@@ -350,14 +414,27 @@ def test_trackbar_title_scrolls_when_overflowing(tubio_page):
     )
 
 
-def test_playlist_expanded_card_actions_are_cleaned_up():
+def test_playlist_expanded_card_actions_are_cleaned_up(app):
     """Expanded playlist cards omit the label and use the bordered action style."""
-    from pathlib import Path
+    import web_app.__main__  # noqa: F401
 
-    template = Path("web_app/tubio/templates/playlist.html").read_text()
+    track = {
+        "crc": 123,
+        "title": "Expanded track",
+        "thumbnail_url": "",
+        "source_url": "https://example.test/source",
+        "video_id": "video000001",
+        "trim_start_s": 0,
+        "trim_end_s": 0,
+        "is_cached": True,
+        "is_favourite": False,
+    }
+    with app.test_request_context("/tubio/"):
+        template = app.jinja_env.get_template("playlist_components.html")
+        html = str(template.module.playlist_panel("Favourites", [track]))
 
-    assert "Full Title:" not in template
-    assert template.count("track-action-btn") == 4
+    assert "Full Title:" not in html
+    assert html.count("track-action-btn") == 6
 
 
 def test_trackbar_volume_applies_to_audio_elements(tubio_page):

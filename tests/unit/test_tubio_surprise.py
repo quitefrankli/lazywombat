@@ -311,6 +311,8 @@ class TestSurpriseRoutes:
             assert "playlist-track-select-slot" in html
             assert "playlist-track-details" in html
             assert "playlist-track-actions" in html
+            assert "Suggest more" in html
+            assert "suggestMoreFromTrack(this)" in html
         assert "favouriteSurpriseTrack" not in regular
         assert "favouriteSurpriseTrack" in surprise
         assert "Converts on play" in surprise
@@ -432,6 +434,191 @@ class TestSurpriseRoutes:
         assert metadata.get_user(auth_mock.id).get_surprise_playlist() is not None
         data.cleanup_unused_resources.assert_called_once()
         download_audio.assert_not_called()
+
+    @patch("web_app.tubio.AudioDownloader.get_mix_related")
+    def test_seeded_generation_uses_only_accessible_selected_track(
+        self, related, client, auth_mock
+    ):
+        related.return_value = [
+            {
+                "video_id": "seedvideo01",
+                "title": "The seed itself",
+                "duration_s": 120,
+            },
+            {
+                "video_id": "ownedvideo2",
+                "title": "Already owned",
+                "duration_s": 120,
+            },
+            {
+                "video_id": "suggested01",
+                "title": "Suggested track",
+                "duration_s": 120,
+            },
+        ]
+        metadata = Metadata(audios={
+            101: AudioMetadata(
+                crc=101,
+                title="Selected seed",
+                yt_video_id="seedvideo01",
+            ),
+            202: AudioMetadata(
+                crc=202,
+                title="Another library track",
+                yt_video_id="ownedvideo2",
+            ),
+        })
+        user = metadata.get_user(auth_mock.id)
+        user.get_playlist().audio_crcs = [202]
+        user.set_surprise_playlist(_surprise(101))
+        data = _mock_data_interface(metadata)
+
+        with patch("web_app.tubio.DataInterface", return_value=data):
+            with client.session_transaction() as session:
+                session["_user_id"] = auth_mock.id
+            response = client.post(
+                "/tubio/surprise",
+                data={"seed_crc": "101"},
+                headers={"Accept": "application/json"},
+            )
+
+        assert response.status_code == 200
+        related.assert_called_once_with("seedvideo01")
+        playlist = response.get_json()["playlist"]
+        suggested = metadata.audios[playlist["audio_crcs"][0]]
+        assert suggested.yt_video_id == "suggested01"
+        assert len(playlist["audio_crcs"]) == 1
+
+    @patch("web_app.tubio.AudioDownloader.get_mix_related")
+    @patch("web_app.tubio.AudioDownloader.search_youtube")
+    def test_uploaded_seed_is_matched_by_title(
+        self, search, related, client, auth_mock
+    ):
+        search.return_value = {
+            "results": [{
+                "video_id": "matchedvideo",
+                "title": "Uploaded recording",
+            }],
+            "page": 0,
+            "total_pages": 1,
+        }
+        related.return_value = [{
+            "video_id": "suggested01",
+            "title": "Suggested track",
+            "duration_s": 120,
+        }]
+        metadata = Metadata(audios={
+            101: AudioMetadata(crc=101, title="Uploaded recording"),
+        })
+        metadata.get_user(auth_mock.id).get_playlist().audio_crcs = [101]
+        data = _mock_data_interface(metadata)
+
+        with patch("web_app.tubio.DataInterface", return_value=data):
+            with client.session_transaction() as session:
+                session["_user_id"] = auth_mock.id
+            response = client.post(
+                "/tubio/surprise",
+                data={"seed_crc": "101"},
+                headers={"Accept": "application/json"},
+            )
+
+        assert response.status_code == 200
+        assert search.call_args.args[0].endswith("Uploaded recording")
+        related.assert_called_once_with("matchedvideo")
+
+    @patch("web_app.tubio.AudioDownloader.search_youtube")
+    def test_unmatched_uploaded_seed_preserves_existing_surprise(
+        self, search, client, auth_mock
+    ):
+        search.return_value = {
+            "results": [],
+            "page": 0,
+            "total_pages": 1,
+        }
+        metadata = Metadata(audios={
+            101: AudioMetadata(crc=101, title="Unmatched upload"),
+            202: AudioMetadata(
+                crc=202,
+                title="Existing suggestion",
+                yt_video_id="existing01",
+            ),
+        })
+        user = metadata.get_user(auth_mock.id)
+        user.get_playlist().audio_crcs = [101]
+        user.set_surprise_playlist(_surprise(202))
+        data = _mock_data_interface(metadata)
+
+        with patch("web_app.tubio.DataInterface", return_value=data):
+            with client.session_transaction() as session:
+                session["_user_id"] = auth_mock.id
+            response = client.post(
+                "/tubio/surprise",
+                data={"seed_crc": "101"},
+                headers={"Accept": "application/json"},
+            )
+
+        assert response.status_code == 422
+        assert user.get_surprise_playlist().audio_crcs == [202]
+
+    @pytest.mark.parametrize(
+        ("seed_crc", "expected_status"),
+        [("not-an-integer", 400), ("101", 404)],
+    )
+    @patch("web_app.tubio.AudioDownloader.get_mix_related")
+    def test_seeded_generation_rejects_invalid_or_inaccessible_track(
+        self, related, seed_crc, expected_status, client, auth_mock
+    ):
+        metadata = Metadata(audios={
+            101: AudioMetadata(
+                crc=101,
+                title="Someone else's track",
+                yt_video_id="privatevideo",
+            ),
+        })
+        data = _mock_data_interface(metadata)
+
+        with patch("web_app.tubio.DataInterface", return_value=data):
+            with client.session_transaction() as session:
+                session["_user_id"] = auth_mock.id
+            response = client.post(
+                "/tubio/surprise",
+                data={"seed_crc": seed_crc},
+                headers={"Accept": "application/json"},
+            )
+
+        assert response.status_code == expected_status
+        related.assert_not_called()
+
+    @patch("web_app.tubio.AudioDownloader.get_mix_related")
+    def test_seeded_generation_rejects_expired_surprise_track(
+        self, related, client, auth_mock
+    ):
+        metadata = Metadata(audios={
+            101: AudioMetadata(
+                crc=101,
+                title="Expired suggestion",
+                yt_video_id="expiredvideo",
+            ),
+        })
+        metadata.get_user(auth_mock.id).set_surprise_playlist(
+            _surprise(
+                101,
+                last_active=datetime.now(timezone.utc) - timedelta(hours=2),
+            )
+        )
+        data = _mock_data_interface(metadata)
+
+        with patch("web_app.tubio.DataInterface", return_value=data):
+            with client.session_transaction() as session:
+                session["_user_id"] = auth_mock.id
+            response = client.post(
+                "/tubio/surprise",
+                data={"seed_crc": "101"},
+                headers={"Accept": "application/json"},
+            )
+
+        assert response.status_code == 404
+        related.assert_not_called()
 
     @patch("web_app.tubio.AudioDownloader.get_mix_related")
     @patch("web_app.tubio.get_cached_yt_vid_ids", return_value={"seed000000a"})

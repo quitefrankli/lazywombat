@@ -380,7 +380,7 @@ function updateTrackbarTitleOverflow() {
     titleEl.classList.add('is-overflowing');
 }
 
-function switchTab(tabName) {
+function switchTab(tabName, initializeDiscoverPane = true) {
     // Remove active class from all navbar tabs
     document.querySelectorAll('#search-nav-tab, #playlists-nav-tab, #discover-nav-tab').forEach(tab => {
         tab.classList.remove('active');
@@ -425,7 +425,7 @@ function switchTab(tabName) {
     const trackbar = document.getElementById('tubio-trackbar');
     if (trackbar) trackbar.classList.toggle('d-none', tabName === 'search');
 
-    if (tabName === 'discover') {
+    if (tabName === 'discover' && initializeDiscoverPane) {
         initializeDiscover();
     }
 
@@ -1731,15 +1731,21 @@ async function loadSurprisePlaylist() {
     return surprisePlaylist;
 }
 
-async function createSurprisePlaylist() {
-    const response = await jsonPost('/tubio/surprise');
+async function createSurprisePlaylist(seedCrc = null) {
+    const fields = seedCrc === null
+        ? {}
+        : { seed_crc: String(seedCrc) };
+    const response = await jsonPost('/tubio/surprise', fields);
     const data = await response.json();
     if (!response.ok || !data.playlist) {
         throw new Error(data.error || (data.empty_reason === 'no_library'
             ? 'Add some songs to your library first to generate a Surprise Playlist.'
             : 'No fresh tracks found right now.'));
     }
-    surprisePlaylist = normalizeSurprisePlaylist(data.playlist, 'create');
+    surprisePlaylist = normalizeSurprisePlaylist(
+        data.playlist,
+        seedCrc === null ? 'create' : 'seeded-create'
+    );
     surpriseCurrentIndex = -1;
     surpriseExhausted = false;
     renderSurprisePlaylist();
@@ -1814,17 +1820,25 @@ async function saveSurprisePlaylist() {
     }
 }
 
-async function refreshSurprisePlaylist(button) {
+async function replaceSurprisePlaylist(
+    button,
+    {
+        seedCrc = null,
+        statusMessage = 'Refreshing your Surprise Playlist…',
+        buttonMessage = 'Refreshing…',
+        successMessage = 'Surprise Playlist refreshed',
+    } = {}
+) {
     const previousPlaylist = surprisePlaylist;
     const previousCrcs = [...surpriseCrcs()];
     const original = button ? button.innerHTML : '';
     if (button) {
         button.disabled = true;
-        button.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Refreshing…</span>';
+        button.innerHTML = `<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>${buttonMessage}</span>`;
     }
-    setSurpriseStatus('Refreshing your Surprise Playlist…');
+    setSurpriseStatus(statusMessage);
     try {
-        await createSurprisePlaylist();
+        await createSurprisePlaylist(seedCrc);
         const audio = getAudio();
         if (audio && previousCrcs.some(crc => String(crc) === audio.dataset.crc)) {
             pauseCurrentPlayback();
@@ -1842,19 +1856,51 @@ async function refreshSurprisePlaylist(button) {
         renderSurprisePlaylist();
         const count = surpriseCrcs().length;
         setSurpriseStatus(`${count} track${count === 1 ? '' : 's'} ready to play.`);
-        showNotification('Surprise Playlist refreshed', 'success');
+        showNotification(successMessage, 'success');
+        return true;
     } catch (error) {
         surprisePlaylist = previousPlaylist;
         renderSurprisePlaylist();
         setSurpriseStatus(error.message || 'Could not refresh the Surprise Playlist.');
         reportTubioClientError('surprise-refresh', error);
         showNotification(error.message || 'Could not refresh the Surprise Playlist', 'error');
+        return false;
     } finally {
         if (button) {
             button.disabled = false;
             button.innerHTML = original;
         }
     }
+}
+
+function refreshSurprisePlaylist(button) {
+    return replaceSurprisePlaylist(button);
+}
+
+async function suggestMoreFromTrack(button) {
+    const item = button?.closest('.playlist-track');
+    const seedCrc = item?.dataset.audioCrc;
+    if (!seedCrc) {
+        showNotification('This track cannot be used for suggestions', 'error');
+        return false;
+    }
+
+    switchTab('discover', false);
+    if (discoverInitialization) {
+        try {
+            await discoverInitialization;
+        } catch (_error) {
+            // A seeded replacement below can still succeed if normal restore
+            // or generation failed.
+        }
+    }
+    const title = item.dataset.title || 'this track';
+    return replaceSurprisePlaylist(button, {
+        seedCrc,
+        statusMessage: `Finding more tracks like “${title}”…`,
+        buttonMessage: 'Suggesting…',
+        successMessage: `Built a Surprise Playlist from “${title}”`,
+    });
 }
 
 function togglePlaylistPlayback(playlistName) {
