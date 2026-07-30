@@ -66,21 +66,65 @@ function getAudioForCrc(crc) {
     return audio && audio.dataset.crc === String(crc) ? audio : null;
 }
 
-// Point the single audio element at a track (by crc), reading src + trim bounds
-// from the track's accordion item. No-op reload if it already holds this crc.
-// Returns the audio element, or null if the track isn't in the DOM.
-function loadTrack(crc, { force = false } = {}) {
+function getTrackItems() {
+    return Array.from(document.querySelectorAll('.playlist-track[data-track-key]'));
+}
+
+function resolveTrackItem(trackRef) {
+    if (trackRef && typeof trackRef === 'object' && trackRef.matches?.('.playlist-track')) {
+        return trackRef;
+    }
+
+    const ref = String(trackRef ?? '');
+    const exact = getTrackItems().find(item => item.dataset.trackKey === ref);
+    if (exact) return exact;
+
+    // CRC lookup remains as a compatibility fallback for callers that do not
+    // have a playlist occurrence. Prefer the currently loaded occurrence so a
+    // duplicate in another playlist cannot steal its controls or metadata.
+    const loaded = getLoadedTrackItem();
+    if (loaded && loaded.dataset.audioCrc === ref) return loaded;
+    return getTrackItems().find(item => item.dataset.audioCrc === ref) || null;
+}
+
+function getLoadedTrackItem() {
     const audio = getAudio();
     if (!audio) return null;
-    const item = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
+    const trackKey = audio.dataset.trackKey;
+    return trackKey
+        ? getTrackItems().find(item => item.dataset.trackKey === trackKey) || null
+        : null;
+}
+
+// Point the single audio element at one exact playlist occurrence, reading src
+// and trim bounds from that row. Reusing the same element and, where possible,
+// the same resource keeps WebKit's established media pipeline alive.
+// Returns the audio element, or null if the track isn't in the DOM.
+function loadTrack(trackRef, { force = false } = {}) {
+    const audio = getAudio();
+    if (!audio) return null;
+    const item = resolveTrackItem(trackRef);
     if (!item) return null;
-    if (force || audio.dataset.crc !== String(crc)) {
-        audio.dataset.crc = String(crc);
-        audio.dataset.trimStart = item.dataset.trimStart || '0';
-        audio.dataset.trimEnd = item.dataset.trimEnd || '0';
-        audio._trimEnded = false;
+
+    const crc = String(item.dataset.audioCrc);
+    const sourceChanged = force ||
+        audio.dataset.crc !== crc ||
+        audio.getAttribute('src') !== item.dataset.audioSrc;
+
+    audio.dataset.trackKey = item.dataset.trackKey;
+    audio.dataset.crc = crc;
+    audio.dataset.playlist = item.dataset.playlist || '';
+    audio.dataset.playlistKind = item.dataset.playlistKind || '';
+    audio.dataset.trimStart = item.dataset.trimStart || '0';
+    audio.dataset.trimEnd = item.dataset.trimEnd || '0';
+    audio._trimEnded = false;
+
+    if (sourceChanged) {
+        audio._metadataReady = false;
         audio.src = item.dataset.audioSrc;
-        audio.load();
+        // Setting src selects the new resource; the immediately following
+        // play() drives loading. An extra load() would reset the element again
+        // in the most timing-sensitive part of the iOS handoff.
         applyTrackbarVolume(audio);
     }
     return audio;
@@ -89,26 +133,25 @@ function loadTrack(crc, { force = false } = {}) {
 // Unified 'ended' handler for the single audio element. Behavior depends on the
 // global loop mode and whether a playlist is driving playback.
 function handleTrackEnded() {
-    const crc = currentTrackCrc;
     const audio = getAudio();
+    setCommittedPlaybackUI(false);
+    updateMediaSessionPlaybackState('paused');
 
     if (globalLoopMode === 'single' && audio) {
-        audio.currentTime = getPlaybackBounds(audio).start;
-        audio._trimEnded = false;
-        audio.play().catch(err => console.error('Error replaying audio:', err));
+        const item = getLoadedTrackItem();
+        if (item) {
+            requestTrackPlayback(item, getLoadedPlaybackContext(), { restart: true });
+        }
         return;
     }
 
     if (surpriseMode) {
-        setTimeout(() => playNextSurprise(), 500);
+        playNextSurprise();
         return;
     }
 
-    if (crc) resetTrackPlayingUI(crc);
-
     if (isPlayingPlaylist) {
-        currentPlaylistIndex++;
-        setTimeout(() => playNextInQueue(), 500);
+        playNextInQueue(currentPlaylistIndex + 1);
     }
 }
 
@@ -794,23 +837,38 @@ async function updateContent(data) {
                 initializeTrackbarVolume();
 
                 const audio = getAudio();
-                const loadedItem = audio && audio.dataset.crc
-                    ? document.querySelector(`.accordion-item[data-audio-crc="${audio.dataset.crc}"]`)
-                    : null;
+                let loadedItem = getLoadedTrackItem();
+                if (!loadedItem && audio?.dataset.crc) {
+                    const previousTrackKey = audio.dataset.trackKey;
+                    loadedItem = getTrackItems().find(item =>
+                        item.dataset.audioCrc === audio.dataset.crc &&
+                        item.dataset.playlist === audio.dataset.playlist
+                    ) || null;
+                    if (loadedItem) {
+                        audio.dataset.trackKey = loadedItem.dataset.trackKey;
+                        if (currentTrackKey === previousTrackKey) {
+                            currentTrackKey = loadedItem.dataset.trackKey;
+                        }
+                        if (pendingPlayback?.trackKey === previousTrackKey) {
+                            pendingPlayback.trackKey = loadedItem.dataset.trackKey;
+                        }
+                    }
+                }
                 if (loadedItem) {
-                    const crc = audio.dataset.crc;
                     // Trim bounds may have changed in the re-rendered DOM.
                     audio.dataset.trimStart = loadedItem.dataset.trimStart || '0';
                     audio.dataset.trimEnd = loadedItem.dataset.trimEnd || '0';
-                    syncAudioButtonUI(crc);
-                    if (!audio.paused) {
-                        const trackItem = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
-                        if (trackItem) trackItem.classList.add('track-playing');
+                    if (
+                        currentTrackKey === loadedItem.dataset.trackKey &&
+                        !audio.paused
+                    ) {
+                        syncAudioButtonUI(loadedItem);
+                        loadedItem.classList.add('track-playing');
                     }
-                    updateTrackbar(crc);
+                    updateTrackbar(currentTrackKey);
                     updateTrackbarScrubber();
                 } else {
-                    updateTrackbar(currentTrackCrc);
+                    updateTrackbar(currentTrackKey);
                     updateTrackbarScrubber();
                 }
             }
@@ -931,7 +989,7 @@ async function removeTrack(crc, buttonElement) {
     try {
         // Stop audio if currently playing this track
         const audio = getAudioForCrc(crc);
-        if (audio && !audio.paused) audio.pause();
+        if (audio && !audio.paused) pauseCurrentPlayback();
 
         const response = await jsonPost(`/tubio/delete_audio/${crc}`);
 
@@ -944,8 +1002,11 @@ async function removeTrack(crc, buttonElement) {
                 player.pause();
                 player.removeAttribute('src');
                 delete player.dataset.crc;
+                delete player.dataset.trackKey;
             }
             currentTrackCrc = null;
+            currentTrackKey = null;
+            pendingPlayback = null;
             isPlayingPlaylist = false;
             updateTrackbar(null);
             updateTrackbarScrubber();
@@ -961,40 +1022,38 @@ async function removeTrack(crc, buttonElement) {
 }
 
 // Individual track playback controls
-function togglePlayTrack(crc) {
+function togglePlayTrack(trackRef) {
     if (surpriseMode) exitSurpriseMode();
-    const playButton = document.getElementById(`play-btn-${crc}`);
-    const trackItem = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
+    const trackItem = resolveTrackItem(trackRef);
+    if (!trackItem) {
+        console.error('Track not found:', trackRef);
+        return Promise.resolve(false);
+    }
+
+    const crc = trackItem.dataset.audioCrc;
     const loaded = getAudioForCrc(crc);
 
-    // Currently playing this exact track → pause it.
+    // A committed playing occurrence toggles to pause. A loaded-but-pending
+    // occurrence is retried, including WebKit's paused=false/silent state.
     if (loaded && !loaded.paused) {
-        loaded.pause();
-        setPlayButtonState(playButton, false);
-        return;
+        if (
+            currentTrackKey === trackItem.dataset.trackKey &&
+            !pendingPlayback
+        ) {
+            pauseCurrentPlayback();
+            return Promise.resolve(true);
+        }
+        pauseCurrentPlayback();
     }
 
-    // Switching to a different track clears the previous track's row UI.
-    if (currentTrackCrc && String(currentTrackCrc) !== String(crc)) {
-        resetTrackPlayingUI(currentTrackCrc);
-    }
-
-    if (trackItem && trackItem.dataset.playlist) {
+    if (trackItem.dataset.playlist) {
         currentPlaylistName = trackItem.dataset.playlist;
     }
 
-    const audio = loadTrack(crc);
-    if (!audio) {
-        console.error(`Track not found for crc: ${crc}`);
-        return;
-    }
-    currentTrackCrc = crc;
-    applyPlaybackStart(audio);
-    audio.play().catch(err => {
-        console.error('Error playing audio:', err);
-        showNotification('Error playing audio. Please try again.', 'error');
+    return requestTrackPlayback(trackItem, {
+        playlistIndex: null,
+        surpriseIndex: null,
     });
-    setPlayButtonState(playButton, true);
 }
 
 // Global playback state — controlled from the bottom trackbar
@@ -1064,16 +1123,25 @@ function seekTrack(crc, value) {
             audio.removeEventListener('loadedmetadata', onMeta);
             const bounds = getPlaybackBounds(audio);
             audio.currentTime = bounds.start + ((value / 100) * (bounds.end - bounds.start));
+            updateTrackbarScrubber();
+            updateMediaSessionPositionState();
         }, { once: true });
         audio.load();
     } else if (audio.duration && isFinite(audio.duration)) {
         const bounds = getPlaybackBounds(audio);
         audio.currentTime = bounds.start + ((value / 100) * (bounds.end - bounds.start));
+        updateTrackbarScrubber();
+        updateMediaSessionPositionState();
     }
 }
 
-// Currently active track CRC (the last track the user interacted with)
+// Committed playback identifies the last occurrence that reached `playing`.
+// A separate pending request keeps a failed handoff retryable without making
+// the UI or Media Session claim that the new track is already playing.
 let currentTrackCrc = null;
+let currentTrackKey = null;
+let pendingPlayback = null;
+let playbackAttemptSequence = 0;
 
 // Playlist playback functionality
 let currentPlaylistQueue = [];
@@ -1086,6 +1154,203 @@ let surprisePlaylist = null;
 let surpriseCurrentIndex = -1;
 let surpriseExhausted = false;
 let surpriseFilling = false;
+
+function getLoadedPlaybackContext() {
+    const audio = getAudio();
+    if (
+        pendingPlayback &&
+        audio &&
+        pendingPlayback.trackKey === audio.dataset.trackKey
+    ) {
+        return {
+            playlistIndex: pendingPlayback.playlistIndex,
+            surpriseIndex: pendingPlayback.surpriseIndex,
+        };
+    }
+    if (surpriseMode && surpriseCurrentIndex >= 0) {
+        return { playlistIndex: null, surpriseIndex: surpriseCurrentIndex };
+    }
+    if (isPlayingPlaylist && currentPlaylistQueue.length > 0) {
+        return { playlistIndex: currentPlaylistIndex, surpriseIndex: null };
+    }
+    return { playlistIndex: null, surpriseIndex: null };
+}
+
+function setCommittedPlaybackUI(isPlaying) {
+    const item = resolveTrackItem(currentTrackKey);
+    if (item) {
+        setPlayButtonState(item.querySelector('.track-play-btn'), isPlaying);
+        item.classList.toggle('track-playing', isPlaying);
+    }
+    updateTrackbarPlayPauseUI(isPlaying);
+    if (isPlayingPlaylist && currentPlaylistName) {
+        updatePlaylistPlayButton(currentPlaylistName, isPlaying);
+    }
+    if (surpriseMode) renderSurprisePlaylist();
+}
+
+function resetAllTrackPlayingUI() {
+    getTrackItems().forEach(item => {
+        item.classList.remove('track-playing');
+        setPlayButtonState(item.querySelector('.track-play-btn'), false);
+    });
+}
+
+function commitLoadedPlayback(audio) {
+    const item = getLoadedTrackItem();
+    if (!item || audio.paused) return false;
+
+    const context = pendingPlayback?.trackKey === item.dataset.trackKey
+        ? pendingPlayback
+        : getLoadedPlaybackContext();
+
+    resetAllTrackPlayingUI();
+    currentTrackKey = item.dataset.trackKey;
+    currentTrackCrc = item.dataset.audioCrc;
+
+    if (Number.isInteger(context.playlistIndex)) {
+        currentPlaylistIndex = context.playlistIndex;
+        currentPlaylistName = item.dataset.playlist || currentPlaylistName;
+        isPlayingPlaylist = true;
+        surpriseMode = false;
+    } else if (Number.isInteger(context.surpriseIndex)) {
+        surpriseCurrentIndex = context.surpriseIndex;
+        surpriseMode = true;
+        isPlayingPlaylist = false;
+        const title = item.dataset.title || 'track';
+        setSurpriseStatus(`Surprise Playlist · now playing “${title}”`);
+        fillSurpriseBuffer();
+    }
+
+    pendingPlayback = null;
+    setCommittedPlaybackUI(true);
+    updateTrackbar(currentTrackKey);
+    updateTrackbarScrubber();
+    updateMediaSessionMetadata(item);
+    updateMediaSessionPlaybackState('playing');
+    updateMediaSessionPositionState();
+
+    if (document.visibilityState === 'visible') {
+        item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return true;
+}
+
+function handlePlaybackFailure(error, attempt) {
+    const audio = getAudio();
+    if (!attempt || attempt.attemptId !== playbackAttemptSequence) return false;
+    if (!audio || audio.dataset.trackKey !== attempt.trackKey) return false;
+
+    attempt.failed = true;
+    pendingPlayback = attempt;
+    if (!audio.paused) audio.pause();
+    setCommittedPlaybackUI(false);
+    updateMediaSessionPlaybackState('paused');
+    updateMediaSessionPositionState();
+
+    console.error('Tubio playback request failed:', error);
+    reportTubioClientError('playback-request', error, {
+        crc: attempt.crc,
+        trackKey: attempt.trackKey,
+        playlistIndex: attempt.playlistIndex,
+        surpriseIndex: attempt.surpriseIndex,
+        visibility: document.visibilityState,
+    });
+    if (document.visibilityState === 'visible') {
+        showNotification('Playback could not start. Press play to retry.', 'error');
+    }
+    return false;
+}
+
+function requestTrackPlayback(
+    trackRef,
+    context = { playlistIndex: null, surpriseIndex: null },
+    { restart = false } = {}
+) {
+    const item = resolveTrackItem(trackRef);
+    if (!item) {
+        console.error('Track not found:', trackRef);
+        return Promise.resolve(false);
+    }
+
+    const attempt = {
+        attemptId: ++playbackAttemptSequence,
+        trackKey: item.dataset.trackKey,
+        crc: item.dataset.audioCrc,
+        playlistIndex: Number.isInteger(context.playlistIndex)
+            ? context.playlistIndex
+            : null,
+        surpriseIndex: Number.isInteger(context.surpriseIndex)
+            ? context.surpriseIndex
+            : null,
+        failed: false,
+    };
+    pendingPlayback = attempt;
+
+    if (currentTrackKey && currentTrackKey !== attempt.trackKey) {
+        setCommittedPlaybackUI(false);
+    }
+
+    const audio = loadTrack(item);
+    if (!audio) return Promise.resolve(false);
+    applyPlaybackStart(audio, { restart });
+    updateMediaSessionPlaybackState('paused');
+
+    let playResult;
+    try {
+        // Call play synchronously in the ended/action-handler stack. Awaiting
+        // metadata or a timer first can lose iOS's background media assertion.
+        playResult = audio.play();
+    } catch (error) {
+        return Promise.resolve(handlePlaybackFailure(error, attempt));
+    }
+
+    return Promise.resolve(playResult).then(
+        () => {
+            if (attempt.attemptId !== playbackAttemptSequence) return false;
+            // `playing` is the success signal and owns the UI commit. A resolved
+            // play() with a still-paused element is an unsuccessful request.
+            if (audio.paused) {
+                return handlePlaybackFailure(
+                    new Error('The media element remained paused after play() resolved.'),
+                    attempt
+                );
+            }
+            return true;
+        },
+        error => handlePlaybackFailure(error, attempt)
+    ).catch(error => {
+        // Keep every UI, inline onclick, and Media Session caller safe from an
+        // unhandled rejection even if failure reporting itself encounters an
+        // unexpected browser-specific error.
+        console.error('Unexpected error while settling playback:', error);
+        setCommittedPlaybackUI(false);
+        updateMediaSessionPlaybackState('paused');
+        return false;
+    });
+}
+
+function pauseCurrentPlayback() {
+    playbackAttemptSequence++;
+    const audio = getAudio();
+    if (audio && !audio.paused) audio.pause();
+    setCommittedPlaybackUI(false);
+    updateMediaSessionPlaybackState('paused');
+    updateMediaSessionPositionState();
+}
+
+function resumeLoadedPlayback() {
+    const item = getLoadedTrackItem() || resolveTrackItem(currentTrackKey);
+    if (!item) return Promise.resolve(false);
+    const audio = getAudio();
+    if (pendingPlayback && audio && !audio.paused) {
+        // Recovery for the WebKit state where play() was accepted but the
+        // element never reached `playing`: reset only in response to an
+        // explicit user/Media Session play action, then retry immediately.
+        audio.pause();
+    }
+    return requestTrackPlayback(item, getLoadedPlaybackContext());
+}
 
 function surpriseBufferSize() {
     const container = document.getElementById('surprise-playlist');
@@ -1155,7 +1420,10 @@ async function fillSurpriseBuffer({ requirePlayback = true } = {}) {
 
 async function playNextSurprise() {
     if (!surpriseMode || !surprisePlaylist) return;
-    const nextIndex = surpriseCurrentIndex + 1;
+    const pendingIndex = pendingPlayback?.surpriseIndex;
+    const nextIndex = Number.isInteger(pendingIndex)
+        ? pendingIndex + 1
+        : surpriseCurrentIndex + 1;
     if (nextIndex >= surpriseCrcs().length && !surpriseExhausted) {
         setSurpriseStatus('Loading next track…');
         await fillSurpriseBuffer();
@@ -1173,7 +1441,10 @@ function sleep(milliseconds) {
 }
 
 async function ensureSurpriseTrackCached(crc) {
-    const item = document.querySelector(`.playlist-track[data-playlist-kind="surprise"][data-audio-crc="${crc}"]`);
+    const item = getTrackItems().find(
+        track => track.dataset.playlistKind === 'surprise' &&
+            track.dataset.audioCrc === String(crc)
+    );
     if (!item) {
         showNotification('This Surprise track is no longer available', 'error');
         return false;
@@ -1229,48 +1500,78 @@ async function ensureSurpriseTrackCached(crc) {
     }
 }
 
-async function playSurpriseTrack(index) {
-    const crc = surpriseCrcs()[index];
-    if (crc === undefined) return;
-    if (!await ensureSurpriseTrackCached(crc)) return;
+function getSurpriseTrackItem(index) {
+    return getTrackItems().filter(
+        track => track.dataset.playlistKind === 'surprise'
+    )[index] || null;
+}
+
+function startSurpriseTrackPlayback(index) {
     const existingAudio = getAudio();
-    if (surpriseMode && index === surpriseCurrentIndex && existingAudio) {
+    const item = getSurpriseTrackItem(index);
+    if (!item) return;
+
+    if (
+        surpriseMode &&
+        index === surpriseCurrentIndex &&
+        existingAudio?.dataset.trackKey === item.dataset.trackKey
+    ) {
         if (existingAudio.paused) {
-            existingAudio.play().catch(err => console.error('Error playing audio:', err));
+            return requestTrackPlayback(item, {
+                playlistIndex: null,
+                surpriseIndex: index,
+            });
         } else {
-            existingAudio.pause();
+            pauseCurrentPlayback();
         }
         renderSurprisePlaylist();
         return;
     }
     surpriseMode = true;
     isPlayingPlaylist = false;
-    surpriseCurrentIndex = index;
-    if (currentTrackCrc && String(currentTrackCrc) !== String(crc)) {
-        resetTrackPlayingUI(currentTrackCrc);
-    }
-    const audio = loadTrack(crc);
-    if (!audio) return;
-    currentTrackCrc = String(crc);
-    audio.play().catch(err => {
-        console.error('Error playing surprise track:', err);
-        showNotification('Could not play this track', 'error');
-    });
-    const item = document.querySelector(`.playlist-track[data-playlist-kind="surprise"][data-audio-crc="${crc}"]`);
-    setSurpriseStatus(`Surprise Playlist · now playing “${item?.dataset.title || 'track'}”`);
+    resetAllPlaylistPlayButtons();
+    setSurpriseStatus(`Starting “${item.dataset.title || 'track'}”…`);
     renderSurprisePlaylist();
-    fillSurpriseBuffer();
+    return requestTrackPlayback(item, {
+        playlistIndex: null,
+        surpriseIndex: index,
+    });
 }
 
-function toggleSurpriseTrack(crc) {
-    const index = surpriseCrcs().findIndex(value => String(value) === String(crc));
+function playSurpriseTrack(index) {
+    const crc = surpriseCrcs()[index];
+    if (crc === undefined) return Promise.resolve(false);
+
+    const item = getSurpriseTrackItem(index);
+    if (!item) return Promise.resolve(false);
+    if (item.dataset.isCached === 'true') {
+        // Keep cached handoffs in the ended/action-handler call stack.
+        return startSurpriseTrackPlayback(index);
+    }
+
+    return ensureSurpriseTrackCached(crc).then(isCached => {
+        if (!isCached) return false;
+        return startSurpriseTrackPlayback(index);
+    });
+}
+
+function toggleSurpriseTrack(trackRef) {
+    const item = resolveTrackItem(trackRef);
+    const surpriseItems = getTrackItems().filter(
+        track => track.dataset.playlistKind === 'surprise'
+    );
+    const index = surpriseItems.indexOf(item);
     if (index >= 0) playSurpriseTrack(index);
 }
 
 function toggleSurprisePlaylistPlayback() {
     const audio = getAudio();
-    if (surpriseMode && surpriseCurrentIndex >= 0 && audio) {
-        playSurpriseTrack(surpriseCurrentIndex);
+    if (
+        surpriseMode &&
+        audio &&
+        (surpriseCurrentIndex >= 0 || Number.isInteger(pendingPlayback?.surpriseIndex))
+    ) {
+        togglePlayPause();
         return;
     }
     playSurpriseTrack(0);
@@ -1288,12 +1589,12 @@ function renderSurprisePlaylist() {
     container.setAttribute('aria-busy', 'false');
     initializeLazyThumbnails();
     initializeTooltips();
-    const crc = surpriseCrcs()[surpriseCurrentIndex];
-    const audio = getAudioForCrc(crc);
-    if (crc !== undefined && audio) {
-        const item = document.querySelector(`.playlist-track[data-playlist-kind="surprise"][data-audio-crc="${crc}"]`);
-        if (item && !audio.paused) item.classList.add('track-playing');
-        setPlayButtonState(item?.querySelector('.track-play-btn'), !audio.paused);
+    const item = getSurpriseTrackItem(surpriseCurrentIndex);
+    const audio = getAudio();
+    if (item && audio?.dataset.trackKey === item.dataset.trackKey) {
+        const isPlaying = currentTrackKey === item.dataset.trackKey && !audio.paused;
+        item.classList.toggle('track-playing', isPlaying);
+        setPlayButtonState(item.querySelector('.track-play-btn'), isPlaying);
     }
 }
 
@@ -1309,7 +1610,7 @@ async function loadSurprisePlaylist() {
         surpriseCurrentIndex = restoredIndex;
         if (restoredIndex < 0) {
             const audio = getAudioForCrc(currentCrc);
-            if (audio) audio.pause();
+            if (audio) pauseCurrentPlayback();
             exitSurpriseMode();
         }
         renderSurprisePlaylist();
@@ -1318,7 +1619,7 @@ async function loadSurprisePlaylist() {
     if (surpriseMode && surprisePlaylist && !data.playlist) {
         const audio = getAudio();
         if (audio && surpriseCrcs().some(crc => String(crc) === audio.dataset.crc)) {
-            audio.pause();
+            pauseCurrentPlayback();
         }
         exitSurpriseMode();
     }
@@ -1425,10 +1726,13 @@ async function refreshSurprisePlaylist(button) {
         await createSurprisePlaylist();
         const audio = getAudio();
         if (audio && previousCrcs.some(crc => String(crc) === audio.dataset.crc)) {
-            audio.pause();
+            pauseCurrentPlayback();
             audio.removeAttribute('src');
             delete audio.dataset.crc;
+            delete audio.dataset.trackKey;
             currentTrackCrc = null;
+            currentTrackKey = null;
+            pendingPlayback = null;
             updateTrackbar(null);
             updateTrackbarScrubber();
         }
@@ -1455,11 +1759,14 @@ async function refreshSurprisePlaylist(button) {
 function togglePlaylistPlayback(playlistName) {
     // Check if this playlist is currently playing
     if (isPlayingPlaylist && currentPlaylistName === playlistName) {
-        // Find the currently playing audio
-        const crc = currentPlaylistQueue[currentPlaylistIndex];
-        const audioElement = getAudioForCrc(crc);
+        const audioElement = getAudio();
+        const isCommittedPlaying =
+            audioElement &&
+            !audioElement.paused &&
+            !pendingPlayback &&
+            currentTrackKey === audioElement.dataset.trackKey;
 
-        if (audioElement && !audioElement.paused) {
+        if (isCommittedPlaying) {
             // Pause the playlist
             pausePlaylist();
         } else {
@@ -1473,47 +1780,25 @@ function togglePlaylistPlayback(playlistName) {
 }
 
 function pausePlaylist() {
-    const crc = currentPlaylistQueue[currentPlaylistIndex];
-    const audioElement = getAudioForCrc(crc);
-    const playButton = document.getElementById(`play-btn-${crc}`);
-
-    if (audioElement) {
-        audioElement.pause();
-    }
-
-    if (playButton) {
-        setPlayButtonState(playButton, false);
-    }
-
-    // Update playlist play button to show play icon
-    updatePlaylistPlayButton(currentPlaylistName, false);
+    pauseCurrentPlayback();
 }
 
 function resumePlaylist() {
-    const crc = currentPlaylistQueue[currentPlaylistIndex];
-    const audioElement = loadTrack(crc);
-    const playButton = document.getElementById(`play-btn-${crc}`);
-
-    if (audioElement) {
-        currentTrackCrc = crc;
-        applyPlaybackStart(audioElement);
-        audioElement.play().catch(err => {
-            console.error('Error resuming audio:', err);
-            showNotification('Error resuming playback', 'error');
-        });
-    }
-
-    if (playButton) {
-        setPlayButtonState(playButton, true);
-    }
-
-    // Update playlist play button to show pause icon
-    updatePlaylistPlayButton(currentPlaylistName, true);
+    const pendingIndex = pendingPlayback?.playlistIndex;
+    const index = Number.isInteger(pendingIndex)
+        ? pendingIndex
+        : currentPlaylistIndex;
+    return playNextInQueue(index);
 }
 
 function updatePlaylistPlayButton(playlistName, isPlaying) {
-    const buttonId = `play-all-btn-${playlistName.replace(/ /g, '-').replace(/'/g, '')}`;
-    const button = document.getElementById(buttonId);
+    const panel = Array.from(
+        document.querySelectorAll('.playlist-panel[data-playlist-name]')
+    ).find(candidate =>
+        candidate.dataset.playlistName === playlistName &&
+        candidate.dataset.playlistKind === 'regular'
+    );
+    const button = panel?.querySelector('.btn-play-all');
 
     if (button) {
         if (isPlaying) {
@@ -1535,12 +1820,15 @@ function resetAllPlaylistPlayButtons() {
 
 function playAllInPlaylist(playlistName) {
     if (surpriseMode) exitSurpriseMode();
-    // Find all audio items in this playlist
-    const accordionId = `audioAccordion-${playlistName.replace(/ /g, '-')}`;
-    const accordion = document.getElementById(accordionId);
+    const accordion = Array.from(
+        document.querySelectorAll('.playlist-accordion[data-playlist-name]')
+    ).find(candidate =>
+        candidate.dataset.playlistName === playlistName &&
+        candidate.dataset.playlistKind === 'regular'
+    );
     
     if (!accordion) {
-        console.error(`Playlist accordion not found: ${accordionId}`);
+        console.error(`Playlist accordion not found: ${playlistName}`);
         showNotification('Error: Playlist not found', 'error');
         return;
     }
@@ -1556,14 +1844,13 @@ function playAllInPlaylist(playlistName) {
     // Stop any currently playing track first
     const playingAudio = getAudio();
     if (playingAudio && !playingAudio.paused) {
-        playingAudio.pause();
+        pauseCurrentPlayback();
     }
-    if (currentTrackCrc) {
-        resetTrackPlayingUI(currentTrackCrc);
-    }
+    resetAllTrackPlayingUI();
 
-    // Build queue of audio CRCs
-    currentPlaylistQueue = Array.from(audioItems).map(item => item.dataset.audioCrc);
+    // Queue exact DOM occurrences, not CRCs. The same file may legitimately
+    // appear more than once in one playlist or across several playlists.
+    currentPlaylistQueue = Array.from(audioItems).map(item => item.dataset.trackKey);
 
     if (globalShuffle) {
         currentPlaylistQueue = shuffleArray(currentPlaylistQueue);
@@ -1573,67 +1860,66 @@ function playAllInPlaylist(playlistName) {
     isPlayingPlaylist = true;
     currentPlaylistName = playlistName;
 
-    // Reset all playlist play buttons, then set this one to pause
+    // The play-all control stays in its truthful "play" state until the audio
+    // element emits `playing`.
     resetAllPlaylistPlayButtons();
-    updatePlaylistPlayButton(playlistName, true);
 
     const shuffleText = globalShuffle ? ' (shuffled)' : '';
-    showNotification(`Playing all ${currentPlaylistQueue.length} songs in "${playlistName}"${shuffleText}`, 'success');
+    showNotification(`Starting ${currentPlaylistQueue.length} songs in "${playlistName}"${shuffleText}`, 'success');
 
     // Start playing first song
-    playNextInQueue();
+    return playNextInQueue(0);
 }
 
-function playNextInQueue() {
-    if (!isPlayingPlaylist || currentPlaylistIndex >= currentPlaylistQueue.length) {
-        // Check if we should loop the playlist
-        if (globalLoopMode === 'playlist' && currentPlaylistQueue.length > 0) {
+function finishPlaylistPlayback() {
+    isPlayingPlaylist = false;
+    if (pendingPlayback && Number.isInteger(pendingPlayback.playlistIndex)) {
+        pendingPlayback = null;
+    }
+    resetAllPlaylistPlayButtons();
+    updateMediaSessionPlaybackState('none');
+    showNotification('Playlist finished', 'info');
+}
+
+function playNextInQueue(startIndex = currentPlaylistIndex) {
+    if (!isPlayingPlaylist || currentPlaylistQueue.length === 0) {
+        finishPlaylistPlayback();
+        return Promise.resolve(false);
+    }
+
+    let index = startIndex;
+    let checked = 0;
+    let wrapped = false;
+
+    while (checked < currentPlaylistQueue.length) {
+        if (index >= currentPlaylistQueue.length) {
+            if (globalLoopMode !== 'playlist') {
+                finishPlaylistPlayback();
+                return Promise.resolve(false);
+            }
             if (globalShuffle) {
                 currentPlaylistQueue = shuffleArray(currentPlaylistQueue);
             }
-            currentPlaylistIndex = 0;
-            showNotification('Looping playlist from beginning', 'info');
-        } else {
-            // Playlist finished
-            isPlayingPlaylist = false;
-            resetAllPlaylistPlayButtons();
-            showNotification('Playlist finished', 'info');
-            return;
+            index = 0;
+            wrapped = true;
         }
-    }
-    
-    const crc = currentPlaylistQueue[currentPlaylistIndex];
-    const playButton = document.getElementById(`play-btn-${crc}`);
-    const trackItem = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
 
-    const audioElement = loadTrack(crc);
-    if (!audioElement || !trackItem) {
-        console.error(`Track not found for crc: ${crc}`);
-        currentPlaylistIndex++;
-        playNextInQueue();
-        return;
-    }
-    currentTrackCrc = crc;
+        const trackItem = resolveTrackItem(currentPlaylistQueue[index]);
+        if (trackItem) {
+            if (wrapped) showNotification('Looping playlist from beginning', 'info');
+            return requestTrackPlayback(trackItem, {
+                playlistIndex: index,
+                surpriseIndex: null,
+            });
+        }
 
-    // Scroll to the song
-    trackItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-    applyPlaybackStart(audioElement);
-    audioElement.play().catch(err => {
-        console.error('Error playing audio:', err);
-        currentPlaylistIndex++;
-        playNextInQueue();
-    });
-
-    // Update button to show pause icon (same as togglePlayTrack)
-    if (playButton) {
-        setPlayButtonState(playButton, true);
+        console.error(`Playlist entry not found: ${currentPlaylistQueue[index]}`);
+        index++;
+        checked++;
     }
 
-    // Highlight this track (same as togglePlayTrack)
-    trackItem.classList.add('track-playing');
-    // Advancement to the next track is handled by the single element's
-    // persistent 'ended' listener (handleTrackEnded).
+    finishPlaylistPlayback();
+    return Promise.resolve(false);
 }
 
 // Stop playlist playback if user manually interacts with play button
@@ -1641,6 +1927,7 @@ document.addEventListener('click', function(e) {
     // Check if a play button was clicked
     if (e.target.closest('.track-play-btn')) {
         // User manually interacted with a track, stop playlist mode
+        if (isPlayingPlaylist) resetAllPlaylistPlayButtons();
         isPlayingPlaylist = false;
     }
 }, true);
@@ -1666,15 +1953,17 @@ function showNotification(message, type = 'info') {
 }
 
 // Sync button UI with audio element state
-function syncAudioButtonUI(crc) {
-    const audioElement = getAudioForCrc(crc);
-    const playButton = document.getElementById(`play-btn-${crc}`);
+function syncAudioButtonUI(trackRef) {
+    const item = resolveTrackItem(trackRef);
+    const audioElement = getAudio();
+    const playButton = item?.querySelector('.track-play-btn');
 
-    if (!audioElement || !playButton) {
+    if (!item || !audioElement || !playButton) {
         return;
     }
 
-    setPlayButtonState(playButton, !audioElement.paused);
+    const isLoaded = audioElement.dataset.trackKey === item.dataset.trackKey;
+    setPlayButtonState(playButton, isLoaded && !audioElement.paused);
 }
 
 // Bind playback listeners ONCE to the single persistent audio element. Handlers
@@ -1688,21 +1977,15 @@ function initializeAudioEventListeners() {
     audio._listenersBound = true;
 
     audio.addEventListener('play', () => {
-        const crc = audio.dataset.crc;
         applyPlaybackStart(audio);
-        currentTrackCrc = crc;
-        syncAudioButtonUI(crc);
-        updateMediaSessionMetadata(crc);
-        updateMediaSessionPlaybackState('playing');
-        updateTrackbar(crc);
-        if (surpriseMode) renderSurprisePlaylist();
+    });
+    audio.addEventListener('playing', () => {
+        commitLoadedPlayback(audio);
     });
     audio.addEventListener('pause', () => {
-        const crc = audio.dataset.crc;
-        syncAudioButtonUI(crc);
+        setCommittedPlaybackUI(false);
         updateMediaSessionPlaybackState('paused');
-        if (crc === currentTrackCrc) updateTrackbarPlayPauseUI(false);
-        if (surpriseMode) renderSurprisePlaylist();
+        updateMediaSessionPositionState();
     });
     audio.addEventListener('timeupdate', () => {
         const bounds = getPlaybackBounds(audio);
@@ -1713,15 +1996,39 @@ function initializeAudioEventListeners() {
             return;
         }
         updateTrackbarScrubber();
+        updateMediaSessionPositionState();
     });
-    audio.addEventListener('loadedmetadata', () => updateTrackbarScrubber());
+    audio.addEventListener('loadedmetadata', () => {
+        audio._metadataReady = true;
+        applyPlaybackStart(audio);
+        updateTrackbarScrubber();
+        updateMediaSessionPositionState();
+    });
+    audio.addEventListener('ratechange', updateMediaSessionPositionState);
     audio.addEventListener('ended', handleTrackEnded);
+    audio.addEventListener('error', () => {
+        const mediaError = audio.error;
+        const error = new Error(
+            mediaError ? `Media error ${mediaError.code}` : 'Unknown media error'
+        );
+        if (pendingPlayback) {
+            handlePlaybackFailure(error, pendingPlayback);
+        } else {
+            setCommittedPlaybackUI(false);
+            updateMediaSessionPlaybackState('paused');
+            reportTubioClientError('media-element', error, {
+                crc: audio.dataset.crc,
+                trackKey: audio.dataset.trackKey,
+            });
+        }
+    });
     applyTrackbarVolume(audio);
 }
 
-function updateMediaSessionMetadata(crc) {
+function updateMediaSessionMetadata(trackRef) {
     if (!('mediaSession' in navigator)) return;
-    const trackItem = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
+    if (typeof MediaMetadata !== 'function') return;
+    const trackItem = resolveTrackItem(trackRef);
     if (!trackItem) return;
 
     const title = trackItem.dataset.title || 'Unknown Track';
@@ -1730,100 +2037,149 @@ function updateMediaSessionMetadata(crc) {
         const thumbnailUrl = trackItem.dataset.thumbnailUrl;
         artwork.push({ src: thumbnailUrl, sizes: '512x512', type: 'image/jpeg' });
     }
-    navigator.mediaSession.metadata = new MediaMetadata({ title, artwork });
+    try {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title,
+            album: trackItem.dataset.playlist || '',
+            artwork,
+        });
+    } catch (error) {
+        reportTubioClientError('media-session-metadata', error, {
+            crc: trackItem.dataset.audioCrc,
+            trackKey: trackItem.dataset.trackKey,
+        });
+    }
 }
 
 function updateMediaSessionPlaybackState(state) {
     if ('mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = state;
+        try {
+            navigator.mediaSession.playbackState = state;
+        } catch (error) {
+            // Playback remains functional in partial Media Session
+            // implementations that expose but do not accept this property.
+        }
+    }
+}
+
+function updateMediaSessionPositionState() {
+    if (!('mediaSession' in navigator)) return;
+    if (typeof navigator.mediaSession.setPositionState !== 'function') return;
+
+    const audio = getAudio();
+    const loadedTrackIsCommitted =
+        audio &&
+        currentTrackKey &&
+        audio.dataset.trackKey === currentTrackKey;
+    if (
+        !loadedTrackIsCommitted ||
+        !Number.isFinite(audio.duration) ||
+        audio.duration <= 0
+    ) {
+        try {
+            navigator.mediaSession.setPositionState();
+        } catch (error) {}
+        return;
+    }
+
+    const bounds = getPlaybackBounds(audio);
+    const duration = bounds.end - bounds.start;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const position = Math.min(
+        duration,
+        Math.max(0, audio.currentTime - bounds.start)
+    );
+    try {
+        navigator.mediaSession.setPositionState({
+            duration,
+            playbackRate: audio.playbackRate || 1,
+            position,
+        });
+    } catch (error) {
+        // Position state is optional and some partial implementations reject
+        // valid-looking values. Core playback must remain unaffected.
     }
 }
 
 // Trackbar / playback control entry points
 function togglePlayPause() {
-    if (surpriseMode && surpriseCurrentIndex >= 0) {
-        playSurpriseTrack(surpriseCurrentIndex);
-        return;
+    const audio = getAudio();
+    if (!audio || (!currentTrackKey && !pendingPlayback)) return;
+    const isCommittedPlaying =
+        !audio.paused &&
+        !pendingPlayback &&
+        currentTrackKey === audio.dataset.trackKey;
+    if (isCommittedPlaying) {
+        pauseCurrentPlayback();
+        return Promise.resolve(true);
     }
-    const crc = currentTrackCrc;
-    if (!crc) return;
-    const audio = loadTrack(crc);
-    if (!audio) return;
-    if (audio.paused) {
-        applyPlaybackStart(audio);
-        audio.play().catch(err => console.error('Error playing audio:', err));
-    } else {
-        audio.pause();
-    }
-}
-
-function resetTrackPlayingUI(crc) {
-    const button = document.getElementById(`play-btn-${crc}`);
-    const item = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
-    setPlayButtonState(button, false);
-    if (item) item.classList.remove('track-playing');
+    return resumeLoadedPlayback();
 }
 
 function nextTrack() {
     if (surpriseMode) {
-        const audio = getAudio();
-        if (audio) audio.pause();
+        pauseCurrentPlayback();
         playNextSurprise();
         return;
     }
     if (!isPlayingPlaylist || currentPlaylistQueue.length === 0) return;
-    const oldCrc = currentPlaylistQueue[currentPlaylistIndex];
-    const oldAudio = getAudioForCrc(oldCrc);
-    if (oldAudio) oldAudio.pause();
-    resetTrackPlayingUI(oldCrc);
-    currentPlaylistIndex++;
-    playNextInQueue();
+    const pendingIndex = pendingPlayback?.playlistIndex;
+    const fromIndex = Number.isInteger(pendingIndex)
+        ? pendingIndex
+        : currentPlaylistIndex;
+    pauseCurrentPlayback();
+    playNextInQueue(fromIndex + 1);
 }
 
 function prevTrack() {
     if (surpriseMode) {
         const audio = getAudio();
-        if (audio && audio.currentTime > 3) {
-            audio.currentTime = 0;
-        } else if (surpriseCurrentIndex > 0) {
-            if (audio) audio.pause();
-            playSurpriseTrack(surpriseCurrentIndex - 1);
+        const playbackStart = audio ? getPlaybackBounds(audio).start : 0;
+        const pendingIndex = pendingPlayback?.surpriseIndex;
+        const activeIndex = Number.isInteger(pendingIndex)
+            ? pendingIndex
+            : surpriseCurrentIndex;
+        if (audio && audio.currentTime > playbackStart + 3) {
+            audio.currentTime = playbackStart;
+        } else if (activeIndex > 0) {
+            pauseCurrentPlayback();
+            playSurpriseTrack(activeIndex - 1);
         } else if (audio) {
-            audio.currentTime = 0;
+            audio.currentTime = playbackStart;
         }
         return;
     }
     if (isPlayingPlaylist && currentPlaylistQueue.length > 0) {
-        const crc = currentPlaylistQueue[currentPlaylistIndex];
-        const audio = getAudioForCrc(crc);
+        const audio = getAudio();
         const playbackStart = audio ? getPlaybackBounds(audio).start : 0;
+        const pendingIndex = pendingPlayback?.playlistIndex;
+        const activeIndex = Number.isInteger(pendingIndex)
+            ? pendingIndex
+            : currentPlaylistIndex;
         if (audio && audio.currentTime > playbackStart + 3) {
             audio.currentTime = playbackStart;
-        } else if (currentPlaylistIndex > 0) {
-            if (audio) audio.pause();
-            resetTrackPlayingUI(crc);
-            currentPlaylistIndex--;
-            playNextInQueue();
+        } else if (activeIndex > 0) {
+            pauseCurrentPlayback();
+            playNextInQueue(activeIndex - 1);
         } else if (audio) {
             audio.currentTime = playbackStart;
         }
     } else {
-        const crc = currentTrackCrc;
-        if (crc) {
-            const audio = getAudioForCrc(crc);
+        if (currentTrackKey) {
+            const audio = getAudio();
             if (audio) audio.currentTime = getPlaybackBounds(audio).start;
         }
     }
 }
 
-function updateTrackbar(crc) {
+function updateTrackbar(trackRef) {
     const trackbar = document.getElementById('tubio-trackbar');
     const titleEl = document.getElementById('trackbar-title');
     const playlistEl = document.getElementById('trackbar-playlist');
     const thumb = document.getElementById('trackbar-thumb');
     const placeholder = document.getElementById('trackbar-thumb-placeholder');
 
-    if (!crc) {
+    if (!trackRef) {
         if (trackbar) trackbar.dataset.active = 'false';
         if (titleEl) titleEl.textContent = 'No track playing';
         if (playlistEl) playlistEl.textContent = '';
@@ -1834,7 +2190,7 @@ function updateTrackbar(crc) {
         return;
     }
 
-    const trackItem = document.querySelector(`.accordion-item[data-audio-crc="${crc}"]`);
+    const trackItem = resolveTrackItem(trackRef);
     if (!trackItem) return;
 
     if (trackbar) trackbar.dataset.active = 'true';
@@ -1852,8 +2208,9 @@ function updateTrackbar(crc) {
         if (placeholder) placeholder.hidden = false;
     }
 
-    const audio = getAudioForCrc(crc);
-    updateTrackbarPlayPauseUI(audio ? !audio.paused : false);
+    const audio = getAudio();
+    const isLoaded = audio?.dataset.trackKey === trackItem.dataset.trackKey;
+    updateTrackbarPlayPauseUI(isLoaded && !audio.paused);
 }
 
 function updateTrackbarPlayPauseUI(isPlaying) {
@@ -1898,42 +2255,43 @@ function updateTrackbarScrubber() {
 function initializeMediaSession() {
     if (!('mediaSession' in navigator)) return;
 
-    navigator.mediaSession.setActionHandler('play', () => {
-        const crc = getCurrentlyPlayingTrack();
-        if (crc) {
-            const audio = loadTrack(crc);
-            if (audio && audio.paused) {
-                applyPlaybackStart(audio);
-                audio.play();
-                updateMediaSessionPlaybackState('playing');
-            }
+    function setHandler(action, handler) {
+        try {
+            navigator.mediaSession.setActionHandler(action, handler);
+        } catch (error) {
+            // Browsers may expose Media Session while omitting individual
+            // actions. Unsupported controls should not disable the player.
         }
+    }
+
+    setHandler('play', () => {
+        // Always retry the loaded occurrence. In the WebKit failure mode the
+        // element can report paused=false without ever reaching `playing`.
+        resumeLoadedPlayback();
     });
 
-    navigator.mediaSession.setActionHandler('pause', () => {
-        const crc = getCurrentlyPlayingTrack();
-        if (crc) {
-            const audio = getAudioForCrc(crc);
-            if (audio && !audio.paused) {
-                audio.pause();
-                updateMediaSessionPlaybackState('paused');
-            }
-        }
-    });
+    setHandler('pause', pauseCurrentPlayback);
+    setHandler('nexttrack', nextTrack);
+    setHandler('previoustrack', prevTrack);
 
-    navigator.mediaSession.setActionHandler('nexttrack', () => nextTrack());
-
-    navigator.mediaSession.setActionHandler('previoustrack', () => {
-        if (isPlayingPlaylist && currentPlaylistQueue.length > 0) {
-            prevTrack();
+    setHandler('seekto', details => {
+        const audio = getAudio();
+        if (!audio || !Number.isFinite(details.seekTime)) return;
+        const bounds = getPlaybackBounds(audio);
+        const target = Math.min(
+            bounds.end,
+            Math.max(bounds.start, bounds.start + details.seekTime)
+        );
+        if (details.fastSeek && typeof audio.fastSeek === 'function') {
+            audio.fastSeek(target);
         } else {
-            const crc = getCurrentlyPlayingTrack();
-            if (crc) {
-                const audio = getAudioForCrc(crc);
-                if (audio) audio.currentTime = getPlaybackBounds(audio).start;
-            }
+            audio.currentTime = target;
         }
+        updateTrackbarScrubber();
+        updateMediaSessionPositionState();
     });
+
+    updateMediaSessionPlaybackState('none');
 }
 
 function getCurrentlyPlayingTrack() {
@@ -1959,6 +2317,7 @@ async function resyncTrack(crc, buttonElement) {
             // Reload the audio element to pick up the new file (only if loaded)
             const audio = getAudioForCrc(crc);
             if (audio) {
+                audio._metadataReady = false;
                 audio.load();
             }
             setTimeout(() => {
@@ -2040,22 +2399,20 @@ function getPlaybackBounds(audio) {
     return { start, end: Math.max(start, naturalEnd - trimEnd) };
 }
 
-function applyPlaybackStart(audio) {
-    if (!Number.isFinite(audio.duration)) {
-        if (!audio._trimWaitingForMetadata) {
-            audio._trimWaitingForMetadata = true;
-            audio.addEventListener('loadedmetadata', () => {
-                audio._trimWaitingForMetadata = false;
-                applyPlaybackStart(audio);
-                audio.play().catch(err => console.error('Error starting trimmed audio:', err));
-            }, { once: true });
-        }
-        audio.pause();
+function applyPlaybackStart(audio, { restart = false } = {}) {
+    if (!audio._metadataReady || !Number.isFinite(audio.duration)) {
+        audio._restartWhenMetadata = audio._restartWhenMetadata || restart;
         return false;
     }
 
     const bounds = getPlaybackBounds(audio);
-    if (audio.currentTime < bounds.start || audio.currentTime >= bounds.end) {
+    const shouldRestart = restart || audio._restartWhenMetadata;
+    audio._restartWhenMetadata = false;
+    if (
+        shouldRestart ||
+        audio.currentTime < bounds.start ||
+        audio.currentTime >= bounds.end
+    ) {
         audio.currentTime = bounds.start;
     }
     audio._trimEnded = false;

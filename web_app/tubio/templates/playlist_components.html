@@ -50,7 +50,10 @@
              data-playlist-name="{{ playlist_name }}" data-playlist-kind="{{ kind }}">
             {% for track in playlist_data %}
             {% set crc = track.crc %}
+            {% set track_key = kind ~ ":" ~ playlist_name ~ ":" ~ crc ~ ":" ~ track.occurrence %}
+            {% set dom_key = kind ~ "-" ~ slug ~ "-" ~ loop.index0 %}
             <article class="accordion-item playlist-track mb-2 border-0 shadow-sm"
+                     data-track-key="{{ track_key }}"
                      data-audio-crc="{{ crc }}"
                      data-playlist="{{ playlist_name }}"
                      data-playlist-kind="{{ kind }}"
@@ -67,14 +70,14 @@
                         <div class="form-check playlist-track-select playlist-track-select-slot">
                             {% if kind == "regular" %}
                             <input class="form-check-input song-checkbox" type="checkbox" value="{{ crc }}"
-                                   id="checkbox-{{ crc }}-{{ slug }}" data-song-crc="{{ crc }}">
+                                   id="checkbox-{{ dom_key }}" data-song-crc="{{ crc }}">
                             {% endif %}
                         </div>
-                        <button class="btn btn-sm btn-outline-primary track-play-btn" id="play-btn-{{ crc }}"
+                        <button class="btn btn-sm btn-outline-primary track-play-btn"
                                 {% if kind == "surprise" %}
-                                onclick="toggleSurpriseTrack('{{ crc }}')"
+                                onclick="toggleSurpriseTrack(this.closest('.playlist-track'))"
                                 {% else %}
-                                onclick="togglePlayTrack('{{ crc }}')"
+                                onclick="togglePlayTrack(this.closest('.playlist-track'))"
                                 {% endif %}
                                 title="Play/Pause track">
                             <i class="bi bi-play-fill"></i>
@@ -82,9 +85,9 @@
                         <button class="accordion-button collapsed playlist-track-expand"
                                 type="button"
                                 data-bs-toggle="collapse"
-                                data-bs-target="#collapse-{{ crc }}-{{ slug }}"
+                                data-bs-target="#collapse-{{ dom_key }}"
                                 aria-expanded="false"
-                                aria-controls="collapse-{{ crc }}-{{ slug }}">
+                                aria-controls="collapse-{{ dom_key }}">
                             <i class="bi bi-musical-note me-2 text-sage"></i>
                             <span class="playlist-track-name">{{ track.title }}</span>
                             {% if kind == "surprise" and not track.is_cached %}
@@ -93,7 +96,7 @@
                         </button>
                     </div>
                 </h2>
-                <div id="collapse-{{ crc }}-{{ slug }}" class="accordion-collapse collapse"
+                <div id="collapse-{{ dom_key }}" class="accordion-collapse collapse"
                      data-bs-parent="#audioAccordion-{{ slug }}">
                     <div class="accordion-body playlist-track-details">
                         <div class="row">

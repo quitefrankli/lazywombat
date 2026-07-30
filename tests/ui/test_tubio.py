@@ -1,10 +1,109 @@
 """
 UI tests for Tubio using Playwright.
 """
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("playwright")
 from playwright.sync_api import expect
+
+
+@pytest.fixture
+def tubio_player_page(browser):
+    """Load the real Tubio player script around a deterministic fake media element."""
+    page = browser.new_page()
+    page.set_content(
+        """
+        <div id="playlists">
+          <section class="playlist-panel active"
+                   data-playlist-name="Mix" data-playlist-kind="regular">
+            <button class="btn-play-all"><i></i></button>
+            <div class="playlist-accordion"
+                 data-playlist-name="Mix" data-playlist-kind="regular">
+              <article class="accordion-item playlist-track"
+                       data-track-key="mix-0" data-audio-crc="101"
+                       data-playlist="Mix" data-playlist-kind="regular"
+                       data-title="First" data-thumbnail-url=""
+                       data-trim-start="5" data-trim-end="2"
+                       data-audio-src="/audio/101">
+                <button class="track-play-btn"><i></i></button>
+              </article>
+              <article class="accordion-item playlist-track"
+                       data-track-key="mix-1" data-audio-crc="202"
+                       data-playlist="Mix" data-playlist-kind="regular"
+                       data-title="Second" data-thumbnail-url=""
+                       data-trim-start="0" data-trim-end="0"
+                       data-audio-src="/audio/202">
+                <button class="track-play-btn"><i></i></button>
+              </article>
+            </div>
+          </section>
+        </div>
+        <div id="tubio-trackbar" data-active="false">
+          <audio id="tubio-audio" preload="none"></audio>
+          <span id="trackbar-title"></span>
+          <span id="trackbar-playlist"></span>
+          <button id="trackbar-playpause"><i></i></button>
+          <input id="trackbar-scrubber" type="range">
+          <span id="trackbar-time-current"></span>
+          <span id="trackbar-time-duration"></span>
+        </div>
+        """
+    )
+    page.evaluate(
+        """
+        () => {
+            const audio = document.getElementById('tubio-audio');
+            audio._paused = true;
+            audio._duration = NaN;
+            audio._readyState = 0;
+            audio._pauseCalls = 0;
+            audio._playCalls = [];
+            Object.defineProperty(audio, 'paused', {
+                configurable: true,
+                get: () => audio._paused
+            });
+            Object.defineProperty(audio, 'duration', {
+                configurable: true,
+                get: () => audio._duration
+            });
+            Object.defineProperty(audio, 'readyState', {
+                configurable: true,
+                get: () => audio._readyState
+            });
+            audio.load = () => {};
+            audio.pause = () => {
+                audio._pauseCalls += 1;
+                audio._paused = true;
+                audio.dispatchEvent(new Event('pause'));
+            };
+            audio.play = () => {
+                audio._playCalls.push(audio.dataset.trackKey || audio.dataset.crc);
+                return Promise.resolve();
+            };
+            window.scrollTo = () => {};
+            Element.prototype.scrollIntoView = () => {};
+        }
+        """
+    )
+    page.add_script_tag(
+        path=str(
+            Path(__file__).parents[2] / "web_app" / "tubio" / "static" / "script.js"
+        )
+    )
+    page.evaluate(
+        """
+        () => {
+            window.escapeHtml = value => String(value);
+            window.showNotification = () => {};
+            window.reportTubioClientError = () => {};
+            initializeAudioEventListeners();
+        }
+        """
+    )
+    yield page
+    page.close()
 
 
 def test_tubio_page_loads(tubio_page):
@@ -191,3 +290,246 @@ def test_trackbar_volume_applies_to_audio_elements(tubio_page):
 
     assert tubio_page.evaluate("document.getElementById('audio-volume-test').volume") == pytest.approx(0.35)
     assert tubio_page.evaluate("localStorage.getItem(document.getElementById('tubio-trackbar').dataset.volumeStorageKey)") == "35"
+
+
+def test_player_commits_track_only_after_playing_event(tubio_player_page):
+    result = tubio_player_page.evaluate(
+        """
+        async () => {
+            const item = document.querySelector('[data-track-key="mix-0"]');
+            togglePlayTrack(item);
+            await Promise.resolve();
+            const beforePlaying = {
+                crc: getCurrentlyPlayingTrack(),
+                highlighted: item.classList.contains('track-playing'),
+                buttonPlaying: item.querySelector('.track-play-btn').classList.contains('btn-success'),
+                pauseCalls: getAudio()._pauseCalls
+            };
+            getAudio()._paused = false;
+            getAudio().dispatchEvent(new Event('playing'));
+            return {
+                beforePlaying,
+                afterPlaying: {
+                    crc: getCurrentlyPlayingTrack(),
+                    highlighted: item.classList.contains('track-playing'),
+                    buttonPlaying: item.querySelector('.track-play-btn').classList.contains('btn-success')
+                }
+            };
+        }
+        """
+    )
+
+    assert result["beforePlaying"] == {
+        "crc": None,
+        "highlighted": False,
+        "buttonPlaying": False,
+        "pauseCalls": 0,
+    }
+    assert result["afterPlaying"] == {
+        "crc": "101",
+        "highlighted": True,
+        "buttonPlaying": True,
+    }
+
+
+def test_rejected_play_does_not_claim_success_or_skip_track(tubio_player_page):
+    result = tubio_player_page.evaluate(
+        """
+        async () => {
+            const audio = getAudio();
+            audio.play = () => Promise.reject(new DOMException('blocked', 'NotAllowedError'));
+            const item = document.querySelector('[data-track-key="mix-0"]');
+            togglePlayTrack(item);
+            await Promise.resolve();
+            await Promise.resolve();
+            return {
+                crc: getCurrentlyPlayingTrack(),
+                loadedKey: audio.dataset.trackKey,
+                highlighted: item.classList.contains('track-playing'),
+                buttonPlaying: item.querySelector('.track-play-btn').classList.contains('btn-success')
+            };
+        }
+        """
+    )
+
+    assert result == {
+        "crc": None,
+        "loadedKey": "mix-0",
+        "highlighted": False,
+        "buttonPlaying": False,
+    }
+
+
+def test_playlist_handoff_is_immediate_and_uses_exact_queue_entry(tubio_player_page):
+    result = tubio_player_page.evaluate(
+        """
+        async () => {
+            const audio = getAudio();
+            let transitionTimers = 0;
+            window.setTimeout = () => { transitionTimers += 1; };
+            audio._duration = 30;
+            audio.play = () => {
+                audio._playCalls.push(audio.dataset.trackKey);
+                audio._paused = false;
+                audio.dispatchEvent(new Event('playing'));
+                return Promise.resolve();
+            };
+
+            playAllInPlaylist('Mix');
+            audio._paused = true;
+            audio.dispatchEvent(new Event('ended'));
+            await Promise.resolve();
+
+            return {
+                calls: audio._playCalls,
+                currentCrc: getCurrentlyPlayingTrack(),
+                currentIndex: currentPlaylistIndex,
+                transitionTimers
+            };
+        }
+        """
+    )
+
+    assert result == {
+        "calls": ["mix-0", "mix-1"],
+        "currentCrc": "202",
+        "currentIndex": 1,
+        "transitionTimers": 0,
+    }
+
+
+def test_duplicate_track_occurrences_each_play_in_queue_order(tubio_player_page):
+    result = tubio_player_page.evaluate(
+        """
+        async () => {
+            const items = document.querySelectorAll('.playlist-track');
+            items[1].dataset.audioCrc = '101';
+            items[1].dataset.audioSrc = '/audio/101';
+
+            const audio = getAudio();
+            audio._duration = 30;
+            audio.play = () => {
+                audio._playCalls.push(audio.dataset.trackKey);
+                audio._paused = false;
+                audio.dispatchEvent(new Event('playing'));
+                return Promise.resolve();
+            };
+
+            playAllInPlaylist('Mix');
+            audio._paused = true;
+            audio.dispatchEvent(new Event('ended'));
+            await Promise.resolve();
+
+            return {
+                calls: audio._playCalls,
+                currentCrc: getCurrentlyPlayingTrack(),
+                currentIndex: currentPlaylistIndex
+            };
+        }
+        """
+    )
+
+    assert result == {
+        "calls": ["mix-0", "mix-1"],
+        "currentCrc": "101",
+        "currentIndex": 1,
+    }
+
+
+def test_media_session_play_retries_failed_loaded_track(tubio_player_page):
+    result = tubio_player_page.evaluate(
+        """
+        async () => {
+            const handlers = {};
+            const mediaSession = {
+                metadata: null,
+                playbackState: 'none',
+                setActionHandler: (action, handler) => { handlers[action] = handler; },
+                setPositionState: () => {}
+            };
+            Object.defineProperty(navigator, 'mediaSession', {
+                configurable: true,
+                value: mediaSession
+            });
+            initializeMediaSession();
+
+            const audio = getAudio();
+            audio.play = () => Promise.reject(
+                new DOMException('background handoff failed', 'NotAllowedError')
+            );
+            togglePlayTrack(document.querySelector('[data-track-key="mix-0"]'));
+            await Promise.resolve();
+            await Promise.resolve();
+            const stateAfterFailure = mediaSession.playbackState;
+
+            audio.play = () => {
+                audio._paused = false;
+                audio.dispatchEvent(new Event('playing'));
+                return Promise.resolve();
+            };
+            handlers.play();
+            await Promise.resolve();
+
+            return {
+                stateAfterFailure,
+                stateAfterRetry: mediaSession.playbackState,
+                currentCrc: getCurrentlyPlayingTrack()
+            };
+        }
+        """
+    )
+
+    assert result == {
+        "stateAfterFailure": "paused",
+        "stateAfterRetry": "playing",
+        "currentCrc": "101",
+    }
+
+
+def test_play_pause_seek_and_trim_share_confirmed_player_state(tubio_player_page):
+    result = tubio_player_page.evaluate(
+        """
+        async () => {
+            const audio = getAudio();
+            audio._duration = 30;
+            audio.play = () => {
+                audio._playCalls.push(audio.dataset.trackKey);
+                audio._paused = false;
+                audio.dispatchEvent(new Event('playing'));
+                return Promise.resolve();
+            };
+
+            togglePlayTrack(document.querySelector('[data-track-key="mix-0"]'));
+            audio._metadataReady = true;
+            audio._readyState = 1;
+            audio.dispatchEvent(new Event('loadedmetadata'));
+            const trimmedStart = audio.currentTime;
+
+            seekTrack('101', 100);
+            const trimmedEnd = audio.currentTime;
+
+            togglePlayPause();
+            const paused = audio._paused;
+            togglePlayPause();
+            await Promise.resolve();
+
+            return {
+                trimmedStart,
+                trimmedEnd,
+                paused,
+                resumedAt: audio.currentTime,
+                playCalls: audio._playCalls.length,
+                currentCrc: getCurrentlyPlayingTrack()
+            };
+        }
+        """
+    )
+
+    assert result == {
+        "trimmedStart": 5,
+        "trimmedEnd": 28,
+        "paused": True,
+        "resumedAt": 5,
+        "playCalls": 2,
+        "currentCrc": "101",
+    }

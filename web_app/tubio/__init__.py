@@ -95,6 +95,16 @@ def _playlist_track_data(
     }
 
 
+def _add_track_occurrences(tracks: list[dict]) -> list[dict]:
+    """Give repeated CRCs stable identities within a rendered playlist."""
+    occurrences: dict[int, int] = {}
+    for track in tracks:
+        crc = track["crc"]
+        track["occurrence"] = occurrences.get(crc, 0)
+        occurrences[crc] = track["occurrence"] + 1
+    return tracks
+
+
 def get_playlists_data(user: User) -> list[tuple[str, list[dict]]]:
     user_metadata = DataInterface().get_user_metadata(user)
     playlists = []
@@ -105,7 +115,7 @@ def get_playlists_data(user: User) -> list[tuple[str, list[dict]]]:
             if crc in metadata.audios:
                 audio = metadata.audios[crc]
                 playlist_data.append(_playlist_track_data(audio, user_metadata))
-        playlists.append((playlist.name, playlist_data))
+        playlists.append((playlist.name, _add_track_occurrences(playlist_data)))
 
     return playlists
 
@@ -184,7 +194,7 @@ def _surprise_payload(playlist: Playlist) -> dict:
     metadata = DataInterface().get_metadata()
     user_metadata = DataInterface().get_user_metadata(cur_user())
     favourites = set(user_metadata.get_playlist().audio_crcs)
-    tracks = [
+    tracks = _add_track_occurrences([
         _playlist_track_data(
             metadata.audios[crc],
             user_metadata,
@@ -192,7 +202,7 @@ def _surprise_payload(playlist: Playlist) -> dict:
         )
         for crc in playlist.audio_crcs
         if crc in metadata.audios
-    ]
+    ])
     missing_count = len(playlist.audio_crcs) - len(tracks)
     logging.info(
         "Tubio Surprise payload user_id=%s tracks=%d missing_metadata=%d last_active=%s",
@@ -746,67 +756,32 @@ def serve_audio(crc: int):
 
 
 def _range_response(file_path: Path, etag: str, download_name: str) -> Response:
-    """Serve an m4a file honouring HTTP Range requests with caching."""
+    """Serve an m4a file with Werkzeug's RFC-compliant conditional ranges."""
     file_size = file_path.stat().st_size
     range_header = request.headers.get("Range", None)
-    logging.info(f"Serving audio {file_path} to user {cur_user()} with size {file_size} bytes, Range header: {range_header}")
-
-    if not range_header:
-        response = send_file(
-            file_path,
-            mimetype='audio/mp4',
-            as_attachment=False,
-            download_name=download_name
-        )
-        response.headers['Accept-Ranges'] = 'bytes'
-        response.cache_control.max_age = ConfigManager().cache_max_age
-        response.cache_control.public = True
-        response.set_etag(etag)
-        return response
-
-    # Example: "Range: bytes=12345-"
-    range_header = range_header.strip()[len("bytes="):]
-    splitted = range_header.split("-")
-    if len(splitted) > 2:
-        logging.error(f"Invalid Range header format: {range_header}")
-        raise ValueError("Invalid Range header format")
-    if range_header[0] == '-':
-        # Example: "Range: bytes=-12345" (last N bytes)
-        suffix_length = int(splitted[1])
-        byte1 = max(0, file_size - suffix_length)
-        byte2 = file_size
-    elif range_header[-1] == '-':
-        # Example: "Range: bytes=12345-"
-        byte1 = int(splitted[0])
-        byte2 = file_size
-    else:
-        # Example: "Range: bytes=12345-67890"
-        byte1 = int(splitted[0])
-        byte2 = int(splitted[1]) + 1
-
-    length = byte2 - byte1
-    with open(file_path, "rb") as f:
-        f.seek(byte1)
-        data = f.read(length)
-
-    response = Response(
-        data,
-        206,
-        mimetype="audio/mp4",
-        content_type="audio/mp4",
-        direct_passthrough=True,
-        headers={
-            "Content-Type": "audio/mp4",
-            "Content-Range": f"bytes {byte1}-{byte2-1}/{file_size}",
-            "Accept-Ranges": "bytes",
-        }
+    logging.info(
+        "Serving audio %s (%d bytes), Range header: %s",
+        file_path,
+        file_size,
+        range_header,
     )
-    response.headers.set("Content-Length", str(length))
+
+    # conditional=True delegates parsing, clamping, If-Range handling, HEAD
+    # requests, and 416 responses to Werkzeug instead of maintaining a second
+    # partial implementation of HTTP byte ranges here.
+    response = send_file(
+        file_path,
+        mimetype="audio/mp4",
+        as_attachment=False,
+        download_name=download_name,
+        conditional=True,
+        etag=etag,
+    )
+    response.headers["Accept-Ranges"] = "bytes"
 
     # Cache audio ranges
     response.cache_control.max_age = ConfigManager().cache_max_age
     response.cache_control.public = True
-    response.set_etag(etag)
 
     return response
 

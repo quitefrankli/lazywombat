@@ -2,6 +2,7 @@ import pytest
 
 from unittest.mock import Mock, patch, MagicMock
 from datetime import timedelta
+from bs4 import BeautifulSoup
 from yt_dlp.utils import DownloadError
 
 from web_app.tubio.audio_downloader import AudioDownloader, VideoTooLongError, DownloadProgress, get_download_progress, clear_download_progress
@@ -427,6 +428,108 @@ class TestTrimAudio:
         assert response.status_code == 400
         assert 'negative' in response.get_json()['error']
         mock_di_class.return_value.edit_metadata.assert_not_called()
+
+
+class TestAudioRangeResponse:
+    def test_clamps_open_range_to_end_of_file(self, app, tmp_path):
+        from web_app.tubio import _range_response
+
+        audio_path = tmp_path / "track.m4a"
+        audio_path.write_bytes(b"abcdef")
+
+        with app.test_request_context(
+            "/tubio/audio/123", headers={"Range": "bytes=4-99"}
+        ):
+            response = _range_response(audio_path, "123", "track.m4a")
+            response.direct_passthrough = False
+
+        assert response.status_code == 206
+        assert response.get_data() == b"ef"
+        assert response.headers["Content-Range"] == "bytes 4-5/6"
+        assert response.headers["Content-Length"] == "2"
+        assert response.headers["Accept-Ranges"] == "bytes"
+
+    def test_rejects_an_unsatisfiable_range_with_file_size(self, app, tmp_path):
+        from werkzeug.exceptions import RequestedRangeNotSatisfiable
+        from web_app.tubio import _range_response
+
+        audio_path = tmp_path / "track.m4a"
+        audio_path.write_bytes(b"abcdef")
+
+        with app.test_request_context(
+            "/tubio/audio/123", headers={"Range": "bytes=99-"}
+        ):
+            with pytest.raises(RequestedRangeNotSatisfiable) as exc_info:
+                _range_response(audio_path, "123", "track.m4a")
+
+        response = exc_info.value.get_response()
+        assert response.status_code == 416
+        assert response.headers["Content-Range"] == "bytes */6"
+
+    def test_full_response_advertises_byte_ranges(self, app, tmp_path):
+        from web_app.tubio import _range_response
+
+        audio_path = tmp_path / "track.m4a"
+        audio_path.write_bytes(b"abcdef")
+
+        with app.test_request_context("/tubio/audio/123"):
+            response = _range_response(audio_path, "123", "track.m4a")
+
+        assert response.status_code == 200
+        assert response.headers["Accept-Ranges"] == "bytes"
+        response.close()
+
+
+def test_duplicate_playlist_entries_have_unique_dom_identity(app):
+    from web_app.tubio import _add_track_occurrences
+
+    track = {
+        "crc": 123,
+        "title": "Repeated track",
+        "thumbnail_url": "",
+        "source_url": "",
+        "video_id": "",
+        "trim_start_s": 0,
+        "trim_end_s": 0,
+        "is_cached": True,
+        "is_favourite": True,
+    }
+    inserted_track = {
+        **track,
+        "crc": 456,
+        "title": "Inserted track",
+    }
+    tracks = _add_track_occurrences([track.copy(), track.copy()])
+    rerendered_tracks = _add_track_occurrences(
+        [inserted_track, track.copy(), track.copy()]
+    )
+
+    with app.test_request_context("/tubio/"):
+        template = app.jinja_env.get_template("playlist_components.html")
+        html = str(
+            template.module.playlist_panel("Duplicates", tracks)
+        )
+        rerendered_html = str(
+            template.module.playlist_panel(
+                "Duplicates", rerendered_tracks
+            )
+        )
+
+    soup = BeautifulSoup(html, "html.parser")
+    entries = soup.select(".playlist-track[data-track-key]")
+    ids = [element["id"] for element in soup.select("[id]")]
+    rerendered = BeautifulSoup(rerendered_html, "html.parser")
+    rerendered_keys = {
+        entry["data-track-key"]
+        for entry in rerendered.select('.playlist-track[data-audio-crc="123"]')
+    }
+
+    assert len(entries) == 2
+    assert len({entry["data-track-key"] for entry in entries}) == 2
+    assert len(ids) == len(set(ids))
+    assert rerendered_keys == {
+        entry["data-track-key"] for entry in entries
+    }
 
 
 if __name__ == '__main__':
