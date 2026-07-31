@@ -16,39 +16,39 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from web_app.app import csrf
 from web_app.config import ConfigManager
 from web_app.errors import APIError
-from web_app.hammock.data_interface import DataInterface, slugify
+from web_app.loft.data_interface import DataInterface, slugify
 from web_app.helpers import cur_user, limiter, parse_request, register_app_name
 from web_app.logging_utils import log_event
 
-hammock_api = Blueprint(
-    'hammock',
+loft_api = Blueprint(
+    'loft',
     __name__,
     template_folder='templates',
     static_folder='static',
-    url_prefix='/hammock'
+    url_prefix='/loft'
 )
 
 
-register_app_name(hammock_api, 'Hammock')
+register_app_name(loft_api, 'Loft')
 
 
-@hammock_api.context_processor
-def inject_hammock_config():
-    return {"hammock_config": ConfigManager().hammock}
+@loft_api.context_processor
+def inject_loft_config():
+    return {"loft_config": ConfigManager().loft}
 
 
 def _gallery_request_is_too_large() -> bool:
     request.max_content_length = (
-        ConfigManager().hammock.gallery_request_max_bytes
+        ConfigManager().loft.gallery_request_max_bytes
     )
     content_length = request.content_length
     return bool(
         content_length is not None
-        and content_length > ConfigManager().hammock.gallery_request_max_bytes
+        and content_length > ConfigManager().loft.gallery_request_max_bytes
     )
 
 
-@hammock_api.errorhandler(RequestEntityTooLarge)
+@loft_api.errorhandler(RequestEntityTooLarge)
 def gallery_request_too_large(error):
     message = "Selected media exceeds the upload request size limit"
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
@@ -72,13 +72,13 @@ def owner_or_admin(func):
     return wrapper
 
 
-@hammock_api.route('/')
+@loft_api.route('/')
 def index():
     posts_by_project = DataInterface().get_posts_by_project(flask_login.current_user)
-    return render_template("hammock_index.html", posts_by_project=posts_by_project)
+    return render_template("loft_index.html", posts_by_project=posts_by_project)
 
 
-@hammock_api.route('/new', methods=['GET', 'POST'])
+@loft_api.route('/new', methods=['GET', 'POST'])
 @flask_login.login_required
 def new_post():
     di = DataInterface()
@@ -133,8 +133,8 @@ def new_post():
             return fail(str(e))
 
         log_event(
-            "hammock",
-            "hammock.post_created",
+            "loft",
+            "loft.post_created",
             user=user,
             project=project_slug,
             post=post_slug,
@@ -145,21 +145,21 @@ def new_post():
         return redirect(url_for('.view_post', project=project_slug, post=post_slug))
 
     return render_template(
-        "hammock_new.html",
+        "loft_new.html",
         posts_by_project=di.get_posts_by_project(flask_login.current_user),
     )
 
 
-@hammock_api.route('/<project>/')
+@loft_api.route('/<project>/')
 def view_project(project: str):
     posts_by_project = DataInterface().get_posts_by_project(flask_login.current_user)
     project_obj = next((p for p in posts_by_project if p.name == project), None)
     if project_obj and project_obj.posts:
-        return redirect(f'/hammock/{project}/{project_obj.posts[0]}/')
-    return redirect(f'/hammock/?open={project}')
+        return redirect(url_for('.view_post', project=project, post=project_obj.posts[0]))
+    return redirect(url_for('.index', open=project))
 
 
-@hammock_api.route('/<project>/<post>/')
+@loft_api.route('/<project>/<post>/')
 def view_post(project: str, post: str):
     di = DataInterface()
     if not di.user_can_view(flask_login.current_user, project, post):
@@ -172,7 +172,7 @@ def view_post(project: str, post: str):
     meta = di.get_post_meta(project, post)
     can_edit = di.user_can_edit(flask_login.current_user, project, post)
     return render_template(
-        "hammock_post.html",
+        "loft_post.html",
         project_name=project,
         post_name=post,
         posts_by_project=posts_by_project,
@@ -182,7 +182,7 @@ def view_post(project: str, post: str):
     )
 
 
-@hammock_api.route('/<project>/<post>/edit', methods=['GET', 'POST'])
+@loft_api.route('/<project>/<post>/edit', methods=['GET', 'POST'])
 @owner_or_admin
 def edit_post(project: str, post: str):
     di = DataInterface()
@@ -234,8 +234,8 @@ def edit_post(project: str, post: str):
             flash(str(e), "error")
             return redirect(url_for('.edit_post', project=project, post=post))
         log_event(
-            "hammock",
-            "hammock.post_updated",
+            "loft",
+            "loft.post_updated",
             project=project,
             post=post,
             template=template,
@@ -248,7 +248,7 @@ def edit_post(project: str, post: str):
     posts_by_project = di.get_posts_by_project(flask_login.current_user)
     if template == 'markdown':
         return render_template(
-            "hammock_edit_markdown.html",
+            "loft_edit_markdown.html",
             project_name=project,
             post_name=post,
             meta=meta,
@@ -257,7 +257,7 @@ def edit_post(project: str, post: str):
         )
     if template == 'gallery':
         return render_template(
-            "hammock_edit_gallery.html",
+            "loft_edit_gallery.html",
             project_name=project,
             post_name=post,
             meta=meta,
@@ -268,7 +268,7 @@ def edit_post(project: str, post: str):
     return redirect(url_for('.view_post', project=project, post=post))
 
 
-@hammock_api.route('/<project>/<post>/images', methods=['POST'])
+@loft_api.route('/<project>/<post>/images', methods=['POST'])
 @owner_or_admin
 def add_gallery_images(project: str, post: str):
     if _gallery_request_is_too_large():
@@ -284,8 +284,8 @@ def add_gallery_images(project: str, post: str):
         flash(str(e), "error")
         return redirect(url_for('.edit_post', project=project, post=post))
     log_event(
-        "hammock",
-        "hammock.gallery_media_added",
+        "loft",
+        "loft.gallery_media_added",
         user=user,
         project=project,
         post=post,
@@ -295,7 +295,7 @@ def add_gallery_images(project: str, post: str):
     return redirect(url_for('.edit_post', project=project, post=post))
 
 
-@hammock_api.route('/<project>/<post>/images/<path:filename>/delete', methods=['POST'])
+@loft_api.route('/<project>/<post>/images/<path:filename>/delete', methods=['POST'])
 @owner_or_admin
 def delete_gallery_image(project: str, post: str, filename: str):
     di = DataInterface()
@@ -305,8 +305,8 @@ def delete_gallery_image(project: str, post: str, filename: str):
         flash(str(e), "error")
         return redirect(url_for('.edit_post', project=project, post=post))
     log_event(
-        "hammock",
-        "hammock.gallery_media_deleted",
+        "loft",
+        "loft.gallery_media_deleted",
         project=project,
         post=post,
         filename=filename,
@@ -314,15 +314,15 @@ def delete_gallery_image(project: str, post: str, filename: str):
     return redirect(url_for('.edit_post', project=project, post=post))
 
 
-@hammock_api.route('/<project>/<post>/delete', methods=['POST'])
+@loft_api.route('/<project>/<post>/delete', methods=['POST'])
 @owner_or_admin
 def delete_post(project: str, post: str):
     di = DataInterface()
     meta = di.get_post_meta(project, post)
     di.delete_post(project, post)
     log_event(
-        "hammock",
-        "hammock.post_deleted",
+        "loft",
+        "loft.post_deleted",
         project=project,
         post=post,
         owner=meta.owner,
@@ -332,7 +332,7 @@ def delete_post(project: str, post: str):
     return redirect(url_for('.index'))
 
 
-@hammock_api.route('/api/upload_post', methods=['POST'])
+@loft_api.route('/api/upload_post', methods=['POST'])
 @csrf.exempt
 def upload_post():
     try:
@@ -382,8 +382,8 @@ def upload_post():
         date,
     )
     log_event(
-        "hammock",
-        "hammock.raw_post_uploaded",
+        "loft",
+        "loft.raw_post_uploaded",
         user=actor,
         project=project,
         post=post_name,
@@ -391,7 +391,7 @@ def upload_post():
     return jsonify({"success": True, "message": f"Post {project}/{post_name} uploaded"}), 200
 
 
-@hammock_api.route('/<project>/<post>/<path:filename>')
+@loft_api.route('/<project>/<post>/<path:filename>')
 @limiter.limit("20/second")
 def post_asset(project: str, post: str, filename: str):
     data_interface = DataInterface()

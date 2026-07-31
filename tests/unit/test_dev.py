@@ -23,28 +23,28 @@ def test_extract_client_ip_accepts_ipv4_and_ipv6():
 
 
 def test_extract_request_path_and_glob_filter():
-    line = "INFO Processing request: client=1.1.1.1, path=/hammock/cats, method=GET"
+    line = "INFO Processing request: client=1.1.1.1, path=/loft/cats, method=GET"
 
-    assert _extract_request_path(line) == "/hammock/cats"
-    assert _path_matches_filter("/hammock/cats", "/hammock/*")
-    assert _path_matches_filter("/hammock/cats", "/hammock/cats")
-    assert not _path_matches_filter("/metrics/", "/hammock/*")
+    assert _extract_request_path(line) == "/loft/cats"
+    assert _path_matches_filter("/loft/cats", "/loft/*")
+    assert _path_matches_filter("/loft/cats", "/loft/cats")
+    assert not _path_matches_filter("/metrics/", "/loft/*")
 
 
 def test_extract_request_fields_from_structured_start_event_only():
     started = (
         '2026-07-30 10:00:00,000 INFO worker=1 thread=2 '
-        '{"app":"hammock","event":"request.started","ip":"8.8.8.8",'
-        '"path":"/hammock/cats","user":null}\n'
+        '{"app":"loft","event":"request.started","ip":"8.8.8.8",'
+        '"path":"/loft/cats","user":null}\n'
     )
     completed = (
         '2026-07-30 10:00:00,010 INFO worker=1 thread=2 '
-        '{"app":"hammock","event":"request.completed","ip":"8.8.8.8",'
-        '"path":"/hammock/cats","status":200,"user":null}\n'
+        '{"app":"loft","event":"request.completed","ip":"8.8.8.8",'
+        '"path":"/loft/cats","status":200,"user":null}\n'
     )
 
     assert _extract_client_ip(started) == "8.8.8.8"
-    assert _extract_request_path(started) == "/hammock/cats"
+    assert _extract_request_path(started) == "/loft/cats"
     assert _extract_client_ip(completed) is None
     assert _extract_request_path(completed) is None
 
@@ -138,24 +138,24 @@ def test_get_logs_returns_all_selected_files_without_default_line_limit(tmp_path
 
 def test_collect_client_ip_counts_can_filter_by_path_glob(tmp_path):
     (tmp_path / "web_app.log").write_text(
-        "INFO Processing request: client=1.1.1.1, path=/hammock/cats, method=GET\n"
+        "INFO Processing request: client=1.1.1.1, path=/loft/cats, method=GET\n"
         "INFO Processing request: client=1.1.1.1, path=/metrics/, method=GET\n"
-        "INFO Processing request: client=8.8.8.8, path=/hammock/dogs, method=GET\n"
+        "INFO Processing request: client=8.8.8.8, path=/loft/dogs, method=GET\n"
     )
 
-    assert _collect_client_ip_counts(tmp_path, "/hammock/*") == Counter({"1.1.1.1": 1, "8.8.8.8": 1})
+    assert _collect_client_ip_counts(tmp_path, "/loft/*") == Counter({"1.1.1.1": 1, "8.8.8.8": 1})
 
 
 def test_matching_log_events_can_filter_by_range_and_ip_glob(tmp_path):
     (tmp_path / "web_app.log").write_text(
-        "2026-05-12 09:00:00,000 INFO Processing request: client=1.1.1.1, path=/hammock/cats, method=GET\n"
-        "2026-05-12 10:00:00,000 INFO Processing request: client=8.8.8.8, path=/hammock/cats, method=GET\n"
-        "2026-05-12 11:00:00,000 INFO Processing request: client=1.145.63.44, path=/hammock/cats, method=GET\n"
+        "2026-05-12 09:00:00,000 INFO Processing request: client=1.1.1.1, path=/loft/cats, method=GET\n"
+        "2026-05-12 10:00:00,000 INFO Processing request: client=8.8.8.8, path=/loft/cats, method=GET\n"
+        "2026-05-12 11:00:00,000 INFO Processing request: client=1.145.63.44, path=/loft/cats, method=GET\n"
     )
 
     events = _matching_log_events(
         tmp_path,
-        "/hammock/*",
+        "/loft/*",
         _extract_timestamp("2026-05-12 09:30:00,000 INFO x"),
         _extract_timestamp("2026-05-12 11:30:00,000 INFO x"),
         _parse_ip_filters("1.145.*"),
@@ -198,7 +198,7 @@ def test_map_data_returns_located_public_ips_and_summary(tmp_path):
 
 def test_map_data_applies_path_filter(tmp_path):
     (tmp_path / "web_app.log").write_text(
-        "INFO Processing request: client=8.8.8.8, path=/hammock/cats, method=GET\n"
+        "INFO Processing request: client=8.8.8.8, path=/loft/cats, method=GET\n"
         "INFO Processing request: client=1.1.1.1, path=/metrics/, method=GET\n"
     )
     geo = {
@@ -215,9 +215,9 @@ def test_map_data_applies_path_filter(tmp_path):
         }
     }
 
-    with app.test_request_context("/dev/map-data?path=/hammock/*"), patch("web_app.dev.map._LOGS_DIR", tmp_path), patch("web_app.dev.map._geolocate_ips", return_value=geo):
+    with app.test_request_context("/dev/map-data?path=/loft/*"), patch("web_app.dev.map._LOGS_DIR", tmp_path), patch("web_app.dev.map._geolocate_ips", return_value=geo):
         payload = map_data().get_json()
 
-    assert payload["summary"]["path_filter"] == "/hammock/*"
+    assert payload["summary"]["path_filter"] == "/loft/*"
     assert payload["summary"]["unique_ips"] == 1
     assert payload["points"][0]["ip"] == "8.8.8.8"

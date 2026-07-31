@@ -1,57 +1,57 @@
-{% extends "hammock_base.html" %}
+{% extends "loft_base.html" %}
 
 {% block page_content %}
 <div class="container-fluid">
     <div class="row">
         <div class="col-12 col-md-3 col-lg-2">
-            {% include "hammock_sidebar.html" %}
+            {% include "loft_sidebar.html" %}
         </div>
         <div class="col-12 col-md-9 col-lg-10">
-            <div class="hammock-form-card">
-                <h1 class="hammock-form-title">Edit gallery</h1>
-                <p class="hammock-form-sub">{{ project_name }} / {{ post_name }}</p>
+            <div class="loft-form-card">
+                <h1 class="loft-form-title">Edit gallery</h1>
+                <p class="loft-form-sub">{{ project_name }} / {{ post_name }}</p>
 
                 <form id="gallery-meta-form" method="post"
                       action="{{ url_for('.edit_post', project=project_name, post=post_name) }}"
                       data-gallery-upload-form
                       enctype="multipart/form-data"
-                      class="hammock-form">
+                      class="loft-form">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="media_order" value='{{ (gallery.items | map(attribute="filename") | list) | tojson }}'
                            data-media-order>
 
-                    <div class="hammock-field">
-                        <label class="hammock-label">Title</label>
-                        <input type="text" name="title" class="hammock-input"
+                    <div class="loft-field">
+                        <label class="loft-label">Title</label>
+                        <input type="text" name="title" class="loft-input"
                                value="{{ gallery.title or meta.title }}"
                                required maxlength="120">
                     </div>
 
-                    <div class="hammock-field">
-                        <label class="hammock-label">Description</label>
-                        <textarea name="description" class="hammock-input" rows="3">{{ gallery.description }}</textarea>
+                    <div class="loft-field">
+                        <label class="loft-label">Description</label>
+                        <textarea name="description" class="loft-input" rows="3">{{ gallery.description }}</textarea>
                     </div>
                 </form>
 
-                <hr class="hammock-divider">
+                <hr class="loft-divider">
 
-                <h2 class="hammock-section-title">Media</h2>
-                <div class="hammock-edit-grid" data-reorder-grid>
+                <h2 class="loft-section-title">Media</h2>
+                <div class="loft-edit-grid" data-reorder-grid>
                     {% set media_items = gallery.items or [] %}
                     {% for item in media_items %}
                     {% set filename = item.filename %}
-                    <div class="hammock-edit-tile" data-media-item="{{ filename }}">
+                    <div class="loft-edit-tile" data-media-item="{{ filename }}">
                         {% if item.type == 'video' %}
-                        <video data-hammock-video autoplay loop muted playsinline preload="metadata">
+                        <video data-loft-video autoplay loop muted playsinline preload="metadata">
                             <source src="{{ url_for('.post_asset', project=project_name, post=post_name, filename=filename) }}" type="video/mp4">
                         </video>
                         {% if item.has_audio %}
-                        <button type="button" class="hammock-video-sound"
+                        <button type="button" class="loft-video-sound"
                                 data-video-sound aria-label="Unmute video" aria-pressed="false">
                             <i class="bi bi-volume-mute-fill" aria-hidden="true"></i>
                         </button>
                         {% endif %}
-                        <span class="hammock-media-badge"><i class="bi bi-play-fill"></i> Video</span>
+                        <span class="loft-media-badge"><i class="bi bi-play-fill"></i> Video</span>
                         {% else %}
                         <img loading="lazy"
                              src="{{ url_for('.post_asset', project=project_name, post=post_name, filename=filename) }}"
@@ -61,9 +61,9 @@
                               action="{{ url_for('.delete_gallery_image', project=project_name, post=post_name, filename=filename) }}"
                               data-confirm="Remove this media item?">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="hammock-tile-delete" aria-label="Delete media">×</button>
+                            <button type="submit" class="loft-tile-delete" aria-label="Delete media">×</button>
                         </form>
-                        <div class="hammock-reorder-buttons">
+                        <div class="loft-reorder-buttons">
                             <button type="button" data-reorder-previous
                                     aria-label="Move {{ filename }} earlier">
                                 <i class="bi bi-chevron-left" aria-hidden="true"></i>
@@ -75,42 +75,42 @@
                         </div>
                     </div>
                     {% else %}
-                    <p class="hammock-empty">No media yet — add some below.</p>
+                    <p class="loft-empty">No media yet — add some below.</p>
                     {% endfor %}
                 </div>
 
-                <div class="hammock-field">
-                    <label class="hammock-label">Add media</label>
-                    <input type="file" name="files" multiple accept="image/*,video/*" class="hammock-input"
+                <div class="loft-field">
+                    <label class="loft-label">Add media</label>
+                    <input type="file" name="files" multiple accept="image/*,video/*" class="loft-input"
                            form="gallery-meta-form">
-                    <div class="hammock-field-hint">
+                    <div class="loft-field-hint">
                         JPEG, PNG, WebP, GIF, BMP, TIFF, HEIC, and AVIF images are saved
                         as display-size WebP using the first frame. Upload up to
-                        {{ hammock_config.gallery_max_files_per_upload }} items at once,
-                        with {{ hammock_config.gallery_max_videos_per_upload }} video up to
-                        {{ hammock_config.gallery_video_max_duration_s }} seconds; video is
-                        converted to looping {{ hammock_config.gallery_video_max_height_px }}p MP4.
+                        {{ loft_config.gallery_max_files_per_upload }} items at once,
+                        with {{ loft_config.gallery_max_videos_per_upload }} video up to
+                        {{ loft_config.gallery_video_max_duration_s }} seconds; video is
+                        converted to looping {{ loft_config.gallery_video_max_height_px }}p MP4.
                     </div>
                 </div>
 
-                <div class="hammock-upload-progress" data-gallery-upload-progress hidden>
-                    <div class="hammock-upload-progress-label" data-gallery-upload-status>Preparing upload...</div>
-                    <div class="hammock-upload-progress-track"
+                <div class="loft-upload-progress" data-gallery-upload-progress hidden>
+                    <div class="loft-upload-progress-label" data-gallery-upload-status>Preparing upload...</div>
+                    <div class="loft-upload-progress-track"
                          role="progressbar"
                          aria-valuemin="0"
                          aria-valuemax="100"
                          aria-valuenow="0">
-                        <div class="hammock-upload-progress-bar" data-gallery-upload-bar></div>
+                        <div class="loft-upload-progress-bar" data-gallery-upload-bar></div>
                     </div>
                 </div>
 
-                <hr class="hammock-divider">
+                <hr class="loft-divider">
 
-                <div class="hammock-actions">
+                <div class="loft-actions">
                     <a href="{{ url_for('.view_post', project=project_name, post=post_name) }}"
-                       class="hammock-btn hammock-btn-ghost">Cancel</a>
+                       class="loft-btn loft-btn-ghost">Cancel</a>
                     <button type="submit" form="gallery-meta-form"
-                            class="hammock-btn hammock-btn-primary">Update post</button>
+                            class="loft-btn loft-btn-primary">Update post</button>
                 </div>
             </div>
         </div>

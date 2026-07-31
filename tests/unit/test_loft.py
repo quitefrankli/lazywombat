@@ -1,4 +1,4 @@
-"""Unit tests for Hammock data interface."""
+"""Unit tests for Loft data interface."""
 
 import json
 import shutil
@@ -14,15 +14,15 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.test import EnvironBuilder
 
 from web_app.errors import APIError
-from web_app.hammock import hammock_api
-from web_app.hammock.data_interface import DataInterface, VideoInfo
+from web_app.loft import loft_api
+from web_app.loft.data_interface import DataInterface, VideoInfo
 from web_app.users import User
 from web_app.config import ConfigManager
 
 
 @pytest.fixture
 def projects_dir(tmp_path, monkeypatch):
-    d = tmp_path / "hammock" / "projects"
+    d = tmp_path / "loft" / "projects"
     d.mkdir(parents=True)
 
     def patched_init(self):
@@ -228,7 +228,7 @@ class TestMarkdownLifecycleAndAuthz:
         # Rendered body contains the markdown→HTML conversion and the byline
         content = di.get_post_content(proj, post)
         assert "<strong>bob</strong>" in content
-        assert 'class="hammock-post-author">alice' in content
+        assert 'class="loft-post-author">alice' in content
 
         # Authorization: owner + admin allowed; stranger denied; legacy (no owner) is admin-only
         assert di.user_can_edit(alice, proj, post) is True
@@ -255,18 +255,18 @@ class TestMarkdownLifecycleAndAuthz:
 
 class TestGalleryUploadAndDelete:
     def test_video_max_height_defaults_to_720p(self):
-        assert ConfigManager().hammock.gallery_video_max_height_px == 720
+        assert ConfigManager().loft.gallery_video_max_height_px == 720
 
     def test_gallery_video_resets_shared_post_media_margin(self):
         css = (
             Path(__file__).parents[2]
             / "web_app"
-            / "hammock"
+            / "loft"
             / "static"
-            / "hammock.css"
+            / "loft.css"
         ).read_text()
 
-        gallery_video_rule = css.split(".hammock-gallery-video video {", 1)[1].split(
+        gallery_video_rule = css.split(".loft-gallery-video video {", 1)[1].split(
             "}", 1
         )[0]
         assert "margin: 0;" in gallery_video_rule
@@ -275,16 +275,16 @@ class TestGalleryUploadAndDelete:
         css = (
             Path(__file__).parents[2]
             / "web_app"
-            / "hammock"
+            / "loft"
             / "static"
-            / "hammock.css"
+            / "loft.css"
         ).read_text()
 
-        expanded_rule = css.split(".hammock-gallery-video.is-expanded {", 1)[1].split(
+        expanded_rule = css.split(".loft-gallery-video.is-expanded {", 1)[1].split(
             "}", 1
         )[0]
         assert "box-sizing: border-box;" in expanded_rule
-        assert ".hammock-gallery-video.is-expanded .hammock-video-sound {" in css
+        assert ".loft-gallery-video.is-expanded .loft-video-sound {" in css
         assert "env(safe-area-inset-bottom)" in css
 
     def test_add_then_delete_image_generates_thumb_and_updates_state(self, projects_dir):
@@ -341,11 +341,11 @@ class TestGalleryUploadAndDelete:
 
         rendered = di.get_post_content(proj, post)
         assert (
-            '<video data-hammock-video data-video-expand '
+            '<video data-loft-video data-video-expand '
             'autoplay loop muted playsinline preload="metadata">'
         ) in rendered
         assert "controls" not in rendered
-        assert "hammock-video-sound" not in rendered
+        assert "loft-video-sound" not in rendered
         assert '<source src="clip.mp4" type="video/mp4">' in rendered
 
         di.delete_gallery_media(proj, post, "clip.mp4")
@@ -398,7 +398,7 @@ class TestGalleryUploadAndDelete:
             {"type": "video", "filename": "sound.mp4", "has_audio": True}
         ]
         rendered = di.get_post_content(proj, post)
-        assert 'class="hammock-video-sound"' in rendered
+        assert 'class="loft-video-sound"' in rendered
         assert 'aria-label="Unmute video"' in rendered
 
     @pytest.mark.parametrize(("audio_index", "expects_audio"), [(None, False), (3, True)])
@@ -436,7 +436,7 @@ class TestGalleryUploadAndDelete:
         assert cmd[cmd.index("-map_metadata") + 1] == "-1"
         assert cmd[cmd.index("-map_chapters") + 1] == "-1"
         assert cmd[cmd.index("-t") + 1] == str(
-            ConfigManager().hammock.gallery_video_max_duration_s
+            ConfigManager().loft.gallery_video_max_duration_s
         )
         assert cmd[cmd.index("-pix_fmt") + 1] == "yuv420p"
         assert cmd[cmd.index("-f") + 1] == "mp4"
@@ -577,7 +577,7 @@ class TestGalleryUploadAndDelete:
     @pytest.mark.ffmpeg
     def test_video_over_duration_limit_is_rejected(self, projects_dir, tmp_path, monkeypatch):
         from web_app.config import ConfigManager
-        monkeypatch.setattr(ConfigManager().hammock, "gallery_video_max_duration_s", 0)
+        monkeypatch.setattr(ConfigManager().loft, "gallery_video_max_duration_s", 0)
 
         di = DataInterface()
         alice = User("alice", "x", "fa", is_admin=False)
@@ -593,7 +593,7 @@ class TestGalleryUploadAndDelete:
 
     def test_quota_blocks_uploads_over_limit(self, projects_dir, monkeypatch):
         from web_app.config import ConfigManager
-        monkeypatch.setattr(ConfigManager().hammock, "non_admin_quota_bytes", 1)
+        monkeypatch.setattr(ConfigManager().loft, "non_admin_quota_bytes", 1)
 
         di = DataInterface()
         alice = User("alice", "x", "fa", is_admin=False)
@@ -638,8 +638,8 @@ class TestGalleryEditRoute:
         projects_dir,
         monkeypatch,
     ):
-        if "hammock" not in client.application.blueprints:
-            client.application.register_blueprint(hammock_api)
+        if "loft" not in client.application.blueprints:
+            client.application.register_blueprint(loft_api)
         alice = User("alice", "x", "fa", is_admin=False)
         monkeypatch.setattr(
             helpers.login_manager,
@@ -647,7 +647,7 @@ class TestGalleryEditRoute:
             lambda username: alice if username == alice.id else None,
         )
         monkeypatch.setattr(
-            ConfigManager().hammock,
+            ConfigManager().loft,
             "gallery_request_max_bytes",
             1,
         )
@@ -656,7 +656,7 @@ class TestGalleryEditRoute:
             session["_fresh"] = True
 
         response = client.post(
-            "/hammock/new",
+            "/loft/new",
             data={
                 "project_new": "Album",
                 "title": "Too large",
@@ -677,8 +677,8 @@ class TestGalleryEditRoute:
         projects_dir,
         monkeypatch,
     ):
-        if "hammock" not in client.application.blueprints:
-            client.application.register_blueprint(hammock_api)
+        if "loft" not in client.application.blueprints:
+            client.application.register_blueprint(loft_api)
         alice = User("alice", "x", "fa", is_admin=False)
         monkeypatch.setattr(
             helpers.login_manager,
@@ -686,7 +686,7 @@ class TestGalleryEditRoute:
             lambda username: alice if username == alice.id else None,
         )
         monkeypatch.setattr(
-            ConfigManager().hammock,
+            ConfigManager().loft,
             "gallery_request_max_bytes",
             1,
         )
@@ -700,7 +700,7 @@ class TestGalleryEditRoute:
             session["_fresh"] = True
 
         builder = EnvironBuilder(
-            path="/hammock/new",
+            path="/loft/new",
             method="POST",
             data={
                 "project_new": "Album",
@@ -721,8 +721,8 @@ class TestGalleryEditRoute:
         assert list(projects_dir.iterdir()) == []
 
     def test_new_gallery_post_upload_uses_ajax_progress_contract(self, client, projects_dir, monkeypatch):
-        if "hammock" not in client.application.blueprints:
-            client.application.register_blueprint(hammock_api)
+        if "loft" not in client.application.blueprints:
+            client.application.register_blueprint(loft_api)
         alice = User("alice", "x", "fa", is_admin=False)
         monkeypatch.setattr(
             helpers.login_manager,
@@ -734,7 +734,7 @@ class TestGalleryEditRoute:
             sess["_user_id"] = alice.id
             sess["_fresh"] = True
 
-        new_response = client.get("/hammock/new")
+        new_response = client.get("/loft/new")
         assert b"data-gallery-upload-form" in new_response.data
         assert b"data-gallery-upload-progress" in new_response.data
         assert b"looping 720p MP4" in new_response.data
@@ -744,7 +744,7 @@ class TestGalleryEditRoute:
         assert b"Projects" not in new_response.data
 
         response = client.post(
-            "/hammock/new",
+            "/loft/new",
             data={
                 "project_new": "Album",
                 "title": "Trip",
@@ -757,15 +757,15 @@ class TestGalleryEditRoute:
         )
 
         assert response.status_code == 200
-        assert response.get_json()["redirect_url"] == "/hammock/album/trip/"
+        assert response.get_json()["redirect_url"] == "/loft/album/trip/"
         post_dir = projects_dir / "album" / "trip"
         assert not (post_dir / "photo.png").exists()
         assert (post_dir / "photo.webp").exists()
         assert not (post_dir / "thumbs").exists()
 
     def test_update_post_uploads_selected_images(self, client, projects_dir, monkeypatch):
-        if "hammock" not in client.application.blueprints:
-            client.application.register_blueprint(hammock_api)
+        if "loft" not in client.application.blueprints:
+            client.application.register_blueprint(loft_api)
         di = DataInterface()
         alice = User("alice", "x", "fa", is_admin=False)
         proj, post = di.create_gallery_post(alice, "Album", "Trip", "desc")
@@ -779,11 +779,11 @@ class TestGalleryEditRoute:
             sess["_user_id"] = alice.id
             sess["_fresh"] = True
 
-        edit_response = client.get(f"/hammock/{proj}/{post}/edit")
+        edit_response = client.get(f"/loft/{proj}/{post}/edit")
         assert b">Upload<" not in edit_response.data
 
         response = client.post(
-            f"/hammock/{proj}/{post}/edit",
+            f"/loft/{proj}/{post}/edit",
             data={
                 "title": "Updated Trip",
                 "description": "new desc",
@@ -794,7 +794,7 @@ class TestGalleryEditRoute:
         )
 
         assert response.status_code == 200
-        assert response.get_json()["redirect_url"] == f"/hammock/{proj}/{post}/"
+        assert response.get_json()["redirect_url"] == f"/loft/{proj}/{post}/"
         post_dir = projects_dir / proj / post
         assert not (post_dir / "photo.png").exists()
         assert (post_dir / "photo.webp").exists()
@@ -805,8 +805,8 @@ class TestGalleryEditRoute:
     def test_edit_gallery_exposes_audio_controls_and_saves_media_order(
         self, client, projects_dir, monkeypatch
     ):
-        if "hammock" not in client.application.blueprints:
-            client.application.register_blueprint(hammock_api)
+        if "loft" not in client.application.blueprints:
+            client.application.register_blueprint(loft_api)
         di = DataInterface()
         alice = User("alice", "x", "fa", is_admin=False)
         proj, post = di.create_gallery_post(alice, "Album", "Reorder", "")
@@ -825,7 +825,7 @@ class TestGalleryEditRoute:
             sess["_user_id"] = alice.id
             sess["_fresh"] = True
 
-        edit_response = client.get(f"/hammock/{proj}/{post}/edit")
+        edit_response = client.get(f"/loft/{proj}/{post}/edit")
         assert b"data-reorder-grid" in edit_response.data
         assert b"data-reorder-handle" not in edit_response.data
         assert b"data-reorder-previous" in edit_response.data
@@ -833,7 +833,7 @@ class TestGalleryEditRoute:
         assert b"data-video-sound" in edit_response.data
 
         response = client.post(
-            f"/hammock/{proj}/{post}/edit",
+            f"/loft/{proj}/{post}/edit",
             data={
                 "title": "Reorder",
                 "description": "",
@@ -849,8 +849,8 @@ class TestGalleryEditRoute:
         ] == ["sound.mp4", "two.webp", "one.webp"]
 
     def test_edit_gallery_rejects_stale_media_order(self, client, projects_dir, monkeypatch):
-        if "hammock" not in client.application.blueprints:
-            client.application.register_blueprint(hammock_api)
+        if "loft" not in client.application.blueprints:
+            client.application.register_blueprint(loft_api)
         di = DataInterface()
         alice = User("alice", "x", "fa", is_admin=False)
         proj, post = di.create_gallery_post(alice, "Album", "Reorder", "")
@@ -865,7 +865,7 @@ class TestGalleryEditRoute:
             sess["_fresh"] = True
 
         response = client.post(
-            f"/hammock/{proj}/{post}/edit",
+            f"/loft/{proj}/{post}/edit",
             data={"title": "Reorder", "description": "", "media_order": '["missing.webp"]'},
             headers={"X-Requested-With": "XMLHttpRequest"},
         )
@@ -881,8 +881,8 @@ class TestGalleryAssetDelivery:
         client,
         projects_dir,
     ):
-        if "hammock" not in client.application.blueprints:
-            client.application.register_blueprint(hammock_api)
+        if "loft" not in client.application.blueprints:
+            client.application.register_blueprint(loft_api)
         data_interface = DataInterface()
         owner = User("alice", "x", "fa", is_admin=False)
         project, post = data_interface.create_gallery_post(
@@ -895,7 +895,7 @@ class TestGalleryAssetDelivery:
         video.write_bytes(b"0123456789")
 
         response = client.get(
-            f"/hammock/{project}/{post}/clip.mp4",
+            f"/loft/{project}/{post}/clip.mp4",
             headers={"Range": "bytes=2-5"},
         )
 
@@ -907,14 +907,14 @@ class TestGalleryAssetDelivery:
 
 class TestRestrictedPostRoute:
     def test_restricted_post_direct_url_requires_elevated_user(self, client, projects_dir, monkeypatch):
-        if "hammock" not in client.application.blueprints:
-            client.application.register_blueprint(hammock_api)
+        if "loft" not in client.application.blueprints:
+            client.application.register_blueprint(loft_api)
         _make_post(projects_dir, "ideas", "private")
         meta = json.loads((projects_dir.parent / "meta.json").read_text())
         meta["projects"]["ideas"]["posts"]["private"]["visibility"] = "restricted"
         (projects_dir.parent / "meta.json").write_text(json.dumps(meta))
 
-        assert client.get("/hammock/ideas/private/").status_code == 404
+        assert client.get("/loft/ideas/private/").status_code == 404
 
         elevated = User("eve", "x", "fe", is_elevated=True)
         monkeypatch.setattr(
@@ -926,16 +926,16 @@ class TestRestrictedPostRoute:
             sess["_user_id"] = elevated.id
             sess["_fresh"] = True
 
-        response = client.get("/hammock/ideas/private/")
+        response = client.get("/loft/ideas/private/")
 
         assert response.status_code == 200
         assert b"<h1>test</h1>" in response.data
 
 
-class TestHammockBackup:
+class TestLoftBackup:
     def test_backup_copies_meta_and_nested_posts(self, projects_dir, tmp_path):
         """backup_data copies the whole content dir (meta.json + per-post files)
-        into a namespaced 'hammock/' subdir of the shared backup dir."""
+        into a namespaced 'loft/' subdir of the shared backup dir."""
         di = DataInterface()
         _make_post(projects_dir, "blog", "hello", date="2026-01-01")
 
@@ -943,10 +943,10 @@ class TestHammockBackup:
         backup_dir.mkdir()
         di.backup_data(backup_dir)
 
-        assert (backup_dir / "hammock" / "meta.json").exists()
-        assert (backup_dir / "hammock" / "projects" / "blog" / "hello" / "index.html").exists()
+        assert (backup_dir / "loft" / "meta.json").exists()
+        assert (backup_dir / "loft" / "projects" / "blog" / "hello" / "index.html").exists()
         # The copied meta still describes the post.
-        copied_meta = json.loads((backup_dir / "hammock" / "meta.json").read_text())
+        copied_meta = json.loads((backup_dir / "loft" / "meta.json").read_text())
         assert "hello" in copied_meta["projects"]["blog"]["posts"]
 
     def test_backup_is_noop_when_no_content_dir(self, projects_dir, tmp_path):
@@ -956,7 +956,7 @@ class TestHammockBackup:
         backup_dir = tmp_path / "backup"
         backup_dir.mkdir()
         di.backup_data(backup_dir)  # must not raise
-        assert not (backup_dir / "hammock").exists()
+        assert not (backup_dir / "loft").exists()
 
     def test_backup_excludes_raw_gallery_upload_staging(
         self,
@@ -976,6 +976,6 @@ class TestHammockBackup:
 
         assert not (
             backup_dir
-            / "hammock"
+            / "loft"
             / ".gallery-upload-staging"
         ).exists()

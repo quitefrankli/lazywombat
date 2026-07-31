@@ -5,7 +5,7 @@ import pytest
 
 import web_app.__main__  # noqa: F401 - registers app routes
 from web_app.app import app
-from web_app.hammock.data_interface import DataInterface
+from web_app.loft.data_interface import DataInterface
 
 
 @pytest.fixture
@@ -17,8 +17,8 @@ def client():
 
 
 @pytest.fixture
-def hammock_posts(tmp_path, monkeypatch):
-    projects_dir = tmp_path / "hammock" / "projects"
+def loft_posts(tmp_path, monkeypatch):
+    projects_dir = tmp_path / "loft" / "projects"
     post_dir = projects_dir / "journal" / "first-post"
     post_dir.mkdir(parents=True)
     (post_dir / "source.md").write_text("Hello")
@@ -48,14 +48,14 @@ def hammock_posts(tmp_path, monkeypatch):
     monkeypatch.setattr(DataInterface, "__init__", patched_init)
 
 
-def test_sitemap_lists_public_pages_and_hammock_posts(client, hammock_posts):
+def test_sitemap_lists_public_pages_and_loft_posts(client, loft_posts):
     response = client.get("/sitemap.xml")
 
     assert response.status_code == 200
     assert response.mimetype == "application/xml"
     body = response.get_data(as_text=True)
     assert "<loc>https://nabicat.site/</loc>" in body
-    assert "<loc>https://nabicat.site/hammock/journal/first-post/</loc>" in body
+    assert "<loc>https://nabicat.site/loft/journal/first-post/</loc>" in body
     assert "<loc>https://nabicat.site/crosswords/</loc>" in body
     assert "<loc>https://nabicat.site/simulations/game-of-life</loc>" in body
     assert "/metrics/" not in body

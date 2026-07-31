@@ -1,4 +1,5 @@
 import logging
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -29,28 +30,42 @@ def test_health_reports_commit_loaded_by_worker(client, app):
     assert isinstance(response.get_json()["pid"], int)
 
 
-@patch("web_app.__main__.Repo")
-def test_home_build_version_prefers_tag_on_head(repo_cls, client):
-    import web_app.__main__  # noqa: F401
+def test_build_version_prefers_most_recent_tag_on_head(monkeypatch):
+    from web_app import app as app_module
 
-    repo = repo_cls.return_value
-    repo.head.commit.hexsha = "abc123def456789"
-    repo.git.tag.return_value = "release-2026.07.29\n"
+    calls = []
 
-    response = client.get("/")
+    def fake_check_output(command, **kwargs):
+        calls.append(command)
+        if command[1] == "rev-parse":
+            return b"abc123def456789\n"
+        return b"release-2026.07.31\nrelease-2026.07.29\n"
+
+    monkeypatch.setattr(subprocess, "check_output", fake_check_output)
+
+    assert app_module._load_build_version() == ("release-2026.07.31", True)
+    assert "--sort=-creatordate" in calls[1]
+
+
+def test_home_uses_build_version_loaded_at_server_start(client, monkeypatch):
+    import web_app.__main__ as web_main
+
+    monkeypatch.setattr(web_main, "BUILD_VERSION", "release-2026.07.29")
+    monkeypatch.setattr(web_main, "BUILD_VERSION_IS_TAG", True)
+    with patch("web_app.app._load_build_version") as load_build_version:
+        response = client.get("/")
 
     assert response.status_code == 200
     assert response.data.count(b"release-2026.07.29") == 2
     assert b"abc123def456" not in response.data
+    load_build_version.assert_not_called()
 
 
-@patch("web_app.__main__.Repo")
-def test_home_build_version_falls_back_to_abbreviated_commit(repo_cls, client):
-    import web_app.__main__  # noqa: F401
+def test_home_build_version_falls_back_to_abbreviated_commit(client, monkeypatch):
+    import web_app.__main__ as web_main
 
-    repo = repo_cls.return_value
-    repo.head.commit.hexsha = "abc123def456789"
-    repo.git.tag.return_value = ""
+    monkeypatch.setattr(web_main, "BUILD_VERSION", "abc123def456789")
+    monkeypatch.setattr(web_main, "BUILD_VERSION_IS_TAG", False)
 
     response = client.get("/")
 

@@ -368,8 +368,8 @@ class SentinelConfig:
 
 
 @dataclass
-class HammockConfig:
-    request_path_prefix: str = "/hammock/"
+class LoftConfig:
+    request_path_prefix: str = "/loft/"
     non_admin_quota_bytes: int = 50 * 1024 * 1024
     admin_quota_bytes: int = 10 * 1024 * 1024 * 1024
     gallery_max_files_per_upload: int = 20
@@ -381,7 +381,7 @@ class HammockConfig:
     gallery_quota_lock_timeout_s: int = 30
     gallery_quota_lock_blocking_timeout_s: float = 10.0
     gallery_staging_root: Path | None = None
-    gallery_staging_dirname: str = "hammock-gallery-upload-staging"
+    gallery_staging_dirname: str = "loft-gallery-upload-staging"
     gallery_staging_dir_mode: int = 0o700
     gallery_staging_max_age_s: int = 3600
     gallery_publish_journal_prefix: str = ".gallery-publish-"
@@ -596,7 +596,7 @@ class ConfigManager:
             "/crosswords/static/",
             "/dev/static/",
             "/file_store/static/",
-            "/hammock/static/",
+            "/loft/static/",
             "/metrics/static/",
             "/proxy/static/",
             "/sentinel/static/",
@@ -614,6 +614,7 @@ class ConfigManager:
             "tubio.serve_audio",
             "tubio.serve_thumbnail",
         })
+        self.git_command_timeout_s = 2
         self.access_denied_redirect_endpoint = "home"
         self.elevated_access_denied_message = "You need elevated access to use Sentinel."
         self.admin_access_denied_message = "You need admin access to use this app."
@@ -631,7 +632,7 @@ class ConfigManager:
         self.dev = DevConfig()
         self.crosswords = CrosswordsConfig()
         self.sentinel = SentinelConfig()
-        self.hammock = HammockConfig()
+        self.loft = LoftConfig()
         self.file_store = FileStoreConfig()
         self.proxy = ProxyConfig()
 

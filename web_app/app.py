@@ -2,7 +2,7 @@ import subprocess
 import time
 from datetime import timedelta
 from pathlib import Path
-from flask import Flask, Request, g
+from flask import Flask, Request
 from flask_bootstrap import Bootstrap5
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -31,21 +31,21 @@ class SetCookieNoStoreMiddleware:
 
 
 class NabicatRequest(Request):
-    """Apply Hammock's upload cap before CSRF parses multipart forms."""
+    """Apply Loft's upload cap before CSRF parses multipart forms."""
 
     @property
     def max_content_length(self) -> int | None:
         configured_limit = super().max_content_length
-        hammock = ConfigManager().hammock
+        loft = ConfigManager().loft
         if (
             self.method == "POST"
-            and self.path.startswith(hammock.request_path_prefix)
+            and self.path.startswith(loft.request_path_prefix)
         ):
             if configured_limit is None:
-                return hammock.gallery_request_max_bytes
+                return loft.gallery_request_max_bytes
             return min(
                 configured_limit,
-                hammock.gallery_request_max_bytes,
+                loft.gallery_request_max_bytes,
             )
         return configured_limit
 
@@ -61,26 +61,51 @@ app.wsgi_app = SetCookieNoStoreMiddleware(
 )
 
 
-def _compute_static_version() -> str:
+def _load_build_version() -> tuple[str, bool]:
+    """Load the current commit's newest tag, or its SHA, once at startup."""
+    repo_root = Path(__file__).resolve().parent.parent
     try:
-        repo_root = Path(__file__).resolve().parent.parent
-        sha = subprocess.check_output(
-            ['git', 'rev-parse', '--short', 'HEAD'],
-            cwd=repo_root, stderr=subprocess.DEVNULL, timeout=2,
+        commit_hash = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            stderr=subprocess.DEVNULL,
+            timeout=ConfigManager().git_command_timeout_s,
         ).decode().strip()
-        if sha:
-            return sha
     except Exception:
-        pass
-    return str(int(time.time()))
+        return str(int(time.time())), False
+    if not commit_hash:
+        return str(int(time.time())), False
+
+    try:
+        tags = subprocess.check_output(
+            [
+                "git",
+                "for-each-ref",
+                "--points-at",
+                "HEAD",
+                "--sort=-creatordate",
+                "--format=%(refname:short)",
+                "refs/tags",
+            ],
+            cwd=repo_root,
+            stderr=subprocess.DEVNULL,
+            timeout=ConfigManager().git_command_timeout_s,
+        ).decode().splitlines()
+    except Exception:
+        tags = []
+
+    newest_tag = next((tag.strip() for tag in tags if tag.strip()), None)
+    return (newest_tag, True) if newest_tag else (commit_hash, False)
+
+
+BUILD_VERSION, BUILD_VERSION_IS_TAG = _load_build_version()
+STATIC_VERSION = BUILD_VERSION
 
 
 @app.url_defaults
 def _add_static_version(endpoint, values):
     if endpoint and endpoint.endswith('static') and 'v' not in values:
-        if not hasattr(g, 'static_version'):
-            g.static_version = _compute_static_version()
-        values['v'] = g.static_version
+        values['v'] = STATIC_VERSION
 
 # Session configuration for longer-lasting sessions
 # 30 days session lifetime - especially helpful for mobile/iOS users

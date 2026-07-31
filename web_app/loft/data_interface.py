@@ -23,7 +23,7 @@ from werkzeug.utils import secure_filename
 from web_app.config import ConfigManager
 from web_app.data_interface import DataInterface as BaseDataInterface
 from web_app.errors import APIError
-from web_app.hammock.image_processing import (
+from web_app.loft.image_processing import (
     identify_image_format,
     image_decoded_pixels,
     normalize_image_to_webp,
@@ -176,7 +176,7 @@ def slugify(s: str) -> str:
 class DataInterface(BaseDataInterface):
     def __init__(self):
         super().__init__()
-        self._content_dir = ConfigManager().save_data_path / "hammock"
+        self._content_dir = ConfigManager().save_data_path / "loft"
         self.projects_dir = self._content_dir / "projects"
         self.projects_dir.mkdir(parents=True, exist_ok=True)
         self._md = MarkdownIt("commonmark", {"html": False, "linkify": True, "breaks": True})
@@ -346,7 +346,7 @@ class DataInterface(BaseDataInterface):
 
     def quota_bytes(self, user: User) -> int:
         cfg = ConfigManager()
-        return cfg.hammock.admin_quota_bytes if user.has_elevated_access() else cfg.hammock.non_admin_quota_bytes
+        return cfg.loft.admin_quota_bytes if user.has_elevated_access() else cfg.loft.non_admin_quota_bytes
 
     def check_quota(self, user: User, additional_bytes: int) -> None:
         used = self.user_storage_bytes(user.id)
@@ -361,9 +361,9 @@ class DataInterface(BaseDataInterface):
 
     def create_markdown_post(self, user: User, project_input: str, title: str, source_md: str) -> tuple[str, str]:
         cfg = ConfigManager()
-        self._validate_text(project_input, "Topic name", cfg.hammock.project_slug_max_chars)
-        title = self._validate_text(title, "Title", cfg.hammock.title_max_chars)
-        source_md = self._validate_text(source_md, "Markdown", cfg.hammock.markdown_max_chars)
+        self._validate_text(project_input, "Topic name", cfg.loft.project_slug_max_chars)
+        title = self._validate_text(title, "Title", cfg.loft.title_max_chars)
+        source_md = self._validate_text(source_md, "Markdown", cfg.loft.markdown_max_chars)
         project_slug = slugify(project_input)
         if not title.strip():
             raise APIError("Title is required")
@@ -385,8 +385,8 @@ class DataInterface(BaseDataInterface):
 
     def update_markdown_post(self, project: str, post: str, title: str, source_md: str) -> None:
         cfg = ConfigManager()
-        title = self._validate_text(title, "Title", cfg.hammock.title_max_chars)
-        source_md = self._validate_text(source_md, "Markdown", cfg.hammock.markdown_max_chars)
+        title = self._validate_text(title, "Title", cfg.loft.title_max_chars)
+        source_md = self._validate_text(source_md, "Markdown", cfg.loft.markdown_max_chars)
         post_dir = self._post_dir(project, post)
         with self.edit_meta() as store:
             meta = self._post_in_store(store, project, post)
@@ -405,9 +405,9 @@ class DataInterface(BaseDataInterface):
 
     def create_gallery_post(self, user: User, project_input: str, title: str, description: str) -> tuple[str, str]:
         cfg = ConfigManager()
-        self._validate_text(project_input, "Topic name", cfg.hammock.project_slug_max_chars)
-        title = self._validate_text(title, "Title", cfg.hammock.title_max_chars)
-        description = self._validate_text(description, "Description", cfg.hammock.description_max_chars)
+        self._validate_text(project_input, "Topic name", cfg.loft.project_slug_max_chars)
+        title = self._validate_text(title, "Title", cfg.loft.title_max_chars)
+        description = self._validate_text(description, "Description", cfg.loft.description_max_chars)
         project_slug = slugify(project_input)
         if not title.strip():
             raise APIError("Title is required")
@@ -443,8 +443,8 @@ class DataInterface(BaseDataInterface):
         media_order: list[str] | None = None,
     ) -> None:
         cfg = ConfigManager()
-        title = self._validate_text(title, "Title", cfg.hammock.title_max_chars)
-        description = self._validate_text(description, "Description", cfg.hammock.description_max_chars)
+        title = self._validate_text(title, "Title", cfg.loft.title_max_chars)
+        description = self._validate_text(description, "Description", cfg.loft.description_max_chars)
         with self.edit_meta() as store:
             meta = self._post_in_store(store, project, post)
             if meta is None or meta.type != PostType.GALLERY:
@@ -476,7 +476,7 @@ class DataInterface(BaseDataInterface):
         if meta is None or meta.type != PostType.GALLERY:
             raise APIError("Post is not a gallery post")
 
-        cfg = ConfigManager().hammock
+        cfg = ConfigManager().loft
         uploads = [file for file in files if file and file.filename]
         if len(uploads) > cfg.gallery_max_files_per_upload:
             raise APIError(
@@ -521,7 +521,7 @@ class DataInterface(BaseDataInterface):
             # decoding and transcoding has already completed outside this lock.
             try:
                 with rmw_lock(
-                    f"hammock-quota:{storage_owner_id}",
+                    f"loft-quota:{storage_owner_id}",
                     timeout_s=cfg.gallery_quota_lock_timeout_s,
                     blocking_timeout_s=(
                         cfg.gallery_quota_lock_blocking_timeout_s
@@ -552,7 +552,7 @@ class DataInterface(BaseDataInterface):
             owner = BaseDataInterface().load_users().get(storage_owner_id)
         except (OSError, ValueError) as error:
             log_event(
-                "hammock", "hammock.gallery_owner_load_failed",
+                "loft", "loft.gallery_owner_load_failed",
                 level=logging.WARNING, user=storage_owner_id,
                 exc_info=error, error_type=type(error).__name__,
             )
@@ -563,7 +563,7 @@ class DataInterface(BaseDataInterface):
 
     @staticmethod
     def _cleanup_stale_gallery_staging(staging_root: Path) -> None:
-        cutoff = time.time() - ConfigManager().hammock.gallery_staging_max_age_s
+        cutoff = time.time() - ConfigManager().loft.gallery_staging_max_age_s
         for entry in staging_root.iterdir():
             try:
                 if entry.stat().st_mtime >= cutoff:
@@ -577,7 +577,7 @@ class DataInterface(BaseDataInterface):
                 continue
             except OSError as error:
                 log_event(
-                    "hammock", "hammock.gallery_staging_cleanup_failed",
+                    "loft", "loft.gallery_staging_cleanup_failed",
                     level=logging.WARNING, path=entry.name,
                     exc_info=error, error_type=type(error).__name__,
                 )
@@ -587,7 +587,7 @@ class DataInterface(BaseDataInterface):
         files: list[FileStorage],
         staging_dir: Path,
     ) -> list[PreparedGalleryUpload]:
-        cfg = ConfigManager().hammock
+        cfg = ConfigManager().loft
         staged_sources: list[StagedGallerySource] = []
         total_source_bytes = 0
         total_image_pixels = 0
@@ -734,7 +734,7 @@ class DataInterface(BaseDataInterface):
         max_file_bytes: int,
         total_so_far: int,
     ) -> int:
-        cfg = ConfigManager().hammock
+        cfg = ConfigManager().loft
         written = 0
         with destination.open("wb") as output:
             while True:
@@ -793,7 +793,7 @@ class DataInterface(BaseDataInterface):
                     destinations.append((item, filename, destination))
                     existing_names.add(filename)
 
-                cfg = ConfigManager().hammock
+                cfg = ConfigManager().loft
                 journal_path = post_dir / (
                     f"{cfg.gallery_publish_journal_prefix}"
                     f"{uuid.uuid4().hex}"
@@ -841,7 +841,7 @@ class DataInterface(BaseDataInterface):
                 except OSError as rollback_error:
                     rollback_failed = True
                     log_event(
-                        "hammock", "hammock.gallery_rollback_failed",
+                        "loft", "loft.gallery_rollback_failed",
                         level=logging.ERROR, path=moved_path.name,
                         exc_info=rollback_error,
                         error_type=type(rollback_error).__name__,
@@ -851,7 +851,7 @@ class DataInterface(BaseDataInterface):
                     self.atomic_delete(journal_path)
                 except OSError as cleanup_error:
                     log_event(
-                        "hammock", "hammock.gallery_journal_cleanup_failed",
+                        "loft", "loft.gallery_journal_cleanup_failed",
                         level=logging.WARNING, path=journal_path.name,
                         exc_info=cleanup_error,
                         error_type=type(cleanup_error).__name__,
@@ -869,7 +869,7 @@ class DataInterface(BaseDataInterface):
                 # The committed metadata is authoritative. A later upload will
                 # see that the journal's filenames are referenced and remove it.
                 log_event(
-                    "hammock", "hammock.gallery_journal_cleanup_failed",
+                    "loft", "loft.gallery_journal_cleanup_failed",
                     level=logging.WARNING, path=journal_path.name,
                     committed=True, exc_info=error,
                     error_type=type(error).__name__,
@@ -881,7 +881,7 @@ class DataInterface(BaseDataInterface):
         self,
         storage_owner_id: str,
     ) -> None:
-        cfg = ConfigManager().hammock
+        cfg = ConfigManager().loft
         journal_pattern = (
             f"{cfg.gallery_publish_journal_prefix}"
             f"*{cfg.gallery_publish_journal_suffix}"
@@ -924,7 +924,7 @@ class DataInterface(BaseDataInterface):
                             self.atomic_delete(journal_path)
                         except (OSError, ValueError, TypeError) as error:
                             log_event(
-                                "hammock", "hammock.gallery_journal_recovery_failed",
+                                "loft", "loft.gallery_journal_recovery_failed",
                                 level=logging.WARNING, path=journal_path.name,
                                 exc_info=error, error_type=type(error).__name__,
                             )
@@ -956,7 +956,7 @@ class DataInterface(BaseDataInterface):
             return normalize_image_to_webp(source)
         except APIError as error:
             log_event(
-                "hammock", "hammock.image_normalization_failed",
+                "loft", "loft.image_normalization_failed",
                 level=logging.WARNING, filename=display_name,
                 reason="normalization_error",
                 error_type=type(error).__name__,
@@ -984,7 +984,7 @@ class DataInterface(BaseDataInterface):
             raise APIError(error_message) from e
         except subprocess.CalledProcessError as e:
             log_event(
-                "hammock", "hammock.media_command_failed",
+                "loft", "loft.media_command_failed",
                 level=logging.WARNING, executable=Path(cmd[0]).name,
                 returncode=e.returncode,
             )
@@ -997,13 +997,13 @@ class DataInterface(BaseDataInterface):
                 "ffprobe",
                 "-hide_banner",
                 "-v", "error",
-                "-max_alloc", str(cfg.hammock.gallery_video_ffmpeg_max_alloc_bytes),
-                "-protocol_whitelist", cfg.hammock.gallery_video_protocol_whitelist,
-                "-format_whitelist", ",".join(cfg.hammock.gallery_video_allowed_demuxers),
-                "-probesize", str(cfg.hammock.gallery_video_probe_size_bytes),
-                "-analyzeduration", str(cfg.hammock.gallery_video_analyze_duration_us),
-                "-max_pixels", str(cfg.hammock.gallery_video_max_input_pixels),
-                "-threads", str(cfg.hammock.gallery_video_ffmpeg_threads),
+                "-max_alloc", str(cfg.loft.gallery_video_ffmpeg_max_alloc_bytes),
+                "-protocol_whitelist", cfg.loft.gallery_video_protocol_whitelist,
+                "-format_whitelist", ",".join(cfg.loft.gallery_video_allowed_demuxers),
+                "-probesize", str(cfg.loft.gallery_video_probe_size_bytes),
+                "-analyzeduration", str(cfg.loft.gallery_video_analyze_duration_us),
+                "-max_pixels", str(cfg.loft.gallery_video_max_input_pixels),
+                "-threads", str(cfg.loft.gallery_video_ffmpeg_threads),
                 "-show_entries",
                 (
                     "format=format_name,duration:"
@@ -1021,7 +1021,7 @@ class DataInterface(BaseDataInterface):
                 "-of", "json",
                 str(src),
             ],
-            cfg.hammock.gallery_video_probe_timeout_s,
+            cfg.loft.gallery_video_probe_timeout_s,
             f"Could not process {display_name} as a video",
         )
         try:
@@ -1032,7 +1032,7 @@ class DataInterface(BaseDataInterface):
         format_name = str(payload.get("format", {}).get("format_name") or "")
         detected_demuxers = set(format_name.split(","))
         if not detected_demuxers.intersection(
-            cfg.hammock.gallery_video_allowed_demuxers
+            cfg.loft.gallery_video_allowed_demuxers
         ):
             raise APIError(
                 f"Unsupported video container for {display_name}"
@@ -1150,7 +1150,7 @@ class DataInterface(BaseDataInterface):
             for item in side_data
         )
         is_hdr = (
-            transfer in cfg.hammock.gallery_video_hdr_transfers
+            transfer in cfg.loft.gallery_video_hdr_transfers
             or has_dolby_vision
         )
 
@@ -1174,7 +1174,7 @@ class DataInterface(BaseDataInterface):
             for key in metadata_keys
             if any(
                 fragment in key
-                for fragment in cfg.hammock.gallery_video_private_metadata_fragments
+                for fragment in cfg.loft.gallery_video_private_metadata_fragments
             )
         )
         return VideoInfo(
@@ -1281,21 +1281,21 @@ class DataInterface(BaseDataInterface):
             raise APIError(
                 f"Video {display_name} has no reliable duration metadata"
             )
-        if info.duration > cfg.hammock.gallery_video_max_duration_s:
+        if info.duration > cfg.loft.gallery_video_max_duration_s:
             raise APIError(
                 f"Video {display_name} is too long "
-                f"(max {cfg.hammock.gallery_video_max_duration_s} seconds)"
+                f"(max {cfg.loft.gallery_video_max_duration_s} seconds)"
             )
         if (
-            info.width > cfg.hammock.gallery_video_max_input_width_px
-            or info.height > cfg.hammock.gallery_video_max_input_height_px
+            info.width > cfg.loft.gallery_video_max_input_width_px
+            or info.height > cfg.loft.gallery_video_max_input_height_px
             or info.width * info.height
-            > cfg.hammock.gallery_video_max_input_pixels
+            > cfg.loft.gallery_video_max_input_pixels
         ):
             raise APIError(f"Video {display_name} dimensions are too large")
         if (
             info.fps is not None
-            and info.fps > cfg.hammock.gallery_video_max_input_fps
+            and info.fps > cfg.loft.gallery_video_max_input_fps
         ):
             raise APIError(f"Video {display_name} frame rate is too high")
         return info
@@ -1305,7 +1305,7 @@ class DataInterface(BaseDataInterface):
         src: Path,
         display_name: str,
     ) -> VideoInfo:
-        cfg = ConfigManager().hammock
+        cfg = ConfigManager().loft
         try:
             output_bytes = src.stat().st_size
         except OSError as error:
@@ -1463,8 +1463,8 @@ class DataInterface(BaseDataInterface):
         info: VideoInfo,
     ) -> None:
         cfg = ConfigManager()
-        max_width = cfg.hammock.gallery_video_max_width_px
-        max_height = cfg.hammock.gallery_video_max_height_px
+        max_width = cfg.loft.gallery_video_max_width_px
+        max_height = cfg.loft.gallery_video_max_height_px
         filters = [
             (
                 f"scale='max(2,trunc(iw*min(1,min({max_width}/iw,"
@@ -1477,23 +1477,23 @@ class DataInterface(BaseDataInterface):
             filters = [
                 (
                     f"zscale=t=linear:npl="
-                    f"{cfg.hammock.gallery_video_hdr_peak_nits}"
+                    f"{cfg.loft.gallery_video_hdr_peak_nits}"
                 ),
                 "format=gbrpf32le",
                 (
-                    f"tonemap={cfg.hammock.gallery_video_hdr_tonemap_algorithm}:"
+                    f"tonemap={cfg.loft.gallery_video_hdr_tonemap_algorithm}:"
                     f"desat="
-                    f"{cfg.hammock.gallery_video_hdr_desaturation}"
+                    f"{cfg.loft.gallery_video_hdr_desaturation}"
                 ),
                 (
-                    f"zscale=p={cfg.hammock.gallery_video_output_color_space}:"
-                    f"t={cfg.hammock.gallery_video_output_color_space}:"
-                    f"m={cfg.hammock.gallery_video_output_color_space}:"
-                    f"r={cfg.hammock.gallery_video_output_color_range}"
+                    f"zscale=p={cfg.loft.gallery_video_output_color_space}:"
+                    f"t={cfg.loft.gallery_video_output_color_space}:"
+                    f"m={cfg.loft.gallery_video_output_color_space}:"
+                    f"r={cfg.loft.gallery_video_output_color_range}"
                 ),
             ] + filters
         elif any(
-            value != cfg.hammock.gallery_video_output_color_space
+            value != cfg.loft.gallery_video_output_color_space
             for value in (
                 info.color_space,
                 info.color_transfer,
@@ -1501,8 +1501,8 @@ class DataInterface(BaseDataInterface):
             )
         ):
             color_options = [
-                f"all={cfg.hammock.gallery_video_output_color_space}",
-                f"format={cfg.hammock.gallery_video_output_pixel_format}",
+                f"all={cfg.loft.gallery_video_output_color_space}",
+                f"format={cfg.loft.gallery_video_output_pixel_format}",
             ]
             if not all(
                 (
@@ -1512,10 +1512,10 @@ class DataInterface(BaseDataInterface):
                 )
             ):
                 fallback = (
-                    cfg.hammock.gallery_video_sd_input_color_space
+                    cfg.loft.gallery_video_sd_input_color_space
                     if info.height
-                    <= cfg.hammock.gallery_video_sd_max_height_px
-                    else cfg.hammock.gallery_video_hd_input_color_space
+                    <= cfg.loft.gallery_video_sd_max_height_px
+                    else cfg.loft.gallery_video_hd_input_color_space
                 )
                 color_options.append(f"iall={fallback}")
             filters = [
@@ -1524,7 +1524,7 @@ class DataInterface(BaseDataInterface):
         filters.extend(
             [
                 "setsar=1",
-                f"format={cfg.hammock.gallery_video_output_pixel_format}",
+                f"format={cfg.loft.gallery_video_output_pixel_format}",
             ]
         )
         vf = ",".join(filters)
@@ -1534,13 +1534,13 @@ class DataInterface(BaseDataInterface):
             "-nostdin",
             "-hide_banner",
             "-loglevel", "error",
-            "-max_alloc", str(cfg.hammock.gallery_video_ffmpeg_max_alloc_bytes),
-            "-protocol_whitelist", cfg.hammock.gallery_video_protocol_whitelist,
-            "-format_whitelist", ",".join(cfg.hammock.gallery_video_allowed_demuxers),
-            "-probesize", str(cfg.hammock.gallery_video_probe_size_bytes),
-            "-analyzeduration", str(cfg.hammock.gallery_video_analyze_duration_us),
-            "-max_pixels", str(cfg.hammock.gallery_video_max_input_pixels),
-            "-threads", str(cfg.hammock.gallery_video_ffmpeg_threads),
+            "-max_alloc", str(cfg.loft.gallery_video_ffmpeg_max_alloc_bytes),
+            "-protocol_whitelist", cfg.loft.gallery_video_protocol_whitelist,
+            "-format_whitelist", ",".join(cfg.loft.gallery_video_allowed_demuxers),
+            "-probesize", str(cfg.loft.gallery_video_probe_size_bytes),
+            "-analyzeduration", str(cfg.loft.gallery_video_analyze_duration_us),
+            "-max_pixels", str(cfg.loft.gallery_video_max_input_pixels),
+            "-threads", str(cfg.loft.gallery_video_ffmpeg_threads),
             "-autorotate", "1",
             "-i", str(src),
             "-map", f"0:{info.video_index}",
@@ -1554,40 +1554,40 @@ class DataInterface(BaseDataInterface):
                 "-dn", "-sn",
                 "-map_metadata", "-1",
                 "-map_chapters", "-1",
-                "-t", str(cfg.hammock.gallery_video_max_duration_s),
-                "-filter_threads", str(cfg.hammock.gallery_video_ffmpeg_threads),
+                "-t", str(cfg.loft.gallery_video_max_duration_s),
+                "-filter_threads", str(cfg.loft.gallery_video_ffmpeg_threads),
                 "-vf", vf,
-                "-c:v", cfg.hammock.gallery_video_output_encoder,
-                "-preset", cfg.hammock.gallery_video_h264_preset,
-                "-crf", str(cfg.hammock.gallery_video_h264_crf),
-                "-profile:v", cfg.hammock.gallery_video_h264_profile,
-                "-level:v", cfg.hammock.gallery_video_h264_level,
-                "-tag:v", cfg.hammock.gallery_video_output_codec_tag,
-                "-pix_fmt", cfg.hammock.gallery_video_output_pixel_format,
-                "-fpsmax", str(cfg.hammock.gallery_video_max_output_fps),
+                "-c:v", cfg.loft.gallery_video_output_encoder,
+                "-preset", cfg.loft.gallery_video_h264_preset,
+                "-crf", str(cfg.loft.gallery_video_h264_crf),
+                "-profile:v", cfg.loft.gallery_video_h264_profile,
+                "-level:v", cfg.loft.gallery_video_h264_level,
+                "-tag:v", cfg.loft.gallery_video_output_codec_tag,
+                "-pix_fmt", cfg.loft.gallery_video_output_pixel_format,
+                "-fpsmax", str(cfg.loft.gallery_video_max_output_fps),
                 "-metadata:s:v:0", "rotate=0",
-                "-color_primaries", cfg.hammock.gallery_video_output_color_space,
-                "-color_trc", cfg.hammock.gallery_video_output_color_space,
-                "-colorspace", cfg.hammock.gallery_video_output_color_space,
-                "-color_range", cfg.hammock.gallery_video_output_color_range,
-                "-c:a", cfg.hammock.gallery_video_output_audio_encoder,
-                "-profile:a", cfg.hammock.gallery_video_output_audio_profile,
-                "-ac", str(cfg.hammock.gallery_video_audio_channels),
-                "-ar", str(cfg.hammock.gallery_video_audio_sample_rate_hz),
-                "-b:a", cfg.hammock.gallery_video_audio_bitrate,
-                "-threads", str(cfg.hammock.gallery_video_ffmpeg_threads),
+                "-color_primaries", cfg.loft.gallery_video_output_color_space,
+                "-color_trc", cfg.loft.gallery_video_output_color_space,
+                "-colorspace", cfg.loft.gallery_video_output_color_space,
+                "-color_range", cfg.loft.gallery_video_output_color_range,
+                "-c:a", cfg.loft.gallery_video_output_audio_encoder,
+                "-profile:a", cfg.loft.gallery_video_output_audio_profile,
+                "-ac", str(cfg.loft.gallery_video_audio_channels),
+                "-ar", str(cfg.loft.gallery_video_audio_sample_rate_hz),
+                "-b:a", cfg.loft.gallery_video_audio_bitrate,
+                "-threads", str(cfg.loft.gallery_video_ffmpeg_threads),
                 "-max_muxing_queue_size",
-                str(cfg.hammock.gallery_video_max_muxing_queue_packets),
+                str(cfg.loft.gallery_video_max_muxing_queue_packets),
                 "-abort_on", "empty_output+empty_output_stream",
                 "-movflags", "+faststart",
-                "-fs", str(cfg.hammock.gallery_video_max_output_bytes),
-                "-f", cfg.hammock.gallery_video_output_format,
+                "-fs", str(cfg.loft.gallery_video_max_output_bytes),
+                "-f", cfg.loft.gallery_video_output_format,
                 str(dst),
             ]
         )
         self._run_media_command(
             cmd,
-            cfg.hammock.gallery_video_transcode_timeout_s,
+            cfg.loft.gallery_video_transcode_timeout_s,
             f"Could not process {display_name} as a video",
         )
 
@@ -1614,12 +1614,12 @@ class DataInterface(BaseDataInterface):
         title = html.escape(meta.title)
         body = self._md.render(source_md or "")
         return (
-            f'<article class="hammock-post hammock-md">'
-            f'<header class="hammock-post-header">'
+            f'<article class="loft-post loft-md">'
+            f'<header class="loft-post-header">'
             f'<h1>{title}</h1>'
             f'{self._render_byline(meta)}'
             f'</header>'
-            f'<div class="hammock-md-body">{body}</div>'
+            f'<div class="loft-md-body">{body}</div>'
             f'</article>'
         )
 
@@ -1636,14 +1636,14 @@ class DataInterface(BaseDataInterface):
                 sound_control = ""
                 if item.has_audio:
                     sound_control = (
-                        f'<button type="button" class="hammock-video-sound" '
+                        f'<button type="button" class="loft-video-sound" '
                         f'data-video-sound aria-label="Unmute video" aria-pressed="false">'
                         f'<i class="bi bi-volume-mute-fill" aria-hidden="true"></i>'
                         f'</button>'
                     )
                 media_html.append(
-                    f'<figure class="hammock-gallery-photo hammock-gallery-video">'
-                    f'<video data-hammock-video data-video-expand '
+                    f'<figure class="loft-gallery-photo loft-gallery-video">'
+                    f'<video data-loft-video data-video-expand '
                     f'autoplay loop muted playsinline preload="metadata">'
                     f'<source src="{name}" type="video/mp4">'
                     f'</video>'
@@ -1652,8 +1652,8 @@ class DataInterface(BaseDataInterface):
                 )
             else:
                 media_html.append(
-                    f'<figure class="hammock-gallery-photo">'
-                    f'<button type="button" class="hammock-gallery-photo-btn" data-full="{name}">'
+                    f'<figure class="loft-gallery-photo">'
+                    f'<button type="button" class="loft-gallery-photo-btn" data-full="{name}">'
                     f'<img loading="lazy" decoding="async" '
                     f'src="data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=" '
                     f'data-gallery-src="{name}" alt="">'
@@ -1661,20 +1661,20 @@ class DataInterface(BaseDataInterface):
                     f'</figure>'
                 )
         feed = "\n".join(media_html) if media_html else (
-            '<p class="hammock-gallery-empty">No media yet.</p>'
+            '<p class="loft-gallery-empty">No media yet.</p>'
         )
-        desc_block = f'<p class="hammock-gallery-desc">{description}</p>' if description else ""
+        desc_block = f'<p class="loft-gallery-desc">{description}</p>' if description else ""
         return (
-            f'<article class="hammock-post hammock-gallery" '
-            f'data-gallery-stagger-ms="{cfg.hammock.gallery_image_stagger_ms}" '
-            f'data-gallery-max-retries="{cfg.hammock.gallery_image_max_retries}" '
-            f'data-gallery-retry-delay-ms="{cfg.hammock.gallery_image_retry_delay_ms}">'
-            f'<header class="hammock-post-header">'
+            f'<article class="loft-post loft-gallery" '
+            f'data-gallery-stagger-ms="{cfg.loft.gallery_image_stagger_ms}" '
+            f'data-gallery-max-retries="{cfg.loft.gallery_image_max_retries}" '
+            f'data-gallery-retry-delay-ms="{cfg.loft.gallery_image_retry_delay_ms}">'
+            f'<header class="loft-post-header">'
             f'<h1>{title}</h1>'
             f'{self._render_byline(meta)}'
             f'{desc_block}'
             f'</header>'
-            f'<div class="hammock-gallery-feed">{feed}</div>'
+            f'<div class="loft-gallery-feed">{feed}</div>'
             f'</article>'
         )
 
@@ -1683,14 +1683,14 @@ class DataInterface(BaseDataInterface):
         date = html.escape(meta.date[:10])
         owner = html.escape(meta.owner)
         if owner and date:
-            inner = f'by <span class="hammock-post-author">{owner}</span> &middot; {date}'
+            inner = f'by <span class="loft-post-author">{owner}</span> &middot; {date}'
         elif owner:
-            inner = f'by <span class="hammock-post-author">{owner}</span>'
+            inner = f'by <span class="loft-post-author">{owner}</span>'
         elif date:
             inner = date
         else:
             return ""
-        return f'<p class="hammock-post-meta">{inner}</p>'
+        return f'<p class="loft-post-meta">{inner}</p>'
 
     # ---------- base hooks ----------
 
@@ -1711,9 +1711,9 @@ class DataInterface(BaseDataInterface):
         if self._content_dir.exists():
             shutil.copytree(
                 self._content_dir,
-                backup_dir / "hammock",
+                backup_dir / "loft",
                 dirs_exist_ok=True,
                 ignore=shutil.ignore_patterns(
-                    *ConfigManager().hammock.gallery_backup_excluded_names
+                    *ConfigManager().loft.gallery_backup_excluded_names
                 ),
             )

@@ -1,4 +1,4 @@
-"""Content-driven image normalization for Hammock gallery uploads."""
+"""Content-driven image normalization for Loft gallery uploads."""
 
 from io import BytesIO
 from pathlib import Path
@@ -102,7 +102,7 @@ def normalize_image_to_webp(source: Path) -> bytes:
     sRGB when Pillow can interpret the source profile.
     """
 
-    cfg = ConfigManager().hammock
+    cfg = ConfigManager().loft
     try:
         with Image.open(source) as opened:
             width, height = opened.size

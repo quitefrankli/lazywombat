@@ -1,0 +1,21 @@
+{% extends "subpage_base.html" %}
+
+{% block page_title %}Loft - NabiCat{% endblock %}
+{% block meta_description %}Read public Loft posts and galleries on NabiCat.{% endblock %}
+
+{% block subapp_index_url %}{{ url_for('loft.index') }}{% endblock %}
+{% block navbar_brand %}Loft{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="{{ url_for('loft.static', filename='loft.css') }}">
+<script defer src="{{ url_for('loft.static', filename='loft.js') }}"></script>
+{% endblock %}
+
+{% block page_actions %}
+  <li>
+    <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url_for('loft.new_post') }}">
+      <i class="bi bi-plus-lg text-success"></i>
+      <span>New post</span>
+    </a>
+  </li>
+{% endblock %}

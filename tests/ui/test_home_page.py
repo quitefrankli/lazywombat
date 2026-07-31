@@ -16,7 +16,7 @@ def test_home_page_loads(logged_in_page, test_server):
 
 def test_app_grid_visible(logged_in_page, test_server):
     """Test that the app grid is displayed with all expected apps for admin."""
-    expected_apps = ["Todoist", "Metrics", "Tubio", "File Store", "Sentinel"]
+    expected_apps = ["Loft", "Todoist", "Metrics", "Tubio", "File Store", "Sentinel"]
     
     for app_name in expected_apps:
         app_card = logged_in_page.locator("text=" + app_name)
@@ -26,6 +26,7 @@ def test_app_grid_visible(logged_in_page, test_server):
 def test_all_app_cards_clickable(logged_in_page, test_server):
     """Test that all app cards are clickable links for admin."""
     apps = [
+        ("Loft", "/loft/"),
         ("Todoist", "/todoist"),
         ("Metrics", "/metrics"),
         ("Tubio", "/tubio"),
@@ -43,6 +44,10 @@ def test_all_app_cards_clickable(logged_in_page, test_server):
 def test_crosswords_visible_for_admin(logged_in_page, test_server):
     """Test that Crosswords is visible for admin user."""
     expect(logged_in_page.locator("text=Crosswords")).to_be_visible()
+
+
+def test_loft_uses_house_up_icon(logged_in_page, test_server):
+    expect(logged_in_page.locator(".app-icon-loft .bi-house-up-fill")).to_be_visible()
 
 
 def test_version_badge_displayed(logged_in_page):

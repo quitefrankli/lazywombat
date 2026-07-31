@@ -34,8 +34,8 @@ def app_context():
 
 
 class TestHelpers:
-    @patch('web_app.app._compute_static_version', return_value='fresh-build')
-    def test_static_version_refreshes_for_each_request(self, mock_compute_static_version):
+    @patch('web_app.app.STATIC_VERSION', 'fresh-build')
+    def test_static_version_uses_value_loaded_at_server_start(self):
         with app.test_request_context():
             first_values = {}
             second_values = {}
@@ -45,7 +45,6 @@ class TestHelpers:
 
         assert first_values['v'] == 'fresh-build'
         assert second_values['v'] == 'fresh-build'
-        mock_compute_static_version.assert_called_once()
 
     def test_get_ip_from_x_forwarded_for(self, app_context):
         """Test get_ip with X-Forwarded-For header"""
@@ -85,6 +84,43 @@ class TestHelpers:
             # Non-ASCII characters should be removed
             assert 'é' not in result
             assert '🎉' not in result
+
+
+class TestCanonicalRoutes:
+    @pytest.mark.parametrize("legacy_url", ["/hammock", "/hammock/"])
+    def test_legacy_root_redirects_to_loft_root(self, client, legacy_url):
+        import web_app.__main__  # noqa: F401
+
+        response = client.get(legacy_url)
+
+        assert response.status_code == 308
+        assert response.headers["Location"] == "/loft/"
+
+    def test_legacy_url_redirects_to_matching_loft_url(self, client):
+        import web_app.__main__  # noqa: F401
+
+        response = client.get("/hammock/journal/entry/?view=full")
+
+        assert response.status_code == 308
+        assert response.headers["Location"] == "/loft/journal/entry/?view=full"
+
+    def test_unknown_url_redirects_to_home(self, client):
+        import web_app.__main__  # noqa: F401
+
+        response = client.get("/definitely-not-a-real-page")
+
+        assert response.status_code == 302
+        assert response.headers["Location"] == "/"
+
+
+class TestHome:
+    def test_loft_card_uses_house_up_icon(self, client):
+        import web_app.__main__  # noqa: F401
+
+        response = client.get("/")
+
+        assert response.status_code == 200
+        assert b'bi bi-house-up-fill' in response.data
 
 
 class TestUserModel:

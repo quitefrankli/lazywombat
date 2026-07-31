@@ -491,7 +491,7 @@ def upload_post(post_folder: str, project: str, post_name: str | None, date: str
     payload = {"project": project, "post_name": post_name, "data": encoded_data}
     if date:
         payload["date"] = date
-    response = send_request("hammock/api/upload_post", payload)
+    response = send_request("loft/api/upload_post", payload)
     print(f"Response: {response.status_code} - {response.text}")
 
 @cli.command()

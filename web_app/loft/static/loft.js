@@ -38,7 +38,7 @@ document.addEventListener("DOMContentLoaded", function() {
             || document.querySelector("[data-gallery-upload-progress]");
         if (!progressWrap) return;
         const progressBar = progressWrap.querySelector("[data-gallery-upload-bar]");
-        const progressTrack = progressWrap.querySelector(".hammock-upload-progress-track");
+        const progressTrack = progressWrap.querySelector(".loft-upload-progress-track");
         const progressStatus = progressWrap.querySelector("[data-gallery-upload-status]");
         const submitButton = galleryForm.querySelector('[type="submit"]')
             || (galleryForm.id ? document.querySelector(`[type="submit"][form="${galleryForm.id}"]`) : null);
@@ -100,7 +100,7 @@ document.addEventListener("DOMContentLoaded", function() {
     });
 
     const setupGalleryImages = function() {
-        const gallery = document.querySelector(".hammock-gallery");
+        const gallery = document.querySelector(".loft-gallery");
         const galleryImages = Array.from(document.querySelectorAll("img[data-gallery-src]"));
         if (!gallery || galleryImages.length === 0) return;
 
@@ -181,9 +181,9 @@ document.addEventListener("DOMContentLoaded", function() {
     };
     setupGalleryImages();
 
-    const videos = Array.from(document.querySelectorAll("[data-hammock-video]"));
+    const videos = Array.from(document.querySelectorAll("[data-loft-video]"));
     const syncSoundButton = video => {
-        const container = video.closest(".hammock-gallery-video, .hammock-edit-tile");
+        const container = video.closest(".loft-gallery-video, .loft-edit-tile");
         const button = container && container.querySelector("[data-video-sound]");
         if (!button) return;
         const icon = button.querySelector("i");
@@ -196,7 +196,7 @@ document.addEventListener("DOMContentLoaded", function() {
     videos.forEach(video => {
         video.muted = true;
         syncSoundButton(video);
-        const container = video.closest(".hammock-gallery-video, .hammock-edit-tile");
+        const container = video.closest(".loft-gallery-video, .loft-edit-tile");
         const button = container && container.querySelector("[data-video-sound]");
         if (button) {
             button.addEventListener("click", () => {
@@ -215,16 +215,16 @@ document.addEventListener("DOMContentLoaded", function() {
         if (video.hasAttribute("data-video-expand")) {
             video.addEventListener("click", () => {
                 const expanded = container.classList.toggle("is-expanded");
-                document.body.classList.toggle("hammock-video-expanded", expanded);
+                document.body.classList.toggle("loft-video-expanded", expanded);
             });
         }
     });
     document.addEventListener("keydown", event => {
         if (event.key !== "Escape") return;
-        const expanded = document.querySelector(".hammock-gallery-video.is-expanded");
+        const expanded = document.querySelector(".loft-gallery-video.is-expanded");
         if (!expanded) return;
         expanded.classList.remove("is-expanded");
-        document.body.classList.remove("hammock-video-expanded");
+        document.body.classList.remove("loft-video-expanded");
     });
 
     const reorderGrid = document.querySelector("[data-reorder-grid]");
@@ -259,11 +259,11 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     // Gallery lightbox
-    const galleryButtons = document.querySelectorAll(".hammock-gallery-photo-btn");
+    const galleryButtons = document.querySelectorAll(".loft-gallery-photo-btn");
     if (galleryButtons.length > 0) {
         const lb = document.createElement("div");
-        lb.className = "hammock-lightbox";
-        lb.innerHTML = '<span class="hammock-lightbox-close" aria-label="Close">&times;</span><img alt="">';
+        lb.className = "loft-lightbox";
+        lb.innerHTML = '<span class="loft-lightbox-close" aria-label="Close">&times;</span><img alt="">';
         document.body.appendChild(lb);
         const lbImg = lb.querySelector("img");
         const close = () => { lb.classList.remove("open"); lbImg.src = ""; };
@@ -274,7 +274,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 lb.classList.add("open");
             });
         });
-        lb.querySelector(".hammock-lightbox-close").addEventListener("click", close);
+        lb.querySelector(".loft-lightbox-close").addEventListener("click", close);
         lb.addEventListener("click", e => { if (e.target === lb) close(); });
         document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
     }

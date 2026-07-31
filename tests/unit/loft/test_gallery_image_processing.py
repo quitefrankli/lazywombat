@@ -5,7 +5,7 @@ import pytest
 from PIL import Image, features
 
 from web_app.config import ConfigManager
-from web_app.hammock.image_processing import (
+from web_app.loft.image_processing import (
     ImageProcessingError,
     normalize_image_to_webp,
 )
@@ -102,7 +102,7 @@ def test_rejects_image_above_configured_decoded_pixel_limit(
     tmp_path,
     monkeypatch,
 ):
-    monkeypatch.setattr(ConfigManager().hammock, "max_image_pixels", 99)
+    monkeypatch.setattr(ConfigManager().loft, "max_image_pixels", 99)
     source = _write_image(
         tmp_path / "too-many-pixels.png",
         Image.new("RGB", (10, 10)),
@@ -114,7 +114,7 @@ def test_rejects_image_above_configured_decoded_pixel_limit(
 
 
 def test_downsizes_to_configured_maximum_dimension(tmp_path, monkeypatch):
-    monkeypatch.setattr(ConfigManager().hammock, "gallery_thumb_max_px", 40)
+    monkeypatch.setattr(ConfigManager().loft, "gallery_thumb_max_px", 40)
     source = _write_image(
         tmp_path / "wide.png",
         Image.new("RGB", (100, 50)),

@@ -1,12 +1,12 @@
-# Hammock
+# Loft
 
-Filesystem-backed publishing for raw, Markdown, and gallery posts under `/hammock`.
+Filesystem-backed publishing for raw, Markdown, and gallery posts under `/loft`.
 
 ## Storage
 
 Posts live at:
 
-`~/.nabicat/data/hammock/projects/<project>/<post>/`
+`~/.nabicat/data/loft/projects/<project>/<post>/`
 
 Every post has `meta.json` with:
 
@@ -30,12 +30,12 @@ Pydantic field aliases preserve the on-disk format; for example, `PostMeta.templ
 
 - A post owner or an admin may edit and delete it.
 - Legacy posts without an `owner` are admin-only.
-- Per-user quotas are configured by `hammock_non_admin_quota_bytes` and `hammock_admin_quota_bytes`.
-- Gallery thumbnail size is configured by `hammock_gallery_thumb_max_px`.
+- Per-user quotas are configured by `loft_non_admin_quota_bytes` and `loft_admin_quota_bytes`.
+- Gallery thumbnail size is configured by `loft_gallery_thumb_max_px`.
 
 ## Concurrent metadata writes
 
-Gunicorn workers are separate processes. All read-modify-write operations on Hammock metadata must use `DataInterface.edit_meta`, which wraps the shared `edit_model` path lock.
+Gunicorn workers are separate processes. All read-modify-write operations on Loft metadata must use `DataInterface.edit_meta`, which wraps the shared `edit_model` path lock.
 
 - Use load/get methods only for read-only operations.
 - Do not use bare save methods for read-modify-write.

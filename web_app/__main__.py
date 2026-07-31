@@ -15,7 +15,7 @@ from packaging.version import Version
 from typing import * # type: ignore
 from pathlib import Path
 from email.mime.text import MIMEText
-from flask import Response, abort, g, render_template, request, url_for
+from flask import Response, abort, g, redirect, render_template, request, url_for
 from flask_apscheduler import APScheduler
 from logging.handlers import RotatingFileHandler
 from xml.sax.saxutils import escape as xml_escape
@@ -25,9 +25,9 @@ from web_app.data_interface import DataInterface
 from web_app.helpers import get_all_data_interfaces, register_all_blueprints
 from web_app.redis_client import run_once, ensure_local_redis
 from web_app.logging_utils import log_event
-from web_app.hammock.data_interface import DataInterface as HammockDataInterface
+from web_app.loft.data_interface import DataInterface as LoftDataInterface
 from web_app.tubio.audio_downloader import AudioDownloader
-from web_app.app import app
+from web_app.app import BUILD_VERSION, BUILD_VERSION_IS_TAG, app
 
 
 register_all_blueprints(app)
@@ -214,6 +214,7 @@ def before_request():
     # Scanner paths abort before normal logging and must remain suppressed.
     g.request_log_suppressed = True
     if any(request.path.startswith(p) for p in config.known_bot_prefixes) or request.method in config.known_bot_methods:
+        g.invalid_url_redirect_disabled = True
         abort(404)
 
     # Auto-login as admin in debug mode
@@ -311,15 +312,37 @@ def teardown_request(error: BaseException | None) -> None:
 
 @app.route('/')
 def home():
-    repo = Repo(".")
-    commit_hash = repo.head.commit.hexsha
-    tags = repo.git.tag("--points-at", commit_hash).splitlines()
-    build_version = tags[0].strip() if tags else commit_hash
     return render_template(
         'home.html',
-        build_version=build_version,
-        build_version_is_tag=bool(tags),
+        build_version=BUILD_VERSION,
+        build_version_is_tag=BUILD_VERSION_IS_TAG,
     )
+
+
+@app.route(
+    "/hammock",
+    defaults={"legacy_path": ""},
+    methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    strict_slashes=False,
+)
+@app.route(
+    "/hammock/<path:legacy_path>",
+    methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
+def legacy_loft_redirect(legacy_path: str):
+    target = url_for("loft.index") + legacy_path
+    if request.query_string:
+        target += "?" + request.query_string.decode("latin-1")
+    return redirect(target, code=308)
+
+
+@app.errorhandler(404)
+def redirect_invalid_url(error):
+    if request.url_rule is None and not getattr(
+        g, "invalid_url_redirect_disabled", False
+    ):
+        return redirect(url_for("home"))
+    return error
 
 
 @app.route('/privacy')
@@ -356,15 +379,15 @@ def sitemap():
     urls = [
         url_for('home'),
         url_for('privacy'),
-        url_for('hammock.index'),
+        url_for('loft.index'),
         url_for('crosswords.index'),
         url_for('simulations_api.index'),
         url_for('simulations_api.game_of_life'),
         url_for('simulations_api.astar'),
     ]
-    for project in HammockDataInterface().get_posts_by_project():
+    for project in LoftDataInterface().get_posts_by_project():
         for post in project.posts:
-            urls.append(url_for('hammock.view_post', project=project.name, post=post))
+            urls.append(url_for('loft.view_post', project=project.name, post=post))
 
     locs = "\n".join(
         f"  <url><loc>{xml_escape(base_url + path)}</loc></url>"

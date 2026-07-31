@@ -98,24 +98,24 @@
 
 /* ------- New / Edit / authoring UI ------- */
 
-.hammock-welcome {
+.loft-welcome {
     background: rgba(255, 255, 255, 0.9);
     border-radius: var(--hw-radius-lg);
     padding: 2rem;
     box-shadow: var(--hw-shadow-md);
     margin-top: 1rem;
 }
-.hammock-welcome h1 {
+.loft-welcome h1 {
     font-family: 'Playfair Display', serif;
     color: var(--hw-forest);
     margin-bottom: 0.5rem;
 }
-.hammock-welcome p {
+.loft-welcome p {
     color: var(--hw-text-secondary);
     margin-bottom: 1.25rem;
 }
 
-.hammock-sidebar-new {
+.loft-sidebar-new {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
@@ -128,37 +128,37 @@
     margin-bottom: 1rem;
     transition: transform var(--hw-transition-fast), box-shadow var(--hw-transition-fast);
 }
-.hammock-sidebar-new:hover {
+.loft-sidebar-new:hover {
     color: #fff;
     transform: translateY(-2px);
     box-shadow: var(--hw-shadow-md);
 }
 
-.hammock-post-toolbar {
+.loft-post-toolbar {
     display: flex;
     gap: 0.5rem;
     justify-content: flex-end;
     margin-bottom: 1rem;
 }
 
-.hammock-form-card {
+.loft-form-card {
     background: rgba(255, 255, 255, 0.9);
     border-radius: var(--hw-radius-lg);
     padding: 2rem;
     box-shadow: var(--hw-shadow-md);
     margin-top: 1rem;
 }
-.hammock-form-title {
+.loft-form-title {
     font-family: 'Playfair Display', serif;
     color: var(--hw-forest);
     margin: 0;
 }
-.hammock-form-sub {
+.loft-form-sub {
     color: var(--hw-text-muted);
     font-size: 0.9rem;
     margin-bottom: 1.5rem;
 }
-.hammock-form-note {
+.loft-form-note {
     background: rgba(135, 168, 120, 0.12);
     border-left: 3px solid var(--hw-sage);
     color: var(--hw-text-secondary);
@@ -170,37 +170,37 @@
     gap: 0.5rem;
     align-items: flex-start;
 }
-.hammock-form-note i {
+.loft-form-note i {
     color: var(--hw-sage-dark);
     margin-top: 0.15rem;
 }
-.hammock-form {
+.loft-form {
     display: flex;
     flex-direction: column;
     gap: 1rem;
 }
-.hammock-field {
+.loft-field {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
 }
-.hammock-field-hint {
+.loft-field-hint {
     color: var(--hw-text-muted);
     font-size: 0.85rem;
     margin-top: 0.25rem;
 }
-.hammock-project-or {
+.loft-project-or {
     color: var(--hw-text-muted);
     font-size: 0.85rem;
     text-align: center;
     margin: 0.35rem 0;
     font-style: italic;
 }
-.hammock-label {
+.loft-label {
     font-weight: 600;
     color: var(--hw-text-primary);
 }
-.hammock-input {
+.loft-input {
     background: rgba(255, 255, 255, 0.8);
     border: 2px solid var(--hw-border);
     border-radius: var(--hw-radius-md);
@@ -210,24 +210,24 @@
     width: 100%;
     transition: border-color var(--hw-transition-fast), box-shadow var(--hw-transition-fast);
 }
-.hammock-input:focus {
+.loft-input:focus {
     outline: none;
     border-color: var(--hw-sage);
     box-shadow: 0 0 0 4px rgba(135, 168, 120, 0.15);
 }
-.hammock-md-editor {
+.loft-md-editor {
     font-family: 'SF Mono', ui-monospace, monospace;
     font-size: 0.92rem;
     line-height: 1.5;
     min-height: 320px;
     resize: vertical;
 }
-.hammock-radio-row {
+.loft-radio-row {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
 }
-.hammock-radio {
+.loft-radio {
     display: flex;
     align-items: flex-start;
     gap: 0.6rem;
@@ -237,29 +237,29 @@
     cursor: pointer;
     background: rgba(255, 255, 255, 0.6);
 }
-.hammock-radio:hover {
+.loft-radio:hover {
     border-color: var(--hw-sage-light);
 }
-.hammock-radio input {
+.loft-radio input {
     margin-top: 0.25rem;
 }
-.hammock-radio-link {
+.loft-radio-link {
     margin-left: 0.6rem;
     color: var(--hw-sage-dark);
     font-size: 0.85rem;
     text-decoration: underline;
 }
-.hammock-radio-link:hover {
+.loft-radio-link:hover {
     color: var(--hw-forest);
 }
 
-.hammock-actions {
+.loft-actions {
     display: flex;
     gap: 0.6rem;
     justify-content: flex-end;
     flex-wrap: wrap;
 }
-.hammock-btn {
+.loft-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
@@ -274,97 +274,97 @@
                 background var(--hw-transition-fast);
     min-height: 40px;
 }
-.hammock-btn-primary {
+.loft-btn-primary {
     background: var(--hw-gradient-sage);
     color: #fff;
 }
-.hammock-btn-primary:hover {
+.loft-btn-primary:hover {
     color: #fff;
     transform: translateY(-2px);
     box-shadow: var(--hw-shadow-md);
 }
-.hammock-btn-ghost {
+.loft-btn-ghost {
     background: rgba(255, 255, 255, 0.7);
     color: var(--hw-text-primary);
     border: 2px solid var(--hw-border);
 }
-.hammock-btn-ghost:hover {
+.loft-btn-ghost:hover {
     color: var(--hw-text-primary);
     border-color: var(--hw-sage-light);
     transform: translateY(-2px);
 }
-.hammock-btn-danger {
+.loft-btn-danger {
     background: var(--hw-coral);
     color: #fff;
 }
-.hammock-btn-danger:hover {
+.loft-btn-danger:hover {
     color: #fff;
     transform: translateY(-2px);
     box-shadow: var(--hw-shadow-md);
 }
-.hammock-btn-danger-ghost {
+.loft-btn-danger-ghost {
     background: rgba(255, 255, 255, 0.7);
     color: var(--hw-coral);
     border: 2px solid rgba(224, 122, 95, 0.3);
 }
-.hammock-btn-danger-ghost:hover {
+.loft-btn-danger-ghost:hover {
     color: var(--hw-coral);
     border-color: var(--hw-coral);
     transform: translateY(-2px);
 }
-.hammock-btn:disabled {
+.loft-btn:disabled {
     cursor: wait;
     opacity: 0.7;
     transform: none;
 }
 
-.hammock-upload-progress {
+.loft-upload-progress {
     margin-top: 1rem;
 }
-.hammock-upload-progress-label {
+.loft-upload-progress-label {
     color: var(--hw-text-secondary);
     font-size: 0.95rem;
     font-weight: 600;
     margin-bottom: 0.4rem;
 }
-.hammock-upload-progress-track {
+.loft-upload-progress-track {
     background: rgba(255, 255, 255, 0.8);
     border: 2px solid var(--hw-border);
     border-radius: var(--hw-radius-full);
     height: 0.85rem;
     overflow: hidden;
 }
-.hammock-upload-progress-bar {
+.loft-upload-progress-bar {
     background: var(--hw-gradient-sage);
     height: 100%;
     transition: width var(--hw-transition-fast);
     width: 0;
 }
 
-.hammock-divider {
+.loft-divider {
     border: none;
     border-top: 1px solid var(--hw-border);
     margin: 1.5rem 0;
 }
-.hammock-section-title {
+.loft-section-title {
     font-family: 'Playfair Display', serif;
     color: var(--hw-forest);
     font-size: 1.4rem;
     margin-bottom: 1rem;
 }
-.hammock-danger-form {
+.loft-danger-form {
     display: flex;
     justify-content: flex-end;
     margin-top: 0.5rem;
 }
 
-.hammock-edit-grid {
+.loft-edit-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 0.75rem;
     margin-bottom: 1.5rem;
 }
-.hammock-edit-tile {
+.loft-edit-tile {
     position: relative;
     aspect-ratio: 1 / 1;
     border-radius: var(--hw-radius-md);
@@ -373,14 +373,14 @@
     box-shadow: var(--hw-shadow-sm);
     transition: transform var(--hw-transition-fast), box-shadow var(--hw-transition-fast);
 }
-.hammock-edit-tile img,
-.hammock-edit-tile video {
+.loft-edit-tile img,
+.loft-edit-tile video {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
 }
-.hammock-media-badge {
+.loft-media-badge {
     position: absolute;
     left: 8px;
     bottom: 8px;
@@ -394,7 +394,7 @@
     font-size: 0.78rem;
     font-weight: 700;
 }
-.hammock-tile-delete {
+.loft-tile-delete {
     position: absolute;
     top: 6px;
     right: 6px;
@@ -411,8 +411,8 @@
     align-items: center;
     justify-content: center;
 }
-.hammock-reorder-buttons button,
-.hammock-video-sound {
+.loft-reorder-buttons button,
+.loft-video-sound {
     border: 0;
     width: 40px;
     height: 40px;
@@ -425,81 +425,81 @@
     cursor: pointer;
     transition: transform var(--hw-transition-fast), background var(--hw-transition-fast);
 }
-.hammock-reorder-buttons button:hover,
-.hammock-video-sound:hover {
+.loft-reorder-buttons button:hover,
+.loft-video-sound:hover {
     background: var(--hw-sage-dark);
     transform: translateY(-2px);
 }
-.hammock-reorder-buttons button:focus-visible,
-.hammock-video-sound:focus-visible {
+.loft-reorder-buttons button:focus-visible,
+.loft-video-sound:focus-visible {
     outline: 3px solid var(--hw-gold);
     outline-offset: 2px;
 }
-.hammock-reorder-buttons {
+.loft-reorder-buttons {
     position: absolute;
     left: 6px;
     bottom: 6px;
     display: flex;
     gap: 4px;
 }
-.hammock-reorder-buttons button:disabled {
+.loft-reorder-buttons button:disabled {
     opacity: 0.45;
     cursor: default;
     transform: none;
 }
-.hammock-edit-tile .hammock-media-badge {
+.loft-edit-tile .loft-media-badge {
     bottom: 52px;
 }
-.hammock-edit-tile .hammock-video-sound {
+.loft-edit-tile .loft-video-sound {
     position: absolute;
     right: 6px;
     bottom: 6px;
 }
-.hammock-tile-delete:hover {
+.loft-tile-delete:hover {
     background: var(--hw-coral);
 }
-.hammock-empty {
+.loft-empty {
     color: var(--hw-text-muted);
     font-style: italic;
     grid-column: 1 / -1;
 }
 
 /* Rendered post content (markdown + gallery) */
-.hammock-post-header h1 {
+.loft-post-header h1 {
     font-family: 'Playfair Display', serif;
     color: var(--hw-forest);
     margin-bottom: 0.25rem;
 }
-.hammock-post-meta {
+.loft-post-meta {
     color: var(--hw-text-muted);
     font-size: 0.9rem;
     margin-bottom: 1rem;
 }
-.hammock-gallery-desc {
+.loft-gallery-desc {
     color: var(--hw-text-secondary);
     margin-bottom: 1rem;
 }
-.hammock-gallery .hammock-post-header {
+.loft-gallery .loft-post-header {
     text-align: center;
     margin-bottom: 1.25rem;
 }
-.hammock-gallery-feed {
+.loft-gallery-feed {
     display: grid;
     gap: 0.5rem;
     width: min(100%, 680px);
     margin: 0 auto;
 }
-.hammock-gallery-photo {
+.loft-gallery-photo {
     position: relative;
     margin: 0;
     overflow: hidden;
 }
-.hammock-gallery-video .hammock-video-sound {
+.loft-gallery-video .loft-video-sound {
     position: absolute;
     right: 0.75rem;
     bottom: 0.75rem;
 }
-.hammock-gallery-photo-btn {
+.loft-gallery-photo-btn {
     display: block;
     width: 100%;
     padding: 0;
@@ -507,12 +507,12 @@
     background: none;
     cursor: zoom-in;
 }
-.hammock-gallery-photo-btn img {
+.loft-gallery-photo-btn img {
     display: block;
     width: 100%;
     height: auto;
 }
-.hammock-gallery-video video {
+.loft-gallery-video video {
     display: block;
     width: 100%;
     height: auto;
@@ -520,10 +520,10 @@
     background: #000;
     cursor: zoom-in;
 }
-body.hammock-video-expanded {
+body.loft-video-expanded {
     overflow: hidden;
 }
-.hammock-gallery-video.is-expanded {
+.loft-gallery-video.is-expanded {
     position: fixed;
     inset: 0;
     z-index: 1000;
@@ -537,7 +537,7 @@ body.hammock-video-expanded {
              max(1rem, env(safe-area-inset-left));
     background: rgba(0, 0, 0, 0.88);
 }
-.hammock-gallery-video.is-expanded video {
+.loft-gallery-video.is-expanded video {
     width: 100%;
     height: 100%;
     max-height: 100vh;
@@ -545,18 +545,18 @@ body.hammock-video-expanded {
     object-fit: contain;
     cursor: zoom-out;
 }
-.hammock-gallery-video.is-expanded .hammock-video-sound {
+.loft-gallery-video.is-expanded .loft-video-sound {
     right: max(1rem, env(safe-area-inset-right));
     bottom: max(1rem, env(safe-area-inset-bottom));
 }
-.hammock-gallery-empty {
+.loft-gallery-empty {
     color: var(--hw-text-muted);
     font-style: italic;
     text-align: center;
 }
 
 /* Lightbox */
-.hammock-lightbox {
+.loft-lightbox {
     display: none;
     position: fixed;
     inset: 0;
@@ -566,8 +566,8 @@ body.hammock-video-expanded {
     justify-content: center;
     padding: 16px;
 }
-.hammock-lightbox.open { display: flex; }
-.hammock-lightbox img {
+.loft-lightbox.open { display: flex; }
+.loft-lightbox img {
     max-width: 100%;
     max-height: 90vh;
     object-fit: contain;
@@ -575,7 +575,7 @@ body.hammock-video-expanded {
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
     image-orientation: from-image;
 }
-.hammock-lightbox-close {
+.loft-lightbox-close {
     position: fixed;
     top: 14px;
     right: 18px;
@@ -586,13 +586,13 @@ body.hammock-video-expanded {
     opacity: 0.85;
     user-select: none;
 }
-.hammock-lightbox-close:hover { opacity: 1; }
+.loft-lightbox-close:hover { opacity: 1; }
 
 @media (max-width: 480px) {
-    .hammock-form-card, .hammock-welcome { padding: 1.25rem; }
-    .hammock-actions { justify-content: stretch; }
-    .hammock-actions .hammock-btn { flex: 1; justify-content: center; }
+    .loft-form-card, .loft-welcome { padding: 1.25rem; }
+    .loft-actions { justify-content: stretch; }
+    .loft-actions .loft-btn { flex: 1; justify-content: center; }
 }
-.hammock-inline-form {
+.loft-inline-form {
     display: inline;
 }

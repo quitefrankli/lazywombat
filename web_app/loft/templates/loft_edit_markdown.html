@@ -1,0 +1,40 @@
+{% extends "loft_base.html" %}
+
+{% block page_content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12 col-md-3 col-lg-2">
+            {% include "loft_sidebar.html" %}
+        </div>
+        <div class="col-12 col-md-9 col-lg-10">
+            <div class="loft-form-card">
+                <h1 class="loft-form-title">Edit markdown post</h1>
+                <p class="loft-form-sub">{{ project_name }} / {{ post_name }}</p>
+
+                <form method="post" action="{{ url_for('.edit_post', project=project_name, post=post_name) }}"
+                      class="loft-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <div class="loft-field">
+                        <label class="loft-label">Title</label>
+                        <input type="text" name="title" class="loft-input"
+                               value="{{ meta.title }}" required maxlength="120">
+                    </div>
+
+                    <div class="loft-field">
+                        <label class="loft-label">Markdown</label>
+                        <textarea name="source_md" class="loft-input loft-md-editor"
+                                  rows="22" spellcheck="false">{{ source_md }}</textarea>
+                    </div>
+
+                    <div class="loft-actions">
+                        <a href="{{ url_for('.view_post', project=project_name, post=post_name) }}"
+                           class="loft-btn loft-btn-ghost">Cancel</a>
+                        <button type="submit" class="loft-btn loft-btn-primary">Update post</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

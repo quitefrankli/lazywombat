@@ -1,4 +1,4 @@
-"""Cross-device media compatibility tests for Hammock galleries."""
+"""Cross-device media compatibility tests for Loft galleries."""
 
 import json
 import subprocess
@@ -11,13 +11,13 @@ from werkzeug.datastructures import FileStorage
 
 from web_app.config import ConfigManager
 from web_app.errors import APIError
-from web_app.hammock.data_interface import DataInterface, VideoInfo
+from web_app.loft.data_interface import DataInterface, VideoInfo
 from web_app.users import User
 
 
 @pytest.fixture
 def projects_dir(tmp_path, monkeypatch):
-    projects = tmp_path / "hammock" / "projects"
+    projects = tmp_path / "loft" / "projects"
     projects.mkdir(parents=True)
 
     def patched_init(self):
@@ -142,7 +142,7 @@ def test_image_encoded_byte_limit_is_enforced_before_decode(
 ):
     data_interface, owner, project, post, post_dir = gallery
     monkeypatch.setattr(
-        ConfigManager().hammock,
+        ConfigManager().loft,
         "gallery_image_max_upload_bytes",
         1,
         raising=False,
@@ -162,7 +162,7 @@ def test_image_encoded_byte_limit_is_enforced_before_decode(
 def test_media_count_limit_rejects_entire_batch(gallery, monkeypatch):
     data_interface, owner, project, post, post_dir = gallery
     monkeypatch.setattr(
-        ConfigManager().hammock,
+        ConfigManager().loft,
         "gallery_max_files_per_upload",
         1,
         raising=False,
@@ -188,7 +188,7 @@ def test_image_batch_decoded_pixel_budget_rejects_entire_batch(
 ):
     data_interface, owner, project, post, post_dir = gallery
     monkeypatch.setattr(
-        ConfigManager().hammock,
+        ConfigManager().loft,
         "gallery_image_max_batch_pixels",
         1,
     )
@@ -250,7 +250,7 @@ def test_normalized_video_enforces_output_byte_cap(
     path = tmp_path / "oversized.mp4"
     path.write_bytes(b"xx")
     monkeypatch.setattr(
-        ConfigManager().hammock,
+        ConfigManager().loft,
         "gallery_video_max_output_bytes",
         1,
     )
@@ -298,7 +298,7 @@ def test_video_encoded_byte_limit_is_enforced_before_probe(
 ):
     data_interface, owner, project, post, post_dir = gallery
     monkeypatch.setattr(
-        ConfigManager().hammock,
+        ConfigManager().loft,
         "gallery_video_max_upload_bytes",
         1,
     )

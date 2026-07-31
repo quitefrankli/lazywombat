@@ -1,4 +1,4 @@
-"""Transactional behavior tests for Hammock gallery uploads."""
+"""Transactional behavior tests for Loft gallery uploads."""
 
 import os
 import time
@@ -14,13 +14,13 @@ from werkzeug.datastructures import FileStorage
 from web_app.config import ConfigManager
 from web_app.data_interface import DataInterface as BaseDataInterface
 from web_app.errors import APIError
-from web_app.hammock.data_interface import DataInterface, GalleryItem, VideoInfo
+from web_app.loft.data_interface import DataInterface, GalleryItem, VideoInfo
 from web_app.users import User
 
 
 @pytest.fixture
 def projects_dir(tmp_path, monkeypatch):
-    projects = tmp_path / "hammock" / "projects"
+    projects = tmp_path / "loft" / "projects"
     projects.mkdir(parents=True)
 
     def patched_init(self):
@@ -213,7 +213,7 @@ def test_quota_allows_large_source_when_finalized_video_fits(
     finalized_bytes = b"small normalized mp4"
     source_bytes = b"x" * 4096
     monkeypatch.setattr(
-        ConfigManager().hammock,
+        ConfigManager().loft,
         "non_admin_quota_bytes",
         len(finalized_bytes) + 1,
     )
@@ -248,7 +248,7 @@ def test_quota_rejects_oversized_finalized_video_without_orphan(
     source_bytes = b"small source"
     finalized_bytes = b"x" * 512
     monkeypatch.setattr(
-        ConfigManager().hammock,
+        ConfigManager().loft,
         "non_admin_quota_bytes",
         len(source_bytes) + 1,
     )
@@ -283,7 +283,7 @@ def test_next_upload_removes_stale_crashed_worker_staging(
     data_interface, owner, project, post, _ = gallery
     staging_root = tmp_path / "gallery-staging"
     monkeypatch.setattr(
-        ConfigManager().hammock,
+        ConfigManager().loft,
         "gallery_staging_root",
         staging_root,
         raising=False,
@@ -294,7 +294,7 @@ def test_next_upload_removes_stale_crashed_worker_staging(
     old_timestamp = time.time() - 120
     os.utime(stale, (old_timestamp, old_timestamp))
     monkeypatch.setattr(
-        ConfigManager().hammock,
+        ConfigManager().loft,
         "gallery_staging_max_age_s",
         60,
         raising=False,
@@ -329,7 +329,7 @@ def test_batch_rejects_second_video_before_second_transcode(
         write_normalized_video,
     )
     monkeypatch.setattr(
-        ConfigManager().hammock,
+        ConfigManager().loft,
         "gallery_max_videos_per_upload",
         1,
         raising=False,
@@ -445,7 +445,7 @@ def test_admin_upload_is_charged_to_gallery_owner_quota(
         lambda self: {owner.id: owner},
     )
     monkeypatch.setattr(
-        ConfigManager().hammock,
+        ConfigManager().loft,
         "non_admin_quota_bytes",
         1,
     )
@@ -481,7 +481,7 @@ def test_admin_upload_uses_elevated_gallery_owner_quota(
         lambda self: {owner.id: owner},
     )
     monkeypatch.setattr(
-        ConfigManager().hammock,
+        ConfigManager().loft,
         "non_admin_quota_bytes",
         1,
     )
