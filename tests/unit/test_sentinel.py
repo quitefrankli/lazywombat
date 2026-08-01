@@ -38,7 +38,7 @@ from web_app.sentinel.runner import (
     _screenshot_manifest,
     ensure_screenshot_thumbnail,
 )
-from web_app.sentinel.models import AccountCredentials, Report, Step
+from web_app.sentinel.models import AccountCredentials, Report, RunVerdict, Step
 from web_app.sentinel.target_policy import TargetValidationError, ValidatedTarget, validate_public_web_url
 from web_app.users import User
 
@@ -234,6 +234,13 @@ def test_codex_command_disables_project_docs_and_uses_minimal_permissions(tmp_pa
     assert 'permissions.sentinel_qa.filesystem.:minimal="read"' in cmd
     assert "--sandbox" not in cmd
     assert "--ignore-rules" in cmd
+
+
+def test_codex_command_uses_sentinel_model_and_reasoning_effort(tmp_path):
+    cmd = _build_codex_cmd(str(tmp_path / "out.txt"))
+
+    assert cmd[cmd.index("--model") + 1] == "gpt-5.6-sol"
+    assert 'model_reasoning_effort="medium"' in cmd
 
 
 def test_codex_runs_from_project_dir_with_project_docs_disabled():
@@ -1120,7 +1127,7 @@ def test_parse_verdict_payload_accepts_pass_fail_and_rejects_garbage():
     assert _parse_verdict_payload('{"verdict":"maybe","reason":"x"}') is None
 
 
-def test_classify_run_verdict_downgrades_to_failed_and_records_reason():
+def test_classify_run_verdict_returns_fail_and_records_reason():
     report = _mk_report(
         prompt="create an account and log a metric",
         target_url="https://example.com",
@@ -1131,21 +1138,21 @@ def test_classify_run_verdict_downgrades_to_failed_and_records_reason():
     fake_provider = type("P", (), {"verdict_text": lambda self, _: '{"verdict":"fail","reason":"Agent self-aborted on step 1."}'})()
     with patch("web_app.sentinel.runner._get_provider", return_value=fake_provider):
         outcome = _classify_run_verdict(report)
-    assert outcome == "failed"
+    assert outcome == RunVerdict.FAIL
     assert report.verdict_reason == "Agent self-aborted on step 1."
     assert any(f.title == "Run did not fulfill prompt" for f in report.findings)
 
 
-def test_classify_run_verdict_keeps_completed_on_pass_or_provider_failure():
+def test_classify_run_verdict_passes_only_explicit_passes():
     report = _mk_report(prompt="click around", steps=[], findings=[], final_report="")
     pass_provider = type("P", (), {"verdict_text": lambda self, _: '{"verdict":"pass","reason":"Looked fine."}'})()
     with patch("web_app.sentinel.runner._get_provider", return_value=pass_provider):
-        assert _classify_run_verdict(report) == "completed"
+        assert _classify_run_verdict(report) == RunVerdict.PASS
     assert report.verdict_reason is None
 
     raising_provider = type("P", (), {"verdict_text": lambda self, _: (_ for _ in ()).throw(RuntimeError("x"))})()
     with patch("web_app.sentinel.runner._get_provider", return_value=raising_provider):
-        assert _classify_run_verdict(report) == "completed"
+        assert _classify_run_verdict(report) == RunVerdict.INCONCLUSIVE
 
 
 def test_detect_click_loop_flags_repeated_clicks_on_same_url():

@@ -55,9 +55,10 @@ def validate_public_web_url(
 ) -> ValidatedTarget:
     raw = (raw_url or "").strip()
     if allow_local is None:
-        allow_local = ConfigManager().debug_mode
+        allow_local = ConfigManager().sentinel.allow_local_targets
     if "://" not in raw:
-        # Local dev servers usually speak plain HTTP, so in debug mode default a
+        # Local development servers usually speak plain HTTP, so when local targets are
+        # explicitly enabled default a
         # scheme-less local target to http:// rather than https:// (which fails
         # with ERR_SSL_PROTOCOL_ERROR against a non-TLS server).
         scheme_host = raw.split("/", 1)[0]
@@ -77,8 +78,8 @@ def validate_public_web_url(
     except ValueError:
         addresses = tuple(sorted(_resolved_ips(hostname, parsed.port)))
 
-    # In debug mode, permit local/private targets so Sentinel can QA itself
-    # (e.g. localhost, 127.0.0.1, the dev server's LAN address).
+    # Permit local/private targets only when the explicit Sentinel capability
+    # is enabled (for example, by the foreground QA CLI).
     if not allow_local:
         if hostname in {"localhost", "localhost.localdomain"}:
             raise TargetValidationError("Local targets are not allowed")

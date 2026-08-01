@@ -46,8 +46,8 @@ def test_crosswords_visible_for_admin(logged_in_page, test_server):
     expect(logged_in_page.locator("text=Crosswords")).to_be_visible()
 
 
-def test_loft_uses_house_up_icon(logged_in_page, test_server):
-    expect(logged_in_page.locator(".app-icon-loft .bi-house-up-fill")).to_be_visible()
+def test_loft_uses_custom_icon(logged_in_page, test_server):
+    expect(logged_in_page.locator(".app-icon-loft img.app-icon-image")).to_be_visible()
 
 
 def test_version_badge_displayed(logged_in_page):

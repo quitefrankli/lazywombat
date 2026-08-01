@@ -219,14 +219,15 @@ def _build_codex_cmd(output_path: str, image_paths: list[Path] | None = None) ->
         f"default_permissions={json.dumps(permissions_profile)}",
         "-c",
         f'permissions.{permissions_profile}.filesystem.:minimal="read"',
+        "-c",
+        f'model_reasoning_effort={json.dumps(cfg.sentinel.codex_reasoning_effort)}',
+        "--model",
+        cfg.sentinel.codex_model,
     ]
     for image_path in image_paths or []:
         if image_path.exists():
             cmd.extend(["--image", str(image_path)])
     cmd.extend(["--output-last-message", output_path])
-    model = cfg.llm.model_for(cfg.sentinel.llm_tier)
-    if model:
-        cmd.extend(["--model", model])
     return cmd
 
 

@@ -3,6 +3,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+from click.testing import CliRunner
+
 from web_app.config import ConfigManager
 
 
@@ -28,6 +30,78 @@ def test_health_reports_commit_loaded_by_worker(client, app):
     assert response.status_code == 200
     assert response.get_json()["commit"] == "candidate-sha"
     assert isinstance(response.get_json()["pid"], int)
+
+
+def test_web_launcher_keeps_minimal_option_surface():
+    import web_app.__main__ as web_main
+
+    result = CliRunner().invoke(web_main.cli_start, ["--help"])
+
+    assert result.exit_code == 0
+    for option in ("--debug", "--port", "--llm-source", "--help"):
+        assert option in result.output
+    for removed_option in (
+        "--host",
+        "--qa",
+        "--qa-data-root",
+        "--reload",
+        "--auto-admin-login",
+    ):
+        assert removed_option not in result.output
+
+
+def test_debug_launcher_retains_existing_runtime_behavior():
+    import web_app.__main__ as web_main
+
+    config = ConfigManager()
+    previous_debug = config.debug_mode
+    previous_cookie_name = web_main.app.config["SESSION_COOKIE_NAME"]
+    with (
+        patch.object(web_main, "configure_logging"),
+        patch.object(web_main, "ensure_local_redis"),
+        patch.object(web_main.app, "run") as app_run,
+    ):
+        result = CliRunner().invoke(
+            web_main.cli_start,
+            ["--debug", "--port", "12345"],
+        )
+    try:
+        assert result.exit_code == 0, result.output
+        assert config.debug_mode is True
+        assert config.flask_session_cookie_name == config.debug_session_cookie_name
+        assert web_main.app.config["SESSION_COOKIE_NAME"] == "session_debug"
+        app_run.assert_called_once_with(
+            host=config.server_host,
+            port=12345,
+            debug=True,
+        )
+    finally:
+        config.debug_mode = previous_debug
+        web_main.app.config["SESSION_COOKIE_NAME"] = previous_cookie_name
+
+
+def test_non_debug_launcher_uses_normal_session_cookie():
+    import web_app.__main__ as web_main
+
+    config = ConfigManager()
+    previous_debug = config.debug_mode
+    previous_cookie_name = web_main.app.config["SESSION_COOKIE_NAME"]
+    with (
+        patch.dict("os.environ", {"FLASK_SECRET_KEY": "normal-secret"}),
+        patch.object(web_main, "configure_logging"),
+        patch.object(web_main, "ensure_local_redis"),
+        patch.object(web_main.app, "run"),
+    ):
+        result = CliRunner().invoke(web_main.cli_start, ["--port", "12346"])
+    try:
+        assert result.exit_code == 0, result.output
+        assert config.debug_mode is False
+        assert config.flask_session_cookie_name == config.session_cookie_name
+        assert web_main.app.config["SESSION_COOKIE_NAME"] == "session"
+        assert config.debug_session_cookie_name != config.session_cookie_name
+    finally:
+        config.debug_mode = previous_debug
+        web_main.app.config["SESSION_COOKIE_NAME"] = previous_cookie_name
 
 
 def test_build_version_prefers_most_recent_tag_on_head(monkeypatch):

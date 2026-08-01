@@ -17,9 +17,11 @@ from web_app.sentinel.models import (
     AccountCredentials,
     ActionResult,
     CardDetails,
+    ExecutionStatus,
     Finding,
     Report,
     RunStatus,
+    RunVerdict,
     Step,
 )
 from web_app.sentinel.providers import _get_provider
@@ -108,6 +110,22 @@ def _is_cancelled(run_id: str) -> bool:
 
 
 _ACTIVE_STATUSES = {RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.SUMMARIZING}
+_ACTIVE_LIFECYCLES = {
+    ExecutionStatus.QUEUED,
+    ExecutionStatus.RUNNING,
+    ExecutionStatus.SUMMARIZING,
+}
+
+
+class _PersistedRunTerminal(RuntimeError):
+    def __init__(self, report: Report) -> None:
+        super().__init__("Run was made terminal by another process")
+        self.report = report
+
+
+def _adopt_report_state(report: Report, persisted: Report) -> None:
+    for field_name in Report.model_fields:
+        setattr(report, field_name, getattr(persisted, field_name))
 
 
 def _save(report: Report) -> None:
@@ -115,20 +133,34 @@ def _save(report: Report) -> None:
     # (appending steps/findings) after this returns, and a shallow copy would
     # alias those lists into the cached entry, so a concurrent reader via
     # get_run() could observe half-written state.
-    DataInterface()._save_report(report)
+    persisted = DataInterface()._save_report(report)
+    cached = persisted or report
     with _active_lock:
-        _active_runs[report.run_id] = report.model_copy(deep=True)
+        _active_runs[report.run_id] = cached.model_copy(deep=True)
+    if persisted is not None and persisted is not report:
+        raise _PersistedRunTerminal(persisted)
 
 
 def get_run(run_id: str) -> Report | None:
     with _active_lock:
-        if run_id in _active_runs:
-            # Hand callers their own deep copy so they can't mutate the cache.
-            return _active_runs[run_id].model_copy(deep=True)
+        cached = _active_runs.get(run_id)
     try:
-        return DataInterface().load_report(run_id)
+        persisted = DataInterface().load_report(run_id)
     except ValueError:
         return None
+    if cached is not None:
+        # A separate worker/UI process may have recovered a stale active run.
+        # Terminal disk state wins over this process's active snapshot.
+        if (
+            persisted is not None
+            and cached.lifecycle in _ACTIVE_LIFECYCLES
+            and persisted.lifecycle not in _ACTIVE_LIFECYCLES
+        ):
+            with _active_lock:
+                _active_runs[run_id] = persisted.model_copy(deep=True)
+            return persisted
+        return cached.model_copy(deep=True)
+    return persisted
 
 
 def delete_run(run_id: str) -> bool:
@@ -146,7 +178,7 @@ def delete_run(run_id: str) -> bool:
     return deleted
 
 
-def start_run(
+def create_run(
     target: ValidatedTarget,
     prompt: str,
     limit_s: int,
@@ -164,7 +196,7 @@ def start_run(
     owner: str = "",
     batch_id: str = "",
     batch_label: str = "",
-) -> dict:
+) -> Report:
     run_id = uuid.uuid4().hex
     now = utc_now_iso()
     title = _clean_title(title)
@@ -176,6 +208,8 @@ def start_run(
     report = Report(
         run_id=run_id,
         status=RunStatus.QUEUED,
+        lifecycle=ExecutionStatus.QUEUED,
+        verdict=RunVerdict.INCONCLUSIVE,
         owner=str(owner or ""),
         batch_id=str(batch_id or ""),
         batch_label=str(batch_label or ""),
@@ -207,81 +241,270 @@ def start_run(
             password=account_credentials.get("password", ""),
             extras=dict(account_credentials.get("extras") or {}),
         )
-    _save(report)
+    # Arm the cancel flag as "not cancelled" so request_cancel (SET XX) can flip
+    # it. This must happen before persistence: a Redis failure must not leave a
+    # queued report that no executor can cancel or reliably own.
+    redis = get_redis()
+    try:
+        redis.set(
+            _CANCEL_PREFIX + run_id,
+            b"0",
+            ex=ConfigManager().sentinel.cancel_flag_ttl_s,
+        )
+        _save(report)
+    except KeyboardInterrupt:
+        _terminalize_interrupted_creation(report)
+        _clear_cancel_flag(redis, run_id)
+        raise
+    except Exception:
+        _clear_cancel_flag(redis, run_id)
+        raise
     log_event(
         "sentinel", "sentinel.run_queued",
         user=report.owner or None, run_id=run_id, batch_id=batch_id or None,
     )
-    # Arm the cancel flag as "not cancelled" so request_cancel (SET XX) can flip
-    # it. TTL outlives the longest run and self-cleans if the process dies.
-    get_redis().set(
-        _CANCEL_PREFIX + run_id, b"0", ex=ConfigManager().sentinel.cancel_flag_ttl_s
-    )
-    thread = threading.Thread(target=_run_background, args=(report,), daemon=True)
-    thread.start()
-    return {"run_id": run_id, "status": "queued"}
+    return report
 
 
-def _run_background(report: Report) -> None:
-    started_ns = time.monotonic_ns()
-    report.status = RunStatus.RUNNING
-    report.started_at = utc_now_iso()
-    if not report.title:
-        report.title = _generate_title(report.target_url, report.prompt, report.target_hostname)
-    _save(report)
-    log_event(
-        "sentinel", "sentinel.run_started",
-        user=report.owner or None, run_id=report.run_id,
-        batch_id=report.batch_id or None,
-    )
+def _clear_cancel_flag(redis, run_id: str) -> None:
     try:
+        redis.delete(_CANCEL_PREFIX + run_id)
+    except Exception as error:
+        log_event(
+            "sentinel",
+            "sentinel.cancel_cleanup_failed",
+            level=logging.ERROR,
+            run_id=run_id,
+            exc_info=error,
+            error_type=type(error).__name__,
+        )
+
+
+def _terminalize_interrupted_creation(report: Report) -> None:
+    """Make a partially persisted queued report truthful after interruption."""
+    try:
+        persisted = DataInterface().load_report(report.run_id)
+        if persisted is None:
+            return
+        if persisted.lifecycle in _ACTIVE_LIFECYCLES:
+            _set_execution_state(
+                persisted, ExecutionStatus.INTERRUPTED, RunVerdict.INCONCLUSIVE
+            )
+            persisted.verdict_reason_code = "interrupted"
+            persisted.verdict_reason = (
+                "The run was interrupted while it was being created."
+            )
+            persisted.finished_at = utc_now_iso()
+            _save(persisted)
+        _adopt_report_state(report, persisted)
+    except _PersistedRunTerminal as terminal:
+        _adopt_report_state(report, terminal.report)
+    except Exception as error:
+        log_event(
+            "sentinel",
+            "sentinel.run_creation_terminalize_failed",
+            level=logging.ERROR,
+            user=report.owner or None,
+            run_id=report.run_id,
+            batch_id=report.batch_id or None,
+            exc_info=error,
+            error_type=type(error).__name__,
+        )
+
+
+def start_run(
+    target: ValidatedTarget,
+    prompt: str,
+    limit_s: int,
+    title: str = "",
+    allow_accounts: bool = False,
+    allow_external: bool = False,
+    additional_domains: list[str] | None = None,
+    allow_financial: bool = False,
+    card_details: dict | None = None,
+    account_credentials: dict | None = None,
+    remember_account: bool = False,
+    remember_card: bool = False,
+    device: str = "",
+    demographic: str = "",
+    owner: str = "",
+    batch_id: str = "",
+    batch_label: str = "",
+) -> dict:
+    """Create a run and execute it asynchronously for the existing web API."""
+    report = create_run(
+        target=target,
+        prompt=prompt,
+        limit_s=limit_s,
+        title=title,
+        allow_accounts=allow_accounts,
+        allow_external=allow_external,
+        additional_domains=additional_domains,
+        allow_financial=allow_financial,
+        card_details=card_details,
+        account_credentials=account_credentials,
+        remember_account=remember_account,
+        remember_card=remember_card,
+        device=device,
+        demographic=demographic,
+        owner=owner,
+        batch_id=batch_id,
+        batch_label=batch_label,
+    )
+    thread = threading.Thread(target=execute_run, args=(report,), daemon=True)
+    thread.start()
+    return {"run_id": report.run_id, "status": "queued"}
+
+
+def _set_execution_state(
+    report: Report,
+    lifecycle: ExecutionStatus,
+    verdict: RunVerdict | None = None,
+) -> None:
+    """Update truthful state and its legacy status compatibility view."""
+    report.lifecycle = lifecycle
+    if verdict is not None:
+        report.verdict = verdict
+    if lifecycle == ExecutionStatus.QUEUED:
+        report.status = RunStatus.QUEUED
+    elif lifecycle == ExecutionStatus.RUNNING:
+        report.status = RunStatus.RUNNING
+    elif lifecycle == ExecutionStatus.SUMMARIZING:
+        report.status = RunStatus.SUMMARIZING
+    elif lifecycle == ExecutionStatus.CANCELLED:
+        report.status = RunStatus.CANCELLED
+        report.run_outcome = RunStatus.CANCELLED
+    elif lifecycle == ExecutionStatus.TIMED_OUT:
+        report.status = RunStatus.TIMED_OUT
+        report.run_outcome = RunStatus.TIMED_OUT
+    elif lifecycle == ExecutionStatus.FINISHED:
+        report.status = (
+            RunStatus.COMPLETED if report.verdict == RunVerdict.PASS else RunStatus.FAILED
+        )
+        report.run_outcome = report.status
+    else:
+        report.status = RunStatus.FAILED
+        report.run_outcome = RunStatus.FAILED
+
+
+def execute_run(report: Report) -> Report:
+    """Execute a created run synchronously and return its terminal report."""
+    started_ns = time.monotonic_ns()
+    terminalized_elsewhere = False
+    try:
+        _set_execution_state(report, ExecutionStatus.RUNNING, RunVerdict.INCONCLUSIVE)
+        report.started_at = utc_now_iso()
+        if not report.title:
+            report.title = _generate_title(
+                report.target_url, report.prompt, report.target_hostname
+            )
+        _save(report)
+        log_event(
+            "sentinel", "sentinel.run_started",
+            user=report.owner or None, run_id=report.run_id,
+            batch_id=report.batch_id or None,
+        )
         _execute_browser_run(report)
         if _is_cancelled(report.run_id):
-            report.status = RunStatus.CANCELLED
-        outcome_status = RunStatus.COMPLETED if report.status == RunStatus.RUNNING else report.status
-        report.run_outcome = outcome_status
-        if outcome_status == RunStatus.CANCELLED:
+            _set_execution_state(report, ExecutionStatus.CANCELLED)
+        elif report.lifecycle == ExecutionStatus.RUNNING and report.status == RunStatus.TIMED_OUT:
+            _set_execution_state(report, ExecutionStatus.TIMED_OUT)
+        if report.lifecycle == ExecutionStatus.CANCELLED:
             report.final_report = "## Summary\n\nThis run was cancelled before it finished."
-            report.status = outcome_status
         else:
-            report.status = RunStatus.SUMMARIZING
+            browser_lifecycle = report.lifecycle
+            report.run_outcome = (
+                RunStatus.TIMED_OUT
+                if browser_lifecycle == ExecutionStatus.TIMED_OUT
+                else RunStatus.COMPLETED
+            )
+            _set_execution_state(report, ExecutionStatus.SUMMARIZING)
             _save(report)
             _add_final_report(report)
-            if outcome_status == RunStatus.COMPLETED:
-                login_fail_reason = _detect_login_failure(report)
-                if login_fail_reason:
-                    outcome_status = RunStatus.FAILED
-                    report.verdict_reason = login_fail_reason
-                    _add_finding(report, "error", "Login failed", login_fail_reason)
+            if _is_cancelled(report.run_id):
+                _set_execution_state(report, ExecutionStatus.CANCELLED)
+            elif browser_lifecycle == ExecutionStatus.TIMED_OUT:
+                _set_execution_state(report, ExecutionStatus.TIMED_OUT)
+                report.verdict_reason_code = "timed_out"
+                report.verdict_reason = "The run reached its execution time limit."
+            else:
+                if _is_cancelled(report.run_id):
+                    _set_execution_state(report, ExecutionStatus.CANCELLED)
                 else:
-                    outcome_status = _classify_run_verdict(report)
-                report.run_outcome = outcome_status
-            report.status = outcome_status
+                    login_fail_reason = _detect_login_failure(report)
+                    if login_fail_reason:
+                        report.verdict_reason = login_fail_reason
+                        report.verdict_reason_code = "login_failed"
+                        _add_finding(report, "error", "Login failed", login_fail_reason)
+                        verdict = RunVerdict.FAIL
+                    elif _is_cancelled(report.run_id):
+                        _set_execution_state(report, ExecutionStatus.CANCELLED)
+                        verdict = None
+                    else:
+                        verdict = _classify_run_verdict(report)
+                    if verdict is not None:
+                        if _is_cancelled(report.run_id):
+                            _set_execution_state(report, ExecutionStatus.CANCELLED)
+                        else:
+                            _set_execution_state(
+                                report, ExecutionStatus.FINISHED, verdict
+                            )
+    except KeyboardInterrupt:
+        _set_execution_state(
+            report, ExecutionStatus.INTERRUPTED, RunVerdict.INCONCLUSIVE
+        )
+        report.verdict_reason_code = "interrupted"
+        report.verdict_reason = "The run was interrupted before it finished."
+        raise
+    except _PersistedRunTerminal as terminal:
+        terminalized_elsewhere = True
+        _adopt_report_state(report, terminal.report)
     except Exception as e:
         log_event(
-            "sentinel", "sentinel.run_failed",
+            "sentinel", "sentinel.run_execution_error",
             level=logging.ERROR, user=report.owner or None,
             run_id=report.run_id, batch_id=report.batch_id or None,
             exc_info=e, error_type=type(e).__name__,
         )
-        report.status = RunStatus.FAILED
+        _set_execution_state(
+            report, ExecutionStatus.EXECUTION_ERROR, RunVerdict.INCONCLUSIVE
+        )
+        report.verdict_reason_code = "execution_error"
+        report.verdict_reason = "Sentinel could not complete the browser execution."
         report.error = str(e)
     finally:
-        report.finished_at = utc_now_iso()
-        _save(report)
-        get_redis().delete(_CANCEL_PREFIX + report.run_id)
+        if not terminalized_elsewhere:
+            report.finished_at = utc_now_iso()
+            try:
+                _save(report)
+            except _PersistedRunTerminal as terminal:
+                terminalized_elsewhere = True
+                _adopt_report_state(report, terminal.report)
+        _clear_cancel_flag(get_redis(), report.run_id)
         DataInterface().prune_reports()
         log_event(
             "sentinel", "sentinel.run_finished",
-            level=logging.ERROR if report.status == RunStatus.FAILED else logging.INFO,
+            level=(
+                logging.ERROR
+                if report.lifecycle == ExecutionStatus.EXECUTION_ERROR
+                else logging.INFO
+            ),
             user=report.owner or None,
             run_id=report.run_id,
             batch_id=report.batch_id or None,
             status=report.status.value,
+            lifecycle=report.lifecycle.value,
+            verdict=report.verdict.value,
             steps=len(report.steps),
             findings=len(report.findings),
             duration_ms=round((time.monotonic_ns() - started_ns) / 1_000_000, 3),
         )
+    return report
+
+
+def _run_background(report: Report) -> None:
+    """Compatibility wrapper for older internal callers."""
+    execute_run(report)
 
 
 def _host_allowed(hostname: str, target_hostname: str) -> bool:
@@ -340,8 +563,18 @@ def _execute_browser_run(report: Report) -> None:
             Stealth().apply_stealth_sync(context)
             page = context.new_page()
             page.set_default_timeout(cfg.sentinel.browser_default_timeout_ms)
-            page.on("console", lambda msg: _add_finding(report, "info", "Console", msg.text))
+            page.on(
+                "console",
+                lambda msg: _add_finding(
+                    report,
+                    "info",
+                    cfg.sentinel.console_finding_title,
+                    msg.text,
+                    kind=cfg.sentinel.console_finding_kind,
+                ),
+            )
             page.on("pageerror", lambda err: _add_finding(report, "error", "Page error", str(err)))
+            _register_network_findings(page, report)
 
             allow_external = bool(report.allow_external)
             additional_domains = list(report.additional_domains or [])
@@ -433,10 +666,10 @@ def _execute_browser_run(report: Report) -> None:
                     break
 
             if time.monotonic() >= deadline:
-                report.status = RunStatus.TIMED_OUT
+                _set_execution_state(report, ExecutionStatus.TIMED_OUT)
         except PlaywrightTimeoutError as e:
             _add_finding(report, "error", "Browser timeout", str(e)[:500])
-            report.status = RunStatus.TIMED_OUT
+            _set_execution_state(report, ExecutionStatus.TIMED_OUT)
         finally:
             if context is not None:
                 context.close()
@@ -494,23 +727,108 @@ def _fallback_title(target_url: str, target_hostname: str = "") -> str:
     return _clean_title(target_hostname or target_url or "Sentinel run")
 
 
-def _add_finding(report: Report, severity: str, title: str, detail: str) -> None:
+def _add_finding(
+    report: Report,
+    severity: str,
+    title: str,
+    detail: str,
+    *,
+    kind: str = "",
+    url: str = "",
+    method: str = "",
+    status_code: int | None = None,
+) -> None:
     max_chars = ConfigManager().sentinel.finding_detail_max_chars
     detail = " ".join(str(detail).split())
     if len(detail) > max_chars:
         detail = f"{detail[:max_chars].rstrip()}..."
-    report.findings.append(Finding(severity=severity, title=title, detail=detail))
+    report.findings.append(
+        Finding(
+            severity=severity,
+            title=title,
+            detail=detail,
+            kind=kind,
+            url=url,
+            method=method,
+            status_code=status_code,
+        )
+    )
 
 
-_VERDICT_FAIL_REASON_MAX_CHARS = 300
+def _origin(parsed) -> tuple[str, str, int | None]:
+    scheme = parsed.scheme.lower()
+    port = parsed.port
+    if port is None:
+        port = {"http": 80, "https": 443}.get(scheme)
+    return scheme, (parsed.hostname or "").lower().rstrip("."), port
 
 
-def _classify_run_verdict(report: Report) -> RunStatus:
+def _first_party_evidence_url(raw_url: str, target_url: str) -> str | None:
+    """Return a credential/query-free first-party URL for persisted evidence."""
+    try:
+        parsed = urlparse(str(raw_url or ""))
+        target = urlparse(str(target_url or ""))
+        hostname = parsed.hostname or ""
+        if parsed.scheme not in {"http", "https"} or _origin(parsed) != _origin(target):
+            return None
+        port = f":{parsed.port}" if parsed.port is not None else ""
+    except ValueError:
+        return None
+    rendered_host = f"[{hostname}]" if ":" in hostname else hostname
+    return f"{parsed.scheme}://{rendered_host}{port}{parsed.path or '/'}"
+
+
+def _register_network_findings(page, report: Report) -> None:
+    """Capture actionable first-party network failures without third-party noise."""
+
+    def on_request_failed(request) -> None:
+        evidence_url = _first_party_evidence_url(request.url, report.target_url)
+        if evidence_url is None:
+            return
+        method = str(getattr(request, "method", "") or "").upper()
+        failure = str(getattr(request, "failure", "") or "Request failed")
+        _add_finding(
+            report,
+            "error",
+            "First-party request failed",
+            f"{method or 'REQUEST'} {evidence_url}: {failure}",
+            kind="network.request_failed",
+            url=evidence_url,
+            method=method,
+        )
+
+    def on_response(response) -> None:
+        try:
+            status_code = int(response.status)
+        except (TypeError, ValueError):
+            return
+        if status_code < 500:
+            return
+        request = response.request
+        evidence_url = _first_party_evidence_url(request.url, report.target_url)
+        if evidence_url is None:
+            return
+        method = str(getattr(request, "method", "") or "").upper()
+        _add_finding(
+            report,
+            "error",
+            "First-party server error",
+            f"{method or 'REQUEST'} {evidence_url} returned HTTP {status_code}.",
+            kind="network.http_5xx",
+            url=evidence_url,
+            method=method,
+            status_code=status_code,
+        )
+
+    page.on("requestfailed", on_request_failed)
+    page.on("response", on_response)
+
+
+def _classify_run_verdict(report: Report) -> RunVerdict:
     """Ask the LLM whether the run actually fulfilled the user's prompt.
 
-    Returns the new run status: COMPLETED on pass, FAILED on fail. On any
-    error or unparseable response, falls back to COMPLETED (the existing
-    behavior) so this never blocks a real success.
+    Provider errors and malformed output are explicitly inconclusive rather
+    than silently passing the run.
     """
     try:
         raw = _get_provider().verdict_text(_verdict_prompt(report))
@@ -521,18 +839,35 @@ def _classify_run_verdict(report: Report) -> RunStatus:
             level=logging.WARNING, user=report.owner or None,
             run_id=report.run_id, exc_info=e, error_type=type(e).__name__,
         )
-        return RunStatus.COMPLETED
+        report.verdict_reason_code = "verdict_provider_error"
+        report.verdict_reason = "The QA verdict provider could not classify the run."
+        report.verdict = RunVerdict.INCONCLUSIVE
+        return RunVerdict.INCONCLUSIVE
     if not parsed:
-        return RunStatus.COMPLETED
+        log_event(
+            "sentinel",
+            "sentinel.verdict_response_invalid",
+            level=logging.WARNING,
+            user=report.owner or None,
+            run_id=report.run_id,
+        )
+        report.verdict_reason_code = "invalid_verdict_response"
+        report.verdict_reason = "The QA verdict provider returned an invalid response."
+        report.verdict = RunVerdict.INCONCLUSIVE
+        return RunVerdict.INCONCLUSIVE
     verdict, reason = parsed
-    if verdict != "fail":
-        return RunStatus.COMPLETED
-    report.verdict_reason = reason[:_VERDICT_FAIL_REASON_MAX_CHARS]
-    _add_finding(report, "warning", "Run did not fulfill prompt", reason)
-    return RunStatus.FAILED
+    report.verdict_reason_code = f"qa_{verdict}"
+    if verdict == "fail":
+        report.verdict_reason = reason[: ConfigManager().sentinel.verdict_reason_max_chars]
+        _add_finding(report, "warning", "Run did not fulfill prompt", reason)
+        report.verdict = RunVerdict.FAIL
+        return RunVerdict.FAIL
+    report.verdict = RunVerdict.PASS
+    return RunVerdict.PASS
 
 
 def _verdict_prompt(report: Report) -> str:
+    cfg = ConfigManager().sentinel
     payload = {
         "original_prompt": report.prompt or "",
         "target_url": report.target_url,
@@ -543,7 +878,12 @@ def _verdict_prompt(report: Report) -> str:
             {"action": step.action, "reason": step.reason, "result": step.result.model_dump(exclude_none=True)}
             for step in report.steps
         ],
-        "findings": [f.model_dump() for f in report.findings],
+        "findings": [
+            finding.model_dump()
+            for finding in report.findings
+            if finding.kind != cfg.console_finding_kind
+            and finding.title != cfg.console_finding_title
+        ],
         "final_report": report.final_report or "",
     }
     return json.dumps(payload, indent=2)

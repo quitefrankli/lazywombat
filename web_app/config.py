@@ -205,6 +205,20 @@ class CrosswordsConfig:
 
 @dataclass
 class SentinelConfig:
+    # Explicit capability for QA against loopback/private targets. This is
+    # intentionally independent of Flask debug mode.
+    allow_local_targets: bool = False
+    abandoned_run_timeout_s: int = 900
+    verdict_reason_max_chars: int = 300
+    report_schema_version: int = 1
+    cli_schema_version: int = 1
+    cli_exit_pass: int = 0
+    cli_exit_fail: int = 1
+    cli_exit_inconclusive: int = 2
+    cli_exit_interrupted: int = 130
+    report_url_base: str = ""
+    console_finding_title: str = "Console"
+    console_finding_kind: str = "browser.console"
     default_limit_mins: int = 5
     min_limit_mins: int = 1
     max_limit_mins: int = 10
@@ -308,14 +322,17 @@ class SentinelConfig:
     max_retained_batches: int = 25    # max derived batch groups shown in sidebar
     batch_name_max_chars: int = 80    # caps the batch label stored on each run
     batch_name_fallback: str = "Sentinel batch"
-    # Provider-agnostic capability tier; LLMConfig.model_for() resolves it
-    # to a concrete model for the active api_source.
+    # Capability tier used by Meridian and Bedrock. Codex is pinned separately
+    # below because it also needs a Sentinel-specific reasoning effort.
     llm_tier: str = "strong"  # weak | medium | strong
     # Provider-agnostic LLM behavior knobs.
     llm_step_timeout_s: float = 45.0
     llm_step_max_tokens: int = 1024
     llm_final_report_max_tokens: int = 2048
-    # Codex-only quirk: sandbox profile name passed via -c default_permissions=...
+    # Codex-specific settings. Pin these so Sentinel does not inherit mutable
+    # user-wide Codex CLI defaults.
+    codex_model: str = "gpt-5.6-sol"
+    codex_reasoning_effort: str = "medium"
     codex_permissions_profile: str = "sentinel_qa"
     # Friendly device key -> Playwright devices registry name. Empty string
     # means "no emulation; use browser_width/height_px viewport".
@@ -543,6 +560,12 @@ class ConfigManager:
         self._initialized = True
         self.use_offline_syncer = True
         self.debug_mode = False
+        self.production_data_root = Path.home() / ".nabicat" / "data"
+        self.debug_data_root = Path.home() / ".nabicat_debug" / "data"
+        self.server_host = "0.0.0.0"
+        self.server_default_port = 80
+        self.session_cookie_name = "session"
+        self.debug_session_cookie_name = "session_debug"
         self.site_url = getenv("SITE_URL") or "https://nabicat.site"
         self.redis_url = getenv("REDIS_URL") or "redis://127.0.0.1:6379/0"
         self.password_hash_method = "scrypt"
@@ -642,7 +665,7 @@ class ConfigManager:
 
     @property
     def save_data_path(self) -> Path:
-        return Path.home() / f".{self.project_name}" / "data"
+        return self.debug_data_root if self.debug_mode else self.production_data_root
     
     @property
     def temp_dir(self) -> Path:
@@ -658,6 +681,14 @@ class ConfigManager:
             return "DEBUG_FLASK_SECRET_KEY"
 
         raise ValueError("Flask secret key is not set. Please set the 'FLASK_SECRET_KEY' environment variable.")
+
+    @property
+    def flask_session_cookie_name(self) -> str:
+        return (
+            self.debug_session_cookie_name
+            if self.debug_mode
+            else self.session_cookie_name
+        )
 
     @property
     def smtp_host(self) -> str:

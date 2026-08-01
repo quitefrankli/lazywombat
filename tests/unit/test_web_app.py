@@ -114,13 +114,18 @@ class TestCanonicalRoutes:
 
 
 class TestHome:
-    def test_loft_card_uses_house_up_icon(self, client):
+    def test_loft_card_uses_custom_icon(self, client):
         import web_app.__main__  # noqa: F401
 
         response = client.get("/")
 
         assert response.status_code == 200
-        assert b'bi bi-house-up-fill' in response.data
+        assert b'/loft/static/loft-icon.webp' in response.data
+        assert b'class="app-icon-image"' in response.data
+
+        icon_response = client.get("/loft/static/loft-icon.webp")
+        assert icon_response.status_code == 200
+        assert icon_response.mimetype == "image/webp"
 
 
 class TestUserModel:

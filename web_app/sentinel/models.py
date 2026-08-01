@@ -3,7 +3,9 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+
+from web_app.config import ConfigManager
 
 
 class _ValueStr(str, Enum):
@@ -17,6 +19,8 @@ class _ValueStr(str, Enum):
 
 
 class RunStatus(_ValueStr):
+    """Legacy combined status retained for the existing UI/report JSON."""
+
     QUEUED = "queued"
     RUNNING = "running"
     SUMMARIZING = "summarizing"
@@ -24,6 +28,24 @@ class RunStatus(_ValueStr):
     FAILED = "failed"
     TIMED_OUT = "timed_out"
     CANCELLED = "cancelled"
+
+
+class ExecutionStatus(_ValueStr):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUMMARIZING = "summarizing"
+    FINISHED = "finished"
+    CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
+    EXECUTION_ERROR = "execution_error"
+    ABANDONED = "abandoned"
+    INTERRUPTED = "interrupted"
+
+
+class RunVerdict(_ValueStr):
+    PASS = "pass"
+    FAIL = "fail"
+    INCONCLUSIVE = "inconclusive"
 
 
 class Severity(_ValueStr):
@@ -71,6 +93,10 @@ class Finding(BaseModel):
     severity: str
     title: str
     detail: str
+    kind: str = ""
+    url: str = ""
+    method: str = ""
+    status_code: Optional[int] = None
 
 
 class AccountCredentials(BaseModel):
@@ -95,8 +121,13 @@ class Report(BaseModel):
     # carry keys this schema doesn't know, without re-persisting them.
     model_config = ConfigDict(validate_assignment=True, extra="ignore")
 
+    schema_version: int = Field(
+        default_factory=lambda: ConfigManager().sentinel.report_schema_version
+    )
     run_id: str
     status: RunStatus = RunStatus.QUEUED
+    lifecycle: ExecutionStatus = ExecutionStatus.QUEUED
+    verdict: RunVerdict = RunVerdict.INCONCLUSIVE
     owner: str = ""
     batch_id: str = ""
     batch_label: str = ""
@@ -123,6 +154,7 @@ class Report(BaseModel):
     final_report: str = ""
     error: Optional[str] = None
     verdict_reason: Optional[str] = None
+    verdict_reason_code: Optional[str] = None
 
     # Test credentials/card the agent may use during the run. They are only
     # written to disk (plaintext, for Rerun reuse) when the matching remember_*
@@ -136,3 +168,42 @@ class Report(BaseModel):
     # Runtime-only state, never persisted (PrivateAttr is excluded from
     # model_dump / model_dump_json automatically).
     _peek_pending: bool = PrivateAttr(default=False)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_execution_fields_from_legacy_status(cls, value):
+        """Load reports written before lifecycle/verdict were separate.
+
+        ``status`` remains in the serialized model as the compatibility view
+        consumed by the current templates and API. New code uses lifecycle and
+        verdict as the unambiguous source of truth.
+        """
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        status = str(data.get("status", RunStatus.QUEUED))
+        if not data.get("lifecycle"):
+            data["lifecycle"] = {
+                RunStatus.QUEUED.value: ExecutionStatus.QUEUED,
+                RunStatus.RUNNING.value: ExecutionStatus.RUNNING,
+                RunStatus.SUMMARIZING.value: ExecutionStatus.SUMMARIZING,
+                RunStatus.COMPLETED.value: ExecutionStatus.FINISHED,
+                RunStatus.FAILED.value: (
+                    ExecutionStatus.EXECUTION_ERROR
+                    if data.get("error")
+                    else ExecutionStatus.FINISHED
+                ),
+                RunStatus.TIMED_OUT.value: ExecutionStatus.TIMED_OUT,
+                RunStatus.CANCELLED.value: ExecutionStatus.CANCELLED,
+            }.get(status, ExecutionStatus.QUEUED)
+        if not data.get("verdict"):
+            if status == RunStatus.FAILED and not data.get("error"):
+                data["verdict"] = RunVerdict.FAIL
+            else:
+                data["verdict"] = RunVerdict.INCONCLUSIVE
+            if status == RunStatus.COMPLETED:
+                # Historical "completed" reports may have passed, but the old
+                # classifier also used this value when verdict generation
+                # failed. Truthfully, their QA verdict is unknown.
+                data.setdefault("verdict_reason_code", "legacy_unclassified")
+        return data

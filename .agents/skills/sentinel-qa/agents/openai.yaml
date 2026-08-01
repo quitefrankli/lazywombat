@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sentinel QA"
+  short_description: "Run local exploratory QA with Sentinel"
+  default_prompt: "Use $sentinel-qa to exercise this feature in the local app and report the evidence."
