@@ -179,7 +179,6 @@ def test_surprise_playlist_rows_stay_within_narrow_viewport(
                                 <button class="btn btn-sm track-play-btn">▶</button>
                                 <button class="accordion-button collapsed playlist-track-expand">
                                   <span class="playlist-track-name">${title}</span>
-                                  <span class="badge track-cache-badge">Converts on play</span>
                                 </button>
                               </div>
                             </h2>

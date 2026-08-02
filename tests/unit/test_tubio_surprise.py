@@ -330,7 +330,7 @@ class TestSurpriseRoutes:
             assert 'data-tubio-action="suggest-more"' in html
         assert 'data-tubio-action="favourite-surprise"' not in regular
         assert 'data-tubio-action="favourite-surprise"' in surprise
-        assert "Converts on play" in surprise
+        assert "Converts on play" not in surprise
         assert "Downloads on play" not in surprise
 
         stylesheet = Path("web_app/tubio/static/style.css").read_text()

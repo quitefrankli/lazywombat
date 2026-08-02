@@ -90,9 +90,6 @@
                                 aria-controls="collapse-{{ dom_key }}">
                             <i class="bi bi-musical-note me-2 text-sage"></i>
                             <span class="playlist-track-name">{{ track.title }}</span>
-                            {% if kind == "surprise" and not track.is_cached %}
-                            <span class="badge bg-light text-muted ms-2 track-cache-badge">Converts on play</span>
-                            {% endif %}
                         </button>
                     </div>
                 </h2>

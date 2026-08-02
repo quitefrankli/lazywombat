@@ -395,10 +395,6 @@ body {
   max-height: 120px;
 }
 
-.playlist-track-expand > .track-cache-badge {
-  flex: 0 0 auto;
-}
-
 .surprise-loading-row {
   display: flex;
   align-items: center;

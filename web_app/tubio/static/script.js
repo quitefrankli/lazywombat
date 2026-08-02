@@ -1453,7 +1453,6 @@ function markTrackCached(crc) {
         .filter(item => item.dataset.audioCrc === String(crc))
         .forEach(item => {
             item.dataset.isCached = 'true';
-            item.querySelector('.track-cache-badge')?.remove();
         });
 }
 
