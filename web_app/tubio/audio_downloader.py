@@ -105,8 +105,13 @@ class AudioDownloader:
         return None
 
     @staticmethod
-    def get_video_info(video_id: str, cached_yt_vid_ids: Set[str]) -> dict | None:
-        """Fetch info for a single video by ID using yt-dlp."""
+    def get_video_info(
+        video_id: str,
+        cached_yt_vid_ids: Set[str],
+        *,
+        max_duration: timedelta | None = None,
+    ) -> dict | None:
+        """Fetch video info, enforcing the supplied or standard duration limit."""
         url = f"https://www.youtube.com/watch?v={video_id}"
         ydl_opts = {
             'quiet': True,
@@ -127,7 +132,7 @@ class AudioDownloader:
 
                 duration = info.get('duration', 0)
                 vid_length = timedelta(seconds=duration)
-                max_length = ConfigManager().tubio.max_video_length
+                max_length = max_duration or ConfigManager().tubio.max_video_length
 
                 if vid_length > max_length:
                     raise VideoTooLongError(video_id, vid_length, max_length)
@@ -375,7 +380,7 @@ class AudioDownloader:
         until the requested page is filled or a tier returns nothing.
 
         Raises:
-            VideoTooLongError: If a direct URL video exceeds the maximum allowed length.
+            VideoTooLongError: If a direct URL video exceeds its configured length limit.
         """
         # Check if query is a direct YouTube URL
         video_id = AudioDownloader.extract_video_id(query)
@@ -385,7 +390,11 @@ class AudioDownloader:
                 video_id=video_id,
             )
             # Let VideoTooLongError propagate for direct URLs
-            video_info = AudioDownloader.get_video_info(video_id, cached_yt_vid_ids)
+            video_info = AudioDownloader.get_video_info(
+                video_id,
+                cached_yt_vid_ids,
+                max_duration=ConfigManager().tubio.direct_video_max_length,
+            )
             results = [video_info] if video_info else []
             return {"results": results, "page": 0, "total_pages": 1}
 

@@ -168,6 +168,26 @@ class TestGetVideoInfo:
         assert exc_info.value.max_duration == timedelta(minutes=10)
 
     @patch('web_app.tubio.audio_downloader.yt_dlp.YoutubeDL')
+    def test_get_video_info_accepts_direct_url_duration_limit_override(self, mock_ydl_class):
+        mock_ydl = MagicMock()
+        mock_ydl.__enter__ = Mock(return_value=mock_ydl)
+        mock_ydl.__exit__ = Mock(return_value=False)
+        mock_ydl.extract_info.return_value = {
+            'title': 'Long Mix',
+            'duration': 59 * 60,
+        }
+        mock_ydl_class.return_value = mock_ydl
+
+        result = AudioDownloader.get_video_info(
+            'dQw4w9WgXcQ',
+            set(),
+            max_duration=timedelta(hours=1),
+        )
+
+        assert result is not None
+        assert result['length'] == '59:00'
+
+    @patch('web_app.tubio.audio_downloader.yt_dlp.YoutubeDL')
     def test_get_video_info_error(self, mock_ydl_class):
         mock_ydl = MagicMock()
         mock_ydl.__enter__ = Mock(return_value=mock_ydl)
@@ -278,6 +298,23 @@ class TestDownloadThumbnail:
 class TestSearchYoutubeWithDirectUrl:
     """Tests for search_youtube handling direct URLs."""
 
+    @patch.object(AudioDownloader, 'get_video_info', return_value={'video_id': 'dQw4w9WgXcQ'})
+    @patch('web_app.tubio.audio_downloader.ConfigManager')
+    def test_direct_url_uses_direct_video_duration_limit(self, mock_config, mock_get_video_info):
+        mock_config.return_value.tubio.direct_video_max_length = timedelta(hours=1)
+
+        result = AudioDownloader.search_youtube(
+            'https://youtu.be/dQw4w9WgXcQ',
+            set(),
+        )
+
+        assert result['results'] == [{'video_id': 'dQw4w9WgXcQ'}]
+        mock_get_video_info.assert_called_once_with(
+            'dQw4w9WgXcQ',
+            set(),
+            max_duration=timedelta(hours=1),
+        )
+
     @patch.object(AudioDownloader, 'get_video_info')
     def test_search_with_direct_url_returns_single_result(self, mock_get_info):
         mock_get_info.return_value = {
@@ -299,7 +336,11 @@ class TestSearchYoutubeWithDirectUrl:
         assert results[0]['thumbnail_url'] == 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg'
         assert search_data['page'] == 0
         assert search_data['total_pages'] == 1
-        mock_get_info.assert_called_once_with('dQw4w9WgXcQ', set())
+        mock_get_info.assert_called_once_with(
+            'dQw4w9WgXcQ',
+            set(),
+            max_duration=ConfigManager().tubio.direct_video_max_length,
+        )
 
     @patch.object(AudioDownloader, 'get_video_info')
     def test_search_with_direct_url_video_not_found(self, mock_get_info):
@@ -351,6 +392,35 @@ class TestSearchYoutubeWithDirectUrl:
 
 
 class TestDownloadProgress:
+    def test_missing_progress_returns_event_stream_payload(self, client, auth_mock):
+        with client.session_transaction() as session:
+            session['_user_id'] = auth_mock.id
+
+        response = client.get('/tubio/download_progress/missing-video')
+
+        assert response.status_code == 200
+        assert response.mimetype == 'text/event-stream'
+        assert response.get_data(as_text=True) == 'data: {"status": "not_found"}\n\n'
+
+    @patch('web_app.tubio.routes.downloads.get_playlists_data', return_value=[])
+    @patch('web_app.tubio.routes.downloads.get_cached_yt_vid_ids', return_value=set())
+    @patch('web_app.tubio.AudioDownloader.download_youtube_audio')
+    def test_youtube_download_resolves_playlist_dependencies(
+        self, mock_download, _mock_cached_ids, _mock_playlists, client, auth_mock
+    ):
+        mock_download.return_value = Mock(crc=123)
+        with client.session_transaction() as session:
+            session['_user_id'] = auth_mock.id
+
+        response = client.post(
+            '/tubio/youtube_download',
+            data={'video_id': 'dQw4w9WgXcQ', 'title': 'Test track'},
+            headers={'X-Requested-With': 'XMLHttpRequest'},
+        )
+
+        assert response.status_code == 200
+        assert response.get_json()['success'] is True
+
     def test_progress_tracking(self):
         clear_download_progress('test123')
 
