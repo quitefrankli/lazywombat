@@ -1,103 +1,128 @@
 import logging
 import math
-import time
-import json
-import web_app.tubio as tubio_facade
-from pathlib import Path
+import secrets
 
-from flask import Response, flash, redirect, request, send_file, url_for
-from flask_login import login_required
+from datetime import datetime, timezone
+from pathlib import Path
+from flask import Response, flash, redirect, render_template, request, send_file, url_for
 
 from web_app.config import ConfigManager
-from web_app.helpers import cur_user, limiter, parse_request
+from web_app.helpers import cur_user, limiter
 from web_app.logging_utils import log_event
 from web_app.redis_client import get_redis
 from web_app.tubio import tubio_api
-from web_app.tubio.audio_downloader import AudioDownloader, VideoTooLongError
-from web_app.tubio.data_interface import AudioMetadata, DataInterface, Playlist
-from web_app.tubio.services.playlists import get_playlists_data
-from web_app.tubio.services.surprise import _surprise_is_expired
-from web_app.tubio.services.media import redownload_audio
+from web_app.tubio.audio_downloader import AudioDownloader
+from web_app.tubio.data_interface import AudioMetadata, DataInterface
+from web_app.tubio.routes.playlists import get_playlists_data
+from web_app.tubio.routes.surprise import _surprise_is_expired
 
-@tubio_api.route('/upload', methods=['POST'])
-@limiter.limit("20 per minute")
-def upload_audio():
-    try:
-        # Check if file is in the request
-        if 'audio_file' not in request.files:
-            log_event(
-                "tubio",
-                "tubio.upload_rejected",
-                level=logging.WARNING,
-                reason="no_file",
-            )
-            flash('No file provided.', 'error')
-            return redirect(url_for('.index'))
 
-        file = request.files['audio_file']
+def _library_html(data: DataInterface) -> str:
+    return render_template(
+        'playlists.html',
+        playlists=get_playlists_data(cur_user(), data=data),
+    )
 
-        if file.filename == '':
-            log_event(
-                "tubio",
-                "tubio.upload_rejected",
-                level=logging.WARNING,
-                reason="empty_filename",
-            )
-            flash('No file selected.', 'error')
-            return redirect(url_for('.index'))
 
-        # Get the custom title or use filename
-        title = request.form.get('audio_title', '').strip()
-        if not title:
-            # Use filename without extension as title
-            title = Path(file.filename).stem
-
-        # Validate file extension
-        allowed_extensions = set(ConfigManager().tubio.upload_allowed_extensions)
-        file_ext = Path(file.filename).suffix.lower()[1:]
-
-        if file_ext not in allowed_extensions:
-            log_event(
-                "tubio",
-                "tubio.upload_rejected",
-                level=logging.WARNING,
-                reason="unsupported_format",
-                file_ext=file_ext,
-            )
-            flash(f"Unsupported file format: {file_ext}. Allowed: {', '.join(allowed_extensions)}", "error")
-            return redirect(url_for('.index'))
-
-        crc = tubio_facade.DataInterface().save_audio(title, file.read(), file_ext)
-        audio_metadata = tubio_facade.DataInterface().get_audio_metadata(crc=crc)
-        with tubio_facade.DataInterface().edit_metadata() as metadata:
-            metadata.get_user(cur_user().id).add_to_playlist(audio_metadata.crc)
+def _redownload_audio(data: DataInterface, audio: AudioMetadata) -> None:
+    file_path = data.get_audio_path(audio.crc)
+    if file_path.exists():
         log_event(
             "tubio",
-            "tubio.upload_completed",
-            crc=crc,
+            "tubio.cache_metadata_repaired",
+            level=logging.WARNING,
+            crc=audio.crc,
+        )
+        audio.is_cached = True
+        data.upsert_audio_metadata(audio)
+        return
+    if not audio.yt_video_id:
+        log_event(
+            "tubio",
+            "tubio.redownload_rejected",
+            level=logging.ERROR,
+            crc=audio.crc,
+            reason="missing_video_id",
+        )
+        raise ValueError("No YouTube video ID associated with this audio.")
+
+    log_event(
+        "tubio",
+        "tubio.redownload_started",
+        crc=audio.crc,
+        video_id=audio.yt_video_id,
+    )
+    AudioDownloader.cache_youtube_audio(audio)
+    log_event(
+        "tubio",
+        "tubio.redownload_completed",
+        crc=audio.crc,
+        video_id=audio.yt_video_id,
+    )
+
+
+@tubio_api.route('/upload', methods=['POST'])
+@limiter.limit(lambda: ConfigManager().tubio.upload_rate_limit)
+def upload_audio():
+    uploaded_file = request.files.get('audio_file')
+    if uploaded_file is None or not uploaded_file.filename:
+        reason = "no_file" if uploaded_file is None else "empty_filename"
+        log_event(
+            "tubio",
+            "tubio.upload_rejected",
+            level=logging.WARNING,
+            reason=reason,
+        )
+        flash('No file selected.', 'error')
+        return redirect(url_for('.index'))
+
+    file_ext = Path(uploaded_file.filename).suffix.lower()[1:]
+    allowed_extensions = set(ConfigManager().tubio.upload_allowed_extensions)
+    if file_ext not in allowed_extensions:
+        log_event(
+            "tubio",
+            "tubio.upload_rejected",
+            level=logging.WARNING,
+            reason="unsupported_format",
             file_ext=file_ext,
         )
-        flash(f'Successfully uploaded: {title}', 'success')
+        flash(
+            f"Unsupported file format: {file_ext}. Allowed: {', '.join(allowed_extensions)}",
+            "error",
+        )
+        return redirect(url_for('.index'))
 
-    except Exception as e:
+    title = request.form.get('audio_title', '').strip() or Path(
+        uploaded_file.filename
+    ).stem
+    try:
+        data = DataInterface()
+        crc = data.save_audio(title, uploaded_file.read(), file_ext)
+        with data.edit_metadata() as metadata:
+            metadata.get_user(cur_user().id).add_to_playlist(crc)
+    except Exception as error:
         log_event(
             "tubio",
             "tubio.upload_failed",
             level=logging.ERROR,
-            exc_info=e,
-            error_type=type(e).__name__,
+            exc_info=error,
+            error_type=type(error).__name__,
         )
         flash('Error uploading audio. Please try again.', 'error')
+        return redirect(url_for('.index'))
 
+    log_event("tubio", "tubio.upload_completed", crc=crc, file_ext=file_ext)
+    flash(f'Successfully uploaded: {title}', 'success')
     return redirect(url_for('.index'))
 
+
 @tubio_api.route('/audio/<int:crc>')
-@limiter.limit("100 per second") # TODO: only 1 should be loaded at a time temporary fix
+@limiter.limit(lambda: ConfigManager().tubio.audio_serve_rate_limit)
 def serve_audio(crc: int):
+    data = DataInterface()
     try:
-        metadata = tubio_facade.DataInterface().get_audio_metadata(crc=crc)
+        audio = data.get_audio_metadata(crc=crc)
     except ValueError as error:
-        flash(f'Error: no such audio: {crc: int}', 'error')
         log_event(
             "tubio",
             "tubio.audio_serve_failed",
@@ -106,30 +131,26 @@ def serve_audio(crc: int):
             reason="not_found",
             exc_info=error,
         )
-        return redirect(url_for('.index'))
+        return {'error': 'Audio not found'}, 404
 
-    if not metadata.is_cached:
-        redownload_audio(metadata)
-
-    file_path = tubio_facade.DataInterface().get_audio_path(crc)
-    return _range_response(file_path, etag=str(crc), download_name=f"{crc}.m4a")
+    if not audio.is_cached:
+        _redownload_audio(data, audio)
+    return _range_response(
+        data.get_audio_path(crc),
+        etag=str(crc),
+        download_name=f"{crc}.m4a",
+    )
 
 
 def _range_response(file_path: Path, etag: str, download_name: str) -> Response:
-    """Serve an m4a file with Werkzeug's RFC-compliant conditional ranges."""
     file_size = file_path.stat().st_size
-    range_header = request.headers.get("Range", None)
     log_event(
         "tubio",
         "tubio.audio_served",
         path=file_path.name,
         bytes=file_size,
-        range_requested=range_header is not None,
+        range_requested=request.headers.get("Range") is not None,
     )
-
-    # conditional=True delegates parsing, clamping, If-Range handling, HEAD
-    # requests, and 416 responses to Werkzeug instead of maintaining a second
-    # partial implementation of HTTP byte ranges here.
     response = send_file(
         file_path,
         mimetype="audio/mp4",
@@ -139,29 +160,31 @@ def _range_response(file_path: Path, etag: str, download_name: str) -> Response:
         etag=etag,
     )
     response.headers["Accept-Ranges"] = "bytes"
-
-    # Cache audio ranges
     response.cache_control.max_age = ConfigManager().cache_max_age
     response.cache_control.public = True
-
     return response
 
 
 @tubio_api.route('/audio/<int:crc>/download')
-@login_required
 def download_audio(crc: int):
+    data = DataInterface()
     try:
-        metadata = tubio_facade.DataInterface().get_audio_metadata(crc=crc)
+        audio = data.get_audio_metadata(crc=crc)
     except ValueError:
         flash(f'Error: no such audio: {crc}', 'error')
         return redirect(url_for('.index'))
+    if not audio.is_cached:
+        _redownload_audio(data, audio)
 
-    if not metadata.is_cached:
-        redownload_audio(metadata)
-
-    file_path = tubio_facade.DataInterface().get_audio_path(crc)
-    safe_title = "".join(c for c in metadata.title if c.isalnum() or c in " _-").strip() or str(crc)
-    return send_file(file_path, mimetype='audio/mp4', as_attachment=True, download_name=f"{safe_title}.m4a")
+    safe_title = "".join(
+        char for char in audio.title if char.isalnum() or char in " _-"
+    ).strip() or str(crc)
+    return send_file(
+        data.get_audio_path(crc),
+        mimetype='audio/mp4',
+        as_attachment=True,
+        download_name=f"{safe_title}.m4a",
+    )
 
 
 @tubio_api.route('/audio/<int:crc>/trim', methods=['POST'])
@@ -170,20 +193,43 @@ def trim_audio(crc: int):
         trim_start_s = float(request.form.get('trim_start_s', 0))
         trim_end_s = float(request.form.get('trim_end_s', 0))
     except (TypeError, ValueError):
+        log_event(
+            "tubio", "tubio.trim_rejected", level=logging.WARNING,
+            crc=crc, reason="invalid_values",
+        )
         return {'error': 'Trim values must be valid numbers'}, 400
-
     if not math.isfinite(trim_start_s) or not math.isfinite(trim_end_s):
+        log_event(
+            "tubio", "tubio.trim_rejected", level=logging.WARNING,
+            crc=crc, reason="non_finite_values",
+        )
         return {'error': 'Trim values must be finite numbers'}, 400
     if trim_start_s < 0 or trim_end_s < 0:
+        log_event(
+            "tubio", "tubio.trim_rejected", level=logging.WARNING,
+            crc=crc, reason="negative_values",
+        )
         return {'error': 'Trim values cannot be negative'}, 400
-    data_interface = tubio_facade.DataInterface()
+
+    data = DataInterface()
     try:
-        with data_interface.edit_metadata() as metadata:
-            if crc not in metadata.audios:
+        with data.edit_metadata() as metadata:
+            audio = metadata.audios.get(crc)
+            if audio is None:
+                log_event(
+                    "tubio", "tubio.trim_rejected", level=logging.WARNING,
+                    crc=crc, reason="audio_not_found",
+                )
                 return {'error': 'Audio not found'}, 404
-            audio_metadata = metadata.audios[crc]
-            user_metadata = metadata.get_user(cur_user().id)
-            if not any(crc in playlist.audio_crcs for playlist in user_metadata.playlists.values()):
+            user_metadata = metadata.users.get(cur_user().id)
+            if user_metadata is None or not any(
+                crc in playlist.audio_crcs
+                for playlist in user_metadata.playlists.values()
+            ):
+                log_event(
+                    "tubio", "tubio.trim_rejected", level=logging.WARNING,
+                    crc=crc, reason="not_owned",
+                )
                 return {'error': 'Audio not found in your playlists'}, 404
             user_metadata.set_playback_trim(crc, trim_start_s, trim_end_s)
     except Exception as error:
@@ -202,57 +248,66 @@ def trim_audio(crc: int):
         'success': True,
         'trim_start_s': trim_start_s,
         'trim_end_s': trim_end_s,
-        'message': f'Updated playback range: {audio_metadata.title}',
+        'message': f'Updated playback range: {audio.title}',
+        'library_html': _library_html(data),
     }
 
 
 @tubio_api.route('/thumbnail/<int:crc>')
 def serve_thumbnail(crc: int):
-    thumbnail_path = tubio_facade.DataInterface().get_thumbnail_path(crc)
+    thumbnail_path = DataInterface().get_thumbnail_path(crc)
     if not thumbnail_path.exists():
-        # Return a placeholder or 404
         return '', 404
-
     response = send_file(thumbnail_path, mimetype='image/jpeg')
-
-    # Cache thumbnails
     response.cache_control.max_age = ConfigManager().cache_max_age
     response.cache_control.public = True
     response.set_etag(str(crc))
-
     return response
 
 
 @tubio_api.route('/resync/<int:crc>', methods=['POST'])
-@limiter.limit("5 per minute")
+@limiter.limit(lambda: ConfigManager().tubio.resync_rate_limit)
 def resync_audio(crc: int):
-    is_ajax = (request.headers.get('X-Requested-With') == 'XMLHttpRequest' or
-               'application/json' in request.headers.get('Accept', ''))
+    is_ajax = (
+        request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        or 'application/json' in request.headers.get('Accept', '')
+    )
     if not is_ajax:
+        log_event(
+            "tubio", "tubio.resync_rejected", level=logging.WARNING,
+            crc=crc, reason="non_ajax",
+        )
         flash("Invalid request.", 'error')
         return redirect(url_for('.index'))
 
+    data = DataInterface()
     try:
-        metadata = tubio_facade.DataInterface().get_audio_metadata(crc=crc)
+        audio = data.get_audio_metadata(crc=crc)
     except ValueError:
+        log_event(
+            "tubio", "tubio.resync_rejected", level=logging.WARNING,
+            crc=crc, reason="audio_not_found",
+        )
         return {'error': 'Audio not found'}, 404
-
-    if not metadata.yt_video_id:
+    if not audio.yt_video_id:
+        log_event(
+            "tubio", "tubio.resync_rejected", level=logging.WARNING,
+            crc=crc, reason="not_youtube",
+        )
         return {'error': 'Track was not converted from YouTube'}, 400
 
     try:
-        # Delete existing file to force redownload
-        file_path = tubio_facade.DataInterface().get_audio_path(crc)
+        file_path = data.get_audio_path(crc)
         if file_path.exists():
             file_path.unlink()
-        metadata.is_cached = False
-        tubio_facade.DataInterface().upsert_audio_metadata(metadata)
-
-        tubio_facade.AudioDownloader.download_youtube_audio(
-            metadata.yt_video_id, metadata.title, cur_user(), crc=metadata.crc
+        audio.is_cached = False
+        data.upsert_audio_metadata(audio)
+        AudioDownloader.download_youtube_audio(
+            audio.yt_video_id,
+            audio.title,
+            cur_user(),
+            crc=audio.crc,
         )
-        log_event("tubio", "tubio.resync_completed", crc=crc)
-        return {'success': True, 'message': f'Resynced: {metadata.title}'}
     except Exception as error:
         log_event(
             "tubio",
@@ -264,52 +319,143 @@ def resync_audio(crc: int):
         )
         return {'error': 'Error resyncing audio'}, 500
 
+    log_event("tubio", "tubio.resync_completed", crc=crc)
+    return {
+        'success': True,
+        'message': f'Resynced: {audio.title}',
+        'library_html': _library_html(data),
+    }
+
 
 @tubio_api.route('/delete_audio/<int:crc>', methods=['POST'])
 def delete_audio(crc: int):
+    data = DataInterface()
     try:
-        user = cur_user()
-        data = tubio_facade.DataInterface()
         with data.edit_metadata() as metadata:
-            user_metadata = metadata.get_user(user.id)
-
-            # Check if user has this audio in their playlists
-            if crc not in user_metadata.get_playlist().audio_crcs:
-                flash('Audio not found in your playlists.', 'error')
-                return redirect(url_for('.index'))
-
-            # Remove from user's playlists
-            user_metadata.remove_from_playlist(crc)
-
-            # Preserve metadata while any durable or temporary playlist still
-            # references the track.
-            audio_is_still_used = any(
-                crc in playlist.audio_crcs
-                for other in metadata.users.values()
-                for playlist in other.playlists.values()
+            user_metadata = metadata.users.get(cur_user().id)
+            regular_playlists = (
+                user_metadata.get_playlists()
+                if user_metadata is not None
+                else []
             )
+            if not any(crc in playlist.audio_crcs for playlist in regular_playlists):
+                log_event(
+                    "tubio",
+                    "tubio.audio_delete_rejected",
+                    level=logging.WARNING,
+                    crc=crc,
+                    reason="not_owned",
+                )
+                return {'error': 'Audio not found in your playlists'}, 404
 
-            if audio_is_still_used:
-                flash('Audio removed from your playlists.', 'info')
-            else:
-                flash('Audio deleted successfully.', 'success')
-        data.cleanup_unused_resources()
-        log_event(
-            "tubio",
-            "tubio.audio_deleted",
-            crc=crc,
-            resource_retained=audio_is_still_used,
-        )
-
-    except Exception as e:
+            user_metadata.remove_from_regular_playlists(crc)
+            user_metadata.playback_trims.pop(crc, None)
+            resource_retained = any(
+                crc in playlist.audio_crcs
+                for other_user in metadata.users.values()
+                for playlist in other_user.playlists.values()
+            )
+        if not resource_retained:
+            data.cleanup_unused_resources()
+    except Exception as error:
         log_event(
             "tubio",
             "tubio.audio_delete_failed",
             level=logging.ERROR,
             crc=crc,
-            exc_info=e,
-            error_type=type(e).__name__,
+            exc_info=error,
+            error_type=type(error).__name__,
         )
-        flash('Error deleting audio.', 'error')
+        return {'error': 'Error deleting audio'}, 500
 
-    return redirect(url_for('.index'))
+    log_event(
+        "tubio",
+        "tubio.audio_deleted",
+        crc=crc,
+        resource_retained=resource_retained,
+    )
+    return {'success': True, 'library_html': _library_html(data)}
+
+
+@tubio_api.route("/audio/<int:crc>/cache", methods=["POST"])
+@limiter.limit(lambda: ConfigManager().tubio.surprise_media_rate_limit)
+def cache_audio(crc: int):
+    data = DataInterface()
+    with data.edit_metadata() as metadata:
+        user_metadata = metadata.users.get(cur_user().id)
+        if user_metadata is None:
+            surprise = None
+            can_access = False
+        else:
+            surprise = user_metadata.get_surprise_playlist()
+            if surprise is not None and _surprise_is_expired(surprise):
+                surprise = None
+            can_access = any(
+                crc in playlist.audio_crcs
+                for playlist in user_metadata.get_playlists()
+            )
+        if surprise is not None and crc in surprise.audio_crcs:
+            surprise.last_active = datetime.now(timezone.utc)
+            can_access = True
+        audio = metadata.audios.get(crc)
+        if audio is not None:
+            audio = audio.model_copy(deep=True)
+
+    if not can_access:
+        log_event(
+            "tubio", "tubio.cache_rejected", level=logging.WARNING,
+            crc=crc, reason="access_denied",
+        )
+        return {"error": "Audio not found"}, 404
+    if audio is None:
+        log_event(
+            "tubio", "tubio.cache_rejected", level=logging.WARNING,
+            crc=crc, reason="metadata_not_found",
+        )
+        return {"error": "Audio metadata not found"}, 404
+
+    file_path = data.app_audio_dir / f"{crc}.m4a"
+    if audio.is_cached and file_path.exists():
+        log_event(
+            "tubio", "tubio.cache_completed", crc=crc,
+            video_id=audio.yt_video_id, source="cache_hit",
+        )
+        return {"success": True, "is_cached": True, "video_id": audio.yt_video_id}
+
+    cfg = ConfigManager().tubio
+    key = cfg.surprise_cache_redis_prefix + str(crc)
+    token = secrets.token_urlsafe(cfg.surprise_cache_claim_token_bytes).encode()
+    redis = get_redis()
+    if not redis.set(key, token, nx=True, ex=cfg.surprise_cache_claim_ttl_s):
+        log_event(
+            "tubio", "tubio.cache_in_progress",
+            crc=crc, video_id=audio.yt_video_id,
+        )
+        return {
+            "success": False,
+            "is_cached": False,
+            "status": "in_progress",
+            "video_id": audio.yt_video_id,
+        }, 202
+
+    try:
+        log_event(
+            "tubio", "tubio.cache_materialization_started",
+            crc=crc, video_id=audio.yt_video_id,
+        )
+        AudioDownloader.cache_youtube_audio(audio)
+    except Exception as error:
+        log_event(
+            "tubio", "tubio.cache_failed", level=logging.ERROR,
+            crc=crc, exc_info=error, error_type=type(error).__name__,
+        )
+        return {"error": "Could not convert this track"}, 500
+    finally:
+        if redis.get(key) == token:
+            redis.delete(key)
+
+    log_event(
+        "tubio", "tubio.cache_completed", crc=crc,
+        video_id=audio.yt_video_id, source="materialized",
+    )
+    return {"success": True, "is_cached": True, "video_id": audio.yt_video_id}

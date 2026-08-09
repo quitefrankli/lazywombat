@@ -232,7 +232,7 @@ class TestTubioCacheHeaders:
         img = Image.new('RGB', (100, 100), color='blue')
         img.save(test_thumb, 'JPEG')
 
-        with patch('web_app.tubio.DataInterface') as mock_di_class:
+        with patch('web_app.tubio.routes.media.DataInterface') as mock_di_class:
             mock_di = mock_di_class.return_value
             mock_di.get_thumbnail_path.return_value = test_thumb
 

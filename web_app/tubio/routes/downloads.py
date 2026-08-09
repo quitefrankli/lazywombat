@@ -1,32 +1,45 @@
-import logging
 import json
+import logging
 import time
-import web_app.tubio as tubio_facade
 
-from flask import Response, flash, redirect, request, url_for
+from flask import Response, flash, redirect, render_template, request, url_for
 
 from web_app.config import ConfigManager
-from web_app.helpers import cur_user, limiter, parse_request
+from web_app.helpers import cur_user, parse_request
 from web_app.logging_utils import log_event
-from web_app.redis_client import get_redis
 from web_app.tubio import tubio_api
 from web_app.tubio.audio_downloader import (
     AudioDownloader,
-    VideoTooLongError,
     clear_download_progress,
     get_download_progress,
 )
 from web_app.tubio.data_interface import DataInterface
-from web_app.tubio.services.playlists import get_cached_yt_vid_ids, get_playlists_data
+from web_app.tubio.routes.playlists import (
+    get_cached_yt_vid_ids,
+    get_playlists_data,
+)
+
+
+def _library_response(message: str) -> dict:
+    return {
+        'success': True,
+        'message': message,
+        'library_html': render_template(
+            'playlists.html',
+            playlists=get_playlists_data(cur_user()),
+        ),
+    }
+
 
 @tubio_api.route('/youtube_download', methods=['POST'])
 def youtube_download():
-    req = parse_request(require_login=False, require_admin=False)
-    video_id = req.get('video_id')
-    title = req.get('title')
-
-    is_ajax = (request.headers.get('X-Requested-With') == 'XMLHttpRequest' or
-              'application/json' in request.headers.get('Accept', ''))
+    values = parse_request(require_login=False, require_admin=False)
+    video_id = values.get('video_id')
+    title = values.get('title')
+    is_ajax = (
+        request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        or 'application/json' in request.headers.get('Accept', '')
+    )
     if not is_ajax:
         log_event(
             "tubio",
@@ -37,9 +50,6 @@ def youtube_download():
         )
         flash("Invalid request.", 'error')
         return redirect(url_for('.index') + '#playlists')
-
-    # for rest of function assume we are dealing with AJAX request
-
     if not video_id or not title:
         log_event(
             "tubio",
@@ -50,49 +60,33 @@ def youtube_download():
         )
         return {'error': 'No video ID or title provided'}, 400
 
-    if video_id in get_cached_yt_vid_ids(cur_user()):
+    user = cur_user()
+    if video_id in get_cached_yt_vid_ids(user):
         log_event(
             "tubio",
             "tubio.download_rejected",
             level=logging.INFO,
-            reason="already_in_playlist",
+            reason="already_in_library",
             video_id=video_id,
         )
         return {'error': 'Already in playlist', 'type': 'info'}, 400
 
-    if video_id in get_cached_yt_vid_ids():
-        # check if audio is already downloaded on the server but not in user's playlists
-        existing_audio_metadata = tubio_facade.DataInterface().get_audio_metadata(yt_video_id=video_id)
-        with tubio_facade.DataInterface().edit_metadata() as metadata:
-            metadata.get_user(cur_user().id).add_to_playlist(existing_audio_metadata.crc)
-
+    data = DataInterface()
+    if video_id in get_cached_yt_vid_ids(data=data):
+        existing = data.get_audio_metadata(yt_video_id=video_id)
+        with data.edit_metadata() as metadata:
+            metadata.get_user(user.id).add_to_playlist(existing.crc)
         log_event(
             "tubio",
             "tubio.download_completed",
             video_id=video_id,
-            crc=existing_audio_metadata.crc,
+            crc=existing.crc,
             source="existing_cache",
         )
-        return {
-            'success': True,
-            'message': f'Added {existing_audio_metadata.title} to playlist',
-            'playlists': get_playlists_data(cur_user())
-        }
+        return _library_response(f'Added {existing.title} to playlist')
 
     try:
-        audio = tubio_facade.AudioDownloader.download_youtube_audio(video_id, title, cur_user())
-        log_event(
-            "tubio",
-            "tubio.download_completed",
-            video_id=video_id,
-            crc=getattr(audio, "crc", None),
-            source="download",
-        )
-        return {
-            'success': True,
-            'message': f'Audio converted for: {title}',
-            'playlists': get_playlists_data(cur_user())
-        }
+        audio = AudioDownloader.download_youtube_audio(video_id, title, user)
     except Exception as error:
         log_event(
             "tubio",
@@ -104,6 +98,15 @@ def youtube_download():
         )
         return {'error': 'Error converting audio'}, 500
 
+    log_event(
+        "tubio",
+        "tubio.download_completed",
+        video_id=video_id,
+        crc=getattr(audio, "crc", None),
+        source="download",
+    )
+    return _library_response(f'Audio converted for: {title}')
+
 
 @tubio_api.route('/download_progress/<video_id>')
 def download_progress(video_id: str):
@@ -114,18 +117,18 @@ def download_progress(video_id: str):
                 yield f"data: {json.dumps({'status': 'not_found'})}\n\n"
                 break
 
-            data = {
+            yield f"data: {json.dumps({
                 'status': progress.status,
                 'percent': round(progress.percent, 1),
-                'error': progress.error
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-
+                'error': progress.error,
+            })}\n\n"
             if progress.status in ('complete', 'error'):
                 clear_download_progress(video_id)
                 break
-
             time.sleep(ConfigManager().tubio.download_progress_poll_interval_s)
 
-    return Response(generate(), mimetype='text/event-stream',
-                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+    )

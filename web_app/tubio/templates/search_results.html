@@ -1,0 +1,95 @@
+{% if filtered_too_long %}
+<div class="alert alert-warning d-flex align-items-center gap-2 py-2" role="alert">
+    <i class="bi bi-clock-history"></i>
+    <span>
+        {{ filtered_too_long }} result{% if filtered_too_long != 1 %}s{% endif %}
+        hidden for exceeding the {{ max_video_length_minutes }}-minute limit.
+        Consider appending “short” to the search.
+    </span>
+</div>
+{% endif %}
+
+{% if results %}
+<div class="accordion" id="search-results-accordion">
+    {% for video in results %}
+    <article class="accordion-item mb-3 border-0 shadow-sm">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed bg-gradient text-primary fw-semibold search-result-btn"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#search-result-{{ loop.index0 }}"
+                    aria-expanded="false"
+                    aria-controls="search-result-{{ loop.index0 }}">
+                <i class="bi bi-youtube me-2 flex-shrink-0"></i>
+                <span class="search-result-title">{{ video.title|truncate(60, true) }}</span>
+                <small class="badge bg-secondary ms-2 flex-shrink-0">{{ video.length }}</small>
+            </button>
+        </h2>
+        <div id="search-result-{{ loop.index0 }}"
+             class="accordion-collapse collapse"
+             data-bs-parent="#search-results-accordion">
+            <div class="accordion-body bg-light">
+                <div class="row">
+                    <div class="col-md-4 mb-3 text-center">
+                        {% if video.thumbnail_url %}
+                        <img src="{{ video.thumbnail_url }}" alt="" class="img-fluid rounded shadow-sm search-result-thumbnail">
+                        {% endif %}
+                    </div>
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <h3 class="h6 text-primary mb-2">Full Title:</h3>
+                            <p class="text-dark fw-medium">{{ video.title }}</p>
+                        </div>
+                        <div class="mb-3">
+                            <h3 class="h6 text-primary mb-2">Description:</h3>
+                            <p class="text-muted small search-result-description">{{ video.description }}</p>
+                        </div>
+                        <div class="row">
+                            <div class="col-6">
+                                <h3 class="h6 text-primary mb-2">Views:</h3>
+                                <p class="text-dark">{{ video.view_count }}</p>
+                            </div>
+                            <div class="col-6">
+                                <h3 class="h6 text-primary mb-2">Published:</h3>
+                                <p class="text-dark">{{ video.published }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-center mt-3 search-result-download">
+                    <button type="button"
+                            class="btn btn-primary{% if video.cached %} search-result-cached{% endif %}"
+                            data-tubio-action="download-video"
+                            data-video-id="{{ video.video_id }}"
+                            data-title="{{ video.title }}"
+                            {% if video.cached %}disabled{% endif %}>
+                        <i class="bi bi-download me-1"></i>Add To Favourites
+                    </button>
+                    <div class="progress mt-2 d-none search-result-progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                    </div>
+                    <small class="text-muted d-none"></small>
+                </div>
+            </div>
+        </div>
+    </article>
+    {% endfor %}
+</div>
+
+{% if total_pages > 1 %}
+<nav class="d-flex justify-content-center gap-2 mt-3 mb-4" aria-label="Search result pages">
+    {% for result_page in range(total_pages) %}
+    <button type="button"
+            class="btn {% if result_page == page %}btn-primary{% else %}btn-outline-primary{% endif %}"
+            data-tubio-action="search-page"
+            data-page="{{ result_page }}"
+            {% if result_page == page %}disabled aria-current="page"{% endif %}>
+        {{ result_page + 1 }}
+    </button>
+    {% endfor %}
+</nav>
+{% endif %}
+{% else %}
+<div class="text-center py-5"><h2 class="h5 text-muted">No results found</h2></div>
+{% endif %}

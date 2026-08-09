@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -14,19 +14,20 @@ from web_app.tubio.data_interface import (
     Metadata,
     Playlist,
 )
-from web_app.tubio.surprise import reserve_audio_metadata
+from web_app.tubio.routes.surprise import reserve_audio_metadata
 from web_app.users import User
 
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_app():
-    import web_app.__main__  # noqa: F401
     from web_app.app import app
-    from web_app.helpers import limiter
+    from web_app.helpers import limiter, register_all_blueprints
 
     app.config["TESTING"] = True
     app.config["WTF_CSRF_ENABLED"] = False
     limiter.enabled = False
+    if "tubio" not in app.blueprints:
+        register_all_blueprints(app)
 
 
 @pytest.fixture
@@ -148,9 +149,7 @@ class TestSurpriseCleanup:
             (data.app_audio_dir / f"{crc}.m4a").write_bytes(b"audio")
             (data.app_thumbnails_dir / f"{crc}.jpg").write_bytes(b"image")
 
-        data.cleanup_surprise_playlists(now=now)
-        data.cleanup_unused_tracks()
-        data.cleanup_unused_thumbnails()
+        data.cleanup_unused_resources(now=now)
 
         cleaned = data.get_metadata()
         assert cleaned.get_user("alice").get_surprise_playlist() is not None
@@ -158,17 +157,6 @@ class TestSurpriseCleanup:
         assert set(cleaned.audios) == {101, 202}
         assert not (data.app_audio_dir / "303.m4a").exists()
         assert not (data.app_thumbnails_dir / "303.jpg").exists()
-
-    def test_combined_cleanup_runs_in_dependency_order(self):
-        data = MagicMock(spec=DataInterface)
-
-        DataInterface.cleanup_unused_resources(data)
-
-        assert data.method_calls == [
-            call.cleanup_surprise_playlists(),
-            call.cleanup_unused_tracks(),
-            call.cleanup_unused_thumbnails(),
-        ]
 
     def test_backup_omits_temporary_playlists_and_dependencies(self, tmp_path):
         data = DataInterface()
@@ -203,12 +191,6 @@ class TestSurpriseCleanup:
         )
         assert set(backed_up.audios) == {101}
         assert backed_up.get_user("alice").get_surprise_playlist() is None
-
-    def test_scheduler_cleanup_was_removed(self):
-        import web_app.__main__ as web_main
-
-        assert not hasattr(web_main, "scheduled_tubio_cleanup")
-
 
 class TestLazyCache:
     @patch.object(AudioDownloader, "download_thumbnail")
@@ -277,7 +259,7 @@ class TestSurpriseRoutes:
         assert "stack" not in event
         assert "context" not in event
 
-    @patch("web_app.tubio.get_playlists_data", return_value=[])
+    @patch("web_app.tubio.routes.search.get_playlists_data", return_value=[])
     def test_discover_has_loading_shell_and_contextual_refresh_action(
         self, playlists_data, client, auth_mock
     ):
@@ -292,7 +274,11 @@ class TestSurpriseRoutes:
         assert 'aria-busy="true"' in html
         assert 'id="refresh-surprise-action"' in html
         assert 'data-tubio-action="refresh-surprise"' in html
+        assert "api.js?v=" in html
+        assert "player.js?v=" in html
         assert "script.js?v=" in html
+        assert html.index("api.js?v=") < html.index("player.js?v=")
+        assert html.index("player.js?v=") < html.index("script.js?v=")
         assert "style.css?v=" in html
 
     def test_regular_and_surprise_share_one_track_component(self, app):
@@ -353,7 +339,7 @@ class TestSurpriseRoutes:
         user.set_surprise_playlist(_surprise(101))
         data = _mock_data_interface(metadata)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.surprise.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             response = client.post(
@@ -364,6 +350,7 @@ class TestSurpriseRoutes:
         assert response.status_code == 200
         assert user.get_playlist().audio_crcs == [101]
         assert response.get_json()["playlist"]["html"].count("Favourited") >= 1
+        assert "library_html" in response.get_json()
 
     def test_restore_touches_active_but_rejects_expired_playlist(
         self, client, auth_mock
@@ -374,7 +361,7 @@ class TestSurpriseRoutes:
         user.set_surprise_playlist(_surprise(101, last_active=old_time))
         data = _mock_data_interface(metadata)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.surprise.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             active_response = client.get("/tubio/surprise")
@@ -386,7 +373,7 @@ class TestSurpriseRoutes:
         assert active_response.get_json()["playlist"] is not None
         assert expired_response.get_json()["playlist"] is None
 
-    @patch("web_app.tubio.AudioDownloader.cache_youtube_audio")
+    @patch("web_app.tubio.routes.media.AudioDownloader.cache_youtube_audio")
     def test_cache_request_touches_surprise_playlist(
         self, cache_youtube_audio, client, auth_mock, tmp_path
     ):
@@ -402,7 +389,7 @@ class TestSurpriseRoutes:
         user.set_surprise_playlist(_surprise(101, last_active=old_time))
         data = _mock_data_interface(metadata, tmp_path)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.media.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             response = client.post(
@@ -414,9 +401,9 @@ class TestSurpriseRoutes:
         cache_youtube_audio.assert_called_once_with(audio)
         assert user.get_surprise_playlist().last_active > old_time
 
-    @patch("web_app.tubio.AudioDownloader.download_audio_file")
-    @patch("web_app.tubio.AudioDownloader.get_mix_related")
-    @patch("web_app.tubio.get_cached_yt_vid_ids")
+    @patch("web_app.tubio.routes.surprise.AudioDownloader.download_audio_file")
+    @patch("web_app.tubio.routes.surprise.AudioDownloader.get_mix_related")
+    @patch("web_app.tubio.routes.surprise.get_cached_yt_vid_ids")
     def test_initial_generation_uses_flat_uncached_playlist_and_cleans(
         self, owned, related, download_audio, client, auth_mock
     ):
@@ -432,7 +419,7 @@ class TestSurpriseRoutes:
         metadata = Metadata()
         data = _mock_data_interface(metadata)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.surprise.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             response = client.post(
@@ -450,7 +437,7 @@ class TestSurpriseRoutes:
         data.cleanup_unused_resources.assert_called_once()
         download_audio.assert_not_called()
 
-    @patch("web_app.tubio.AudioDownloader.get_mix_related")
+    @patch("web_app.tubio.routes.surprise.AudioDownloader.get_mix_related")
     def test_seeded_generation_uses_only_accessible_selected_track(
         self, related, client, auth_mock
     ):
@@ -488,7 +475,7 @@ class TestSurpriseRoutes:
         user.set_surprise_playlist(_surprise(101))
         data = _mock_data_interface(metadata)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.surprise.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             response = client.post(
@@ -504,8 +491,8 @@ class TestSurpriseRoutes:
         assert suggested.yt_video_id == "suggested01"
         assert len(playlist["audio_crcs"]) == 1
 
-    @patch("web_app.tubio.AudioDownloader.get_mix_related")
-    @patch("web_app.tubio.AudioDownloader.search_youtube")
+    @patch("web_app.tubio.routes.surprise.AudioDownloader.get_mix_related")
+    @patch("web_app.tubio.routes.surprise.AudioDownloader.search_youtube")
     def test_uploaded_seed_is_matched_by_title(
         self, search, related, client, auth_mock
     ):
@@ -528,7 +515,7 @@ class TestSurpriseRoutes:
         metadata.get_user(auth_mock.id).get_playlist().audio_crcs = [101]
         data = _mock_data_interface(metadata)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.surprise.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             response = client.post(
@@ -541,7 +528,7 @@ class TestSurpriseRoutes:
         assert search.call_args.args[0].endswith("Uploaded recording")
         related.assert_called_once_with("matchedvideo")
 
-    @patch("web_app.tubio.AudioDownloader.search_youtube")
+    @patch("web_app.tubio.routes.surprise.AudioDownloader.search_youtube")
     def test_unmatched_uploaded_seed_preserves_existing_surprise(
         self, search, client, auth_mock
     ):
@@ -563,7 +550,7 @@ class TestSurpriseRoutes:
         user.set_surprise_playlist(_surprise(202))
         data = _mock_data_interface(metadata)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.surprise.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             response = client.post(
@@ -579,7 +566,7 @@ class TestSurpriseRoutes:
         ("seed_crc", "expected_status"),
         [("not-an-integer", 400), ("101", 404)],
     )
-    @patch("web_app.tubio.AudioDownloader.get_mix_related")
+    @patch("web_app.tubio.routes.surprise.AudioDownloader.get_mix_related")
     def test_seeded_generation_rejects_invalid_or_inaccessible_track(
         self, related, seed_crc, expected_status, client, auth_mock
     ):
@@ -592,7 +579,7 @@ class TestSurpriseRoutes:
         })
         data = _mock_data_interface(metadata)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.surprise.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             response = client.post(
@@ -604,7 +591,7 @@ class TestSurpriseRoutes:
         assert response.status_code == expected_status
         related.assert_not_called()
 
-    @patch("web_app.tubio.AudioDownloader.get_mix_related")
+    @patch("web_app.tubio.routes.surprise.AudioDownloader.get_mix_related")
     def test_seeded_generation_rejects_expired_surprise_track(
         self, related, client, auth_mock
     ):
@@ -623,7 +610,7 @@ class TestSurpriseRoutes:
         )
         data = _mock_data_interface(metadata)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.surprise.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             response = client.post(
@@ -635,8 +622,8 @@ class TestSurpriseRoutes:
         assert response.status_code == 404
         related.assert_not_called()
 
-    @patch("web_app.tubio.AudioDownloader.get_mix_related")
-    @patch("web_app.tubio.get_cached_yt_vid_ids", return_value={"seed000000a"})
+    @patch("web_app.tubio.routes.surprise.AudioDownloader.get_mix_related")
+    @patch("web_app.tubio.routes.surprise.get_cached_yt_vid_ids", return_value={"seed000000a"})
     def test_infinite_growth_appends_to_metadata_playlist(
         self, owned, related, client, auth_mock
     ):
@@ -656,7 +643,7 @@ class TestSurpriseRoutes:
         user.set_surprise_playlist(_surprise(101))
         data = _mock_data_interface(metadata)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.surprise.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             response = client.post(
@@ -668,8 +655,8 @@ class TestSurpriseRoutes:
         assert len(user.get_surprise_playlist().audio_crcs) == 2
         assert response.get_json()["playlist"]["audio_crcs"][0] == 101
 
-    @patch("web_app.tubio.AudioDownloader.get_mix_related", return_value=[])
-    @patch("web_app.tubio.get_cached_yt_vid_ids", return_value={"seed000000a"})
+    @patch("web_app.tubio.routes.surprise.AudioDownloader.get_mix_related", return_value=[])
+    @patch("web_app.tubio.routes.surprise.get_cached_yt_vid_ids", return_value={"seed000000a"})
     def test_failed_refresh_preserves_existing_playlist_and_still_cleans(
         self, owned, related, client, auth_mock
     ):
@@ -680,7 +667,7 @@ class TestSurpriseRoutes:
         user.set_surprise_playlist(existing)
         data = _mock_data_interface(metadata)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.surprise.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             response = client.post(
@@ -694,8 +681,8 @@ class TestSurpriseRoutes:
         assert user.get_surprise_playlist().last_active > old_time
         data.cleanup_unused_resources.assert_called_once()
 
-    @patch("web_app.tubio.AudioDownloader.get_mix_related")
-    @patch("web_app.tubio.get_cached_yt_vid_ids", return_value={"seed000000a"})
+    @patch("web_app.tubio.routes.surprise.AudioDownloader.get_mix_related")
+    @patch("web_app.tubio.routes.surprise.get_cached_yt_vid_ids", return_value={"seed000000a"})
     def test_refresh_allows_tracks_from_previous_surprise(
         self, owned, related, client, auth_mock
     ):
@@ -715,7 +702,7 @@ class TestSurpriseRoutes:
         user.set_surprise_playlist(_surprise(101))
         data = _mock_data_interface(metadata)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.surprise.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             response = client.post(
@@ -737,7 +724,7 @@ class TestSurpriseRoutes:
         user.set_surprise_playlist(_surprise(101, 202))
         data = _mock_data_interface(metadata)
 
-        with patch("web_app.tubio.DataInterface", return_value=data):
+        with patch("web_app.tubio.routes.surprise.DataInterface", return_value=data):
             with client.session_transaction() as session:
                 session["_user_id"] = auth_mock.id
             response = client.post(
@@ -751,3 +738,5 @@ class TestSurpriseRoutes:
         saved = user.playlists["Saved Mix"]
         assert saved.last_active is None
         assert saved.audio_crcs == [202, 101]
+        assert "library_html" in response.get_json()
+        assert "playlists" not in response.get_json()

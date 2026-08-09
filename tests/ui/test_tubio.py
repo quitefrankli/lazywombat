@@ -89,21 +89,10 @@ def tubio_player_page(browser):
         }
         """
     )
-    page.add_script_tag(
-        path=str(
-            Path(__file__).parents[2] / "web_app" / "tubio" / "static" / "script.js"
-        )
-    )
-    page.evaluate(
-        """
-        () => {
-            window.escapeHtml = value => String(value);
-            window.showNotification = () => {};
-            window.reportTubioClientError = () => {};
-            initializeAudioEventListeners();
-        }
-        """
-    )
+    static_dir = Path(__file__).parents[2] / "web_app" / "tubio" / "static"
+    page.add_script_tag(path=str(static_dir / "api.js"))
+    page.add_script_tag(path=str(static_dir / "player.js"))
+    page.evaluate("window.Tubio.player.init()")
     yield page
     page.close()
 
@@ -111,6 +100,91 @@ def tubio_player_page(browser):
 def test_tubio_page_loads(tubio_page):
     """Test that Tubio page loads correctly."""
     expect(tubio_page).to_have_title("Tubio")
+
+
+def test_player_exposes_a_small_namespaced_interface(tubio_player_page):
+    assert tubio_player_page.evaluate(
+        """
+        () => Object.keys(window.Tubio?.player || {}).sort()
+        """
+    ) == ["handleAction", "init", "reconcileDom", "state"]
+
+
+def test_sidebar_preferences_survive_library_reconciliation(browser):
+    page = browser.new_page()
+    page.set_content(
+        """
+        <div id="tubio-tab-content"
+             data-sidebar-collapsed-storage-key="tubioSidebarCollapsed"
+             data-sidebar-selected-storage-key="tubioSelectedPlaylist">
+          <div id="playlists" class="tab-pane">
+            <div class="tubio-layout">
+              <button class="sidebar-item" data-tubio-action="select-playlist" data-playlist-slug="First"></button>
+              <button class="sidebar-item" data-tubio-action="select-playlist" data-playlist-slug="Second"></button>
+              <section class="playlist-panel" id="panel-First"></section>
+              <section class="playlist-panel" id="panel-Second"></section>
+              <div id="panel-empty"></div>
+            </div>
+          </div>
+          <div id="search" class="tab-pane"></div>
+          <div id="discover" class="tab-pane"></div>
+        </div>
+        <button id="toggle-sidebar" data-tubio-action="toggle-sidebar"></button>
+        <div id="tubio-trackbar"></div>
+        """
+    )
+    page.evaluate(
+        """
+        () => {
+            const values = new Map();
+            Object.defineProperty(window, 'sessionStorage', {
+                configurable: true,
+                value: {
+                    getItem: key => values.has(key) ? values.get(key) : null,
+                    setItem: (key, value) => values.set(key, String(value))
+                }
+            });
+        }
+        """
+    )
+    static_dir = Path(__file__).parents[2] / "web_app" / "tubio" / "static"
+    page.add_script_tag(path=str(static_dir / "api.js"))
+    page.add_script_tag(path=str(static_dir / "player.js"))
+    page.add_script_tag(path=str(static_dir / "script.js"))
+    page.evaluate("document.dispatchEvent(new Event('DOMContentLoaded'))")
+
+    page.locator('[data-playlist-slug="Second"]').click()
+    page.locator('#toggle-sidebar').click()
+    page.evaluate(
+        """
+        window.Tubio.ui.replaceLibrary(`
+          <div class="tubio-layout">
+            <button class="sidebar-item" data-tubio-action="select-playlist" data-playlist-slug="First"></button>
+            <button class="sidebar-item" data-tubio-action="select-playlist" data-playlist-slug="Second"></button>
+            <section class="playlist-panel" id="panel-First"></section>
+            <section class="playlist-panel" id="panel-Second"></section>
+            <div id="panel-empty"></div>
+          </div>
+        `)
+        """
+    )
+
+    assert page.evaluate(
+        """
+        () => ({
+            selected: sessionStorage.getItem('tubioSelectedPlaylist'),
+            collapsed: sessionStorage.getItem('tubioSidebarCollapsed'),
+            selectedPanel: document.getElementById('panel-Second').classList.contains('active'),
+            collapsedLayout: document.querySelector('.tubio-layout').classList.contains('sidebar-collapsed')
+        })
+        """
+    ) == {
+        "selected": "Second",
+        "collapsed": "1",
+        "selectedPanel": True,
+        "collapsedLayout": True,
+    }
+    page.close()
 
 
 def test_playlists_nav_present(tubio_page):
@@ -248,21 +322,23 @@ def test_suggest_more_switches_to_discover_and_posts_track_seed(
             );
 
             const posts = [];
-            window.jsonPost = async (url, fields = {}) => {
+            window.Tubio.ui = {
+                switchTab: tab => { window.location.hash = `#${tab}`; },
+                decorate: () => {},
+                notify: () => {}
+            };
+            window.Tubio.api.post = async (url, fields = {}) => {
                 posts.push({ url, fields });
                 return {
-                    ok: true,
-                    status: 200,
-                    json: async () => ({
-                        playlist: {
-                            audio_crcs: [303],
-                            html: '<section id="seeded-playlist"></section>'
-                        }
-                    })
+                    playlist: {
+                        audio_crcs: [303],
+                        html: '<section id="seeded-playlist"></section>'
+                    }
                 };
             };
 
-            await suggestMoreFromTrack(
+            await window.Tubio.player.handleAction(
+                'suggest-more',
                 document.getElementById('suggest-more')
             );
 
@@ -404,7 +480,7 @@ def test_trackbar_title_scrolls_when_overflowing(tubio_page):
             const title = document.getElementById('trackbar-title');
             wrap.style.width = '96px';
             title.textContent = 'A very long track title that cannot fit in the available mobile space';
-            updateTrackbarTitleOverflow();
+            window.dispatchEvent(new Event('resize'));
         }
     """)
 
@@ -442,8 +518,7 @@ def test_trackbar_volume_applies_to_audio_elements(tubio_page):
         const audio = document.createElement('audio');
         audio.id = 'audio-volume-test';
         document.body.appendChild(audio);
-        initializeAudioEventListeners();
-        initializeTrackbarVolume();
+        window.Tubio.player.reconcileDom();
     """)
 
     tubio_page.locator("#trackbar-volume").evaluate("(el) => { el.value = '35'; el.dispatchEvent(new Event('input', { bubbles: true })); }")
@@ -457,20 +532,20 @@ def test_player_commits_track_only_after_playing_event(tubio_player_page):
         """
         async () => {
             const item = document.querySelector('[data-track-key="mix-0"]');
-            togglePlayTrack(item);
+            window.Tubio.player.handleAction('toggle-track', item);
             await Promise.resolve();
             const beforePlaying = {
-                crc: getCurrentlyPlayingTrack(),
+                crc: window.Tubio.player.state().currentCrc,
                 highlighted: item.classList.contains('track-playing'),
                 buttonPlaying: item.querySelector('.track-play-btn').classList.contains('btn-success'),
-                pauseCalls: getAudio()._pauseCalls
+                pauseCalls: document.getElementById('tubio-audio')._pauseCalls
             };
-            getAudio()._paused = false;
-            getAudio().dispatchEvent(new Event('playing'));
+            document.getElementById('tubio-audio')._paused = false;
+            document.getElementById('tubio-audio').dispatchEvent(new Event('playing'));
             return {
                 beforePlaying,
                 afterPlaying: {
-                    crc: getCurrentlyPlayingTrack(),
+                    crc: window.Tubio.player.state().currentCrc,
                     highlighted: item.classList.contains('track-playing'),
                     buttonPlaying: item.querySelector('.track-play-btn').classList.contains('btn-success')
                 }
@@ -496,14 +571,14 @@ def test_rejected_play_does_not_claim_success_or_skip_track(tubio_player_page):
     result = tubio_player_page.evaluate(
         """
         async () => {
-            const audio = getAudio();
+            const audio = document.getElementById('tubio-audio');
             audio.play = () => Promise.reject(new DOMException('blocked', 'NotAllowedError'));
             const item = document.querySelector('[data-track-key="mix-0"]');
-            togglePlayTrack(item);
+            window.Tubio.player.handleAction('toggle-track', item);
             await Promise.resolve();
             await Promise.resolve();
             return {
-                crc: getCurrentlyPlayingTrack(),
+                crc: window.Tubio.player.state().currentCrc,
                 loadedKey: audio.dataset.trackKey,
                 highlighted: item.classList.contains('track-playing'),
                 buttonPlaying: item.querySelector('.track-play-btn').classList.contains('btn-success')
@@ -524,7 +599,7 @@ def test_playlist_handoff_is_immediate_and_uses_exact_queue_entry(tubio_player_p
     result = tubio_player_page.evaluate(
         """
         async () => {
-            const audio = getAudio();
+            const audio = document.getElementById('tubio-audio');
             let transitionTimers = 0;
             window.setTimeout = () => { transitionTimers += 1; };
             audio._duration = 30;
@@ -535,15 +610,18 @@ def test_playlist_handoff_is_immediate_and_uses_exact_queue_entry(tubio_player_p
                 return Promise.resolve();
             };
 
-            playAllInPlaylist('Mix');
+            window.Tubio.player.handleAction(
+                'toggle-playlist',
+                document.querySelector('.playlist-panel')
+            );
             audio._paused = true;
             audio.dispatchEvent(new Event('ended'));
             await Promise.resolve();
 
             return {
                 calls: audio._playCalls,
-                currentCrc: getCurrentlyPlayingTrack(),
-                currentIndex: currentPlaylistIndex,
+                currentCrc: window.Tubio.player.state().currentCrc,
+                currentIndex: window.Tubio.player.state().playlistIndex,
                 transitionTimers
             };
         }
@@ -582,14 +660,17 @@ def test_regular_playlist_converts_and_prefetches_next_track(tubio_player_page):
                 };
             };
 
-            const audio = getAudio();
+            const audio = document.getElementById('tubio-audio');
             audio.play = () => {
                 audio._paused = false;
                 audio.dispatchEvent(new Event('playing'));
                 return Promise.resolve();
             };
 
-            playAllInPlaylist('Mix');
+            window.Tubio.player.handleAction(
+                'toggle-playlist',
+                document.querySelector('.playlist-panel')
+            );
             await new Promise(resolve => setTimeout(resolve, 0));
 
             return {
@@ -641,16 +722,14 @@ def test_surprise_playlist_converts_and_prefetches_next_track(tubio_player_page)
                 };
             };
 
-            surprisePlaylist = { audio_crcs: [101, 202] };
-            surpriseExhausted = true;
-            const audio = getAudio();
+            const audio = document.getElementById('tubio-audio');
             audio.play = () => {
                 audio._paused = false;
                 audio.dispatchEvent(new Event('playing'));
                 return Promise.resolve();
             };
 
-            playSurpriseTrack(0);
+            window.Tubio.player.handleAction('toggle-surprise-track', items[0]);
             await new Promise(resolve => setTimeout(resolve, 0));
 
             return {
@@ -680,7 +759,7 @@ def test_duplicate_track_occurrences_each_play_in_queue_order(tubio_player_page)
             items[1].dataset.audioCrc = '101';
             items[1].dataset.audioSrc = '/audio/101';
 
-            const audio = getAudio();
+            const audio = document.getElementById('tubio-audio');
             audio._duration = 30;
             audio.play = () => {
                 audio._playCalls.push(audio.dataset.trackKey);
@@ -689,15 +768,18 @@ def test_duplicate_track_occurrences_each_play_in_queue_order(tubio_player_page)
                 return Promise.resolve();
             };
 
-            playAllInPlaylist('Mix');
+            window.Tubio.player.handleAction(
+                'toggle-playlist',
+                document.querySelector('.playlist-panel')
+            );
             audio._paused = true;
             audio.dispatchEvent(new Event('ended'));
             await Promise.resolve();
 
             return {
                 calls: audio._playCalls,
-                currentCrc: getCurrentlyPlayingTrack(),
-                currentIndex: currentPlaylistIndex
+                currentCrc: window.Tubio.player.state().currentCrc,
+                currentIndex: window.Tubio.player.state().playlistIndex
             };
         }
         """
@@ -725,13 +807,16 @@ def test_media_session_play_retries_failed_loaded_track(tubio_player_page):
                 configurable: true,
                 value: mediaSession
             });
-            initializeMediaSession();
+            window.Tubio.player.reconcileDom();
 
-            const audio = getAudio();
+            const audio = document.getElementById('tubio-audio');
             audio.play = () => Promise.reject(
                 new DOMException('background handoff failed', 'NotAllowedError')
             );
-            togglePlayTrack(document.querySelector('[data-track-key="mix-0"]'));
+            window.Tubio.player.handleAction(
+                'toggle-track',
+                document.querySelector('[data-track-key="mix-0"]')
+            );
             await Promise.resolve();
             await Promise.resolve();
             const stateAfterFailure = mediaSession.playbackState;
@@ -747,7 +832,7 @@ def test_media_session_play_retries_failed_loaded_track(tubio_player_page):
             return {
                 stateAfterFailure,
                 stateAfterRetry: mediaSession.playbackState,
-                currentCrc: getCurrentlyPlayingTrack()
+                currentCrc: window.Tubio.player.state().currentCrc
             };
         }
         """
@@ -764,7 +849,7 @@ def test_play_pause_seek_and_trim_share_confirmed_player_state(tubio_player_page
     result = tubio_player_page.evaluate(
         """
         async () => {
-            const audio = getAudio();
+            const audio = document.getElementById('tubio-audio');
             audio._duration = 30;
             audio.play = () => {
                 audio._playCalls.push(audio.dataset.trackKey);
@@ -773,18 +858,23 @@ def test_play_pause_seek_and_trim_share_confirmed_player_state(tubio_player_page
                 return Promise.resolve();
             };
 
-            togglePlayTrack(document.querySelector('[data-track-key="mix-0"]'));
+            window.Tubio.player.handleAction(
+                'toggle-track',
+                document.querySelector('[data-track-key="mix-0"]')
+            );
             audio._metadataReady = true;
             audio._readyState = 1;
             audio.dispatchEvent(new Event('loadedmetadata'));
             const trimmedStart = audio.currentTime;
 
-            seekTrack('101', 100);
+            const scrubber = document.getElementById('trackbar-scrubber');
+            scrubber.value = '100';
+            scrubber.dispatchEvent(new Event('input'));
             const trimmedEnd = audio.currentTime;
 
-            togglePlayPause();
+            window.Tubio.player.handleAction('toggle-playback');
             const paused = audio._paused;
-            togglePlayPause();
+            window.Tubio.player.handleAction('toggle-playback');
             await Promise.resolve();
 
             return {
@@ -793,7 +883,7 @@ def test_play_pause_seek_and_trim_share_confirmed_player_state(tubio_player_page
                 paused,
                 resumedAt: audio.currentTime,
                 playCalls: audio._playCalls.length,
-                currentCrc: getCurrentlyPlayingTrack()
+                currentCrc: window.Tubio.player.state().currentCrc
             };
         }
         """

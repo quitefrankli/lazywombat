@@ -87,7 +87,9 @@
 {% endblock %}
 
 {% block content %}
-<div class="tab-content tubio-tab-content" id="tubio-tab-content">
+<div class="tab-content tubio-tab-content" id="tubio-tab-content"
+     data-sidebar-collapsed-storage-key="{{ tubio_sidebar.collapsed_storage_key }}"
+     data-sidebar-selected-storage-key="{{ tubio_sidebar.selected_storage_key }}">
     <!-- Playlists Tab -->
     <div class="tab-pane fade" id="playlists" role="tabpanel" aria-labelledby="playlists-tab">
         {% include 'playlists.html' with context %}

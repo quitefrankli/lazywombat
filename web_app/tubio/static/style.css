@@ -708,6 +708,7 @@ audio::-webkit-media-controls-panel {
   align-items: center;
   gap: 0;
   min-width: 0;
+  background: var(--hw-gradient-soft);
 }
 
 .search-result-title {
@@ -716,6 +717,35 @@ audio::-webkit-media-controls-panel {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.search-result-thumbnail {
+  max-height: 11.25rem;
+}
+
+.search-result-description {
+  max-height: 6.25rem;
+  overflow-y: auto;
+}
+
+.search-result-progress {
+  height: 1.25rem;
+}
+
+.search-result-progress .progress-bar {
+  width: 0;
+}
+
+.search-result-cached {
+  background-color: var(--hw-text-muted);
+  border-color: var(--hw-text-muted);
+}
+
+.tubio-notification {
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 9999;
+  min-width: min(18.75rem, calc(100vw - 2.5rem));
 }
 
 /* ============================================================

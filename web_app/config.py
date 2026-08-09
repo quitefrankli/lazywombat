@@ -87,12 +87,30 @@ class TubioConfig:
     search_length_filter_sps: tuple = (None, "EgIYAQ==", "EgIYAw==")
     test_video_id: str = "dQw4w9WgXcQ"
     upload_allowed_extensions: tuple = ("mp3", "mp4", "m4a")
+    upload_transcode_format: str = "mp4"
+    upload_transcode_bitrate: str = "128k"
     download_progress_poll_interval_s: float = 0.3
     # TTL for the Redis download-progress record. Outlives a normal download so
     # the SSE client (possibly on another gunicorn worker) can read it; expires
     # on its own if a download dies without clearing the key.
     download_progress_ttl_s: int = 3600
+    download_progress_redis_prefix: str = "nabicat:tubio:progress:"
     youtube_403_fallback_player_client: str = "web"
+    youtube_watch_url_template: str = "https://www.youtube.com/watch?v={video_id}"
+    youtube_mix_url_template: str = "https://www.youtube.com/watch?v={video_id}&list=RD{video_id}"
+    youtube_thumbnail_url_template: str = "https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
+    youtube_search_url: str = "https://www.youtube.com/results"
+    youtube_url_patterns: tuple[str, ...] = (
+        r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})',
+        r'(?:https?://)?(?:www\.)?youtube\.com/shorts/([a-zA-Z0-9_-]{11})',
+        r'(?:https?://)?youtu\.be/([a-zA-Z0-9_-]{11})',
+        r'(?:https?://)?(?:www\.)?youtube\.com/embed/([a-zA-Z0-9_-]{11})',
+    )
+    youtube_search_request_timeout_s: float = 10.0
+    youtube_thumbnail_request_timeout_s: float = 10.0
+    youtube_download_format: str = "bestaudio[ext=m4a]/bestaudio/best"
+    youtube_audio_preferred_codec: str = "m4a"
+    youtube_audio_preferred_quality: str = "32"
     default_playlist_name: str = "Favourites"
     trackbar_volume_min_percent: int = 0
     trackbar_volume_max_percent: int = 100
@@ -100,6 +118,8 @@ class TubioConfig:
     trackbar_default_volume_percent: int = 80
     trackbar_volume_storage_key: str = "tubio.volume"
     trackbar_muted_storage_key: str = "tubio.muted"
+    sidebar_collapsed_storage_key: str = "tubioSidebarCollapsed"
+    sidebar_selected_storage_key: str = "tubioSelectedPlaylist"
     autocomplete_max_suggestions: int = 8
     autocomplete_min_query_len: int = 2
     autocomplete_debounce_ms: int = 200
@@ -114,8 +134,23 @@ class TubioConfig:
     surprise_playlist_inactivity_ttl_s: int = 3600
     surprise_crc_collision_attempts: int = 100
     surprise_media_rate_limit: str = "30 per minute"
+    playlist_create_rate_limit: str = "10 per minute"
+    playlist_move_rate_limit: str = "20 per minute"
+    playlist_delete_rate_limit: str = "10 per minute"
+    upload_rate_limit: str = "20 per minute"
+    audio_serve_rate_limit: str = "100 per second"
+    resync_rate_limit: str = "5 per minute"
     client_log_rate_limit: str = "30 per minute"
     client_log_max_length: int = 2000
+    client_log_scopes: tuple[str, ...] = (
+        "discover-initialize",
+        "media-element",
+        "media-session-metadata",
+        "playback-request",
+        "surprise-payload",
+        "surprise-refresh",
+        "track-prefetch",
+    )
     surprise_cache_claim_ttl_s: int = 3600
     surprise_cache_claim_token_bytes: int = 12
     surprise_cache_poll_interval_ms: int = 750

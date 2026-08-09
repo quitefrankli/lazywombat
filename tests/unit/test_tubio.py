@@ -1,12 +1,18 @@
 import pytest
 
 from unittest.mock import Mock, patch, MagicMock
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from bs4 import BeautifulSoup
 from yt_dlp.utils import DownloadError
 
 from web_app.tubio.audio_downloader import AudioDownloader, VideoTooLongError, DownloadProgress, get_download_progress, clear_download_progress
-from web_app.tubio.data_interface import UserMetadata
+from web_app.tubio.data_interface import (
+    AudioMetadata,
+    DataInterface,
+    Playlist,
+    UserMetadata,
+)
 from web_app.config import ConfigManager
 from web_app.users import User
 import web_app.helpers as helpers
@@ -32,6 +38,16 @@ def auth_mock():
     helpers.login_manager._user_callback = lambda username: user if username == user.id else None
     yield user
     helpers.login_manager._user_callback = original_user_loader
+
+
+@pytest.fixture
+def tubio_data(tmp_path):
+    data = DataInterface()
+    data.app_dir = tmp_path / "tubio"
+    data.app_audio_dir = data.app_dir / "audio"
+    data.app_thumbnails_dir = data.app_dir / "thumbnails"
+    data.app_metadata_file = data.app_dir / "metadata.json"
+    return data
 
 
 class TestExtractVideoId:
@@ -227,11 +243,8 @@ class TestGetVideoInfo:
 
 
 class TestDownloadAudioFile:
-    @patch('web_app.tubio.audio_downloader.ConfigManager')
     @patch('web_app.tubio.audio_downloader.yt_dlp.YoutubeDL')
-    def test_retries_youtube_403_with_fallback_player_client(self, mock_ydl_class, mock_config):
-        mock_config.return_value.tubio.youtube_403_fallback_player_client = "web"
-
+    def test_retries_youtube_403_with_fallback_player_client(self, mock_ydl_class):
         first_ydl = MagicMock()
         first_ydl.__enter__ = Mock(return_value=first_ydl)
         first_ydl.__exit__ = Mock(return_value=False)
@@ -299,10 +312,7 @@ class TestSearchYoutubeWithDirectUrl:
     """Tests for search_youtube handling direct URLs."""
 
     @patch.object(AudioDownloader, 'get_video_info', return_value={'video_id': 'dQw4w9WgXcQ'})
-    @patch('web_app.tubio.audio_downloader.ConfigManager')
-    def test_direct_url_uses_direct_video_duration_limit(self, mock_config, mock_get_video_info):
-        mock_config.return_value.tubio.direct_video_max_length = timedelta(hours=1)
-
+    def test_direct_url_uses_direct_video_duration_limit(self, mock_get_video_info):
         result = AudioDownloader.search_youtube(
             'https://youtu.be/dQw4w9WgXcQ',
             set(),
@@ -404,7 +414,7 @@ class TestDownloadProgress:
 
     @patch('web_app.tubio.routes.downloads.get_playlists_data', return_value=[])
     @patch('web_app.tubio.routes.downloads.get_cached_yt_vid_ids', return_value=set())
-    @patch('web_app.tubio.AudioDownloader.download_youtube_audio')
+    @patch('web_app.tubio.routes.downloads.AudioDownloader.download_youtube_audio')
     def test_youtube_download_resolves_playlist_dependencies(
         self, mock_download, _mock_cached_ids, _mock_playlists, client, auth_mock
     ):
@@ -419,29 +429,67 @@ class TestDownloadProgress:
         )
 
         assert response.status_code == 200
-        assert response.get_json()['success'] is True
+        payload = response.get_json()
+        assert payload['success'] is True
+        assert 'library_html' in payload
+        assert 'playlists' not in payload
 
     def test_progress_tracking(self):
         clear_download_progress('test123')
 
-        # Construction write-throughs to Redis; a fresh read (as a separate
-        # gunicorn worker's SSE stream would do) sees the initial state.
-        DownloadProgress('test123')
+        # A fresh read (as a separate gunicorn worker's SSE stream would do)
+        # sees explicitly persisted state.
+        writer = DownloadProgress.start('test123')
         progress = get_download_progress('test123')
         assert progress is not None
         assert progress.percent == 0
         assert progress.status == "starting"
 
-        # Mutations on the writer object propagate to independent readers.
-        writer = DownloadProgress('test123')
-        writer.percent = 50
-        writer.status = "downloading"
+        writer.update(percent=50, status="downloading")
         reader = get_download_progress('test123')
         assert reader.percent == 50
         assert reader.status == "downloading"
 
         clear_download_progress('test123')
         assert get_download_progress('test123') is None
+
+    def test_completed_download_returns_persisted_audio(
+        self, auth_mock, tubio_data, tmp_path
+    ):
+        video_id = 'dQw4w9WgXcQ'
+        temp_template = tmp_path / 'download.%(ext)s'
+        tubio_data.find_avail_temp_file_path = Mock(return_value=temp_template)
+
+        def write_download(_video_id, options):
+            Path(options['outtmpl'].replace('%(ext)s', 'm4a')).write_bytes(
+                b'converted-audio'
+            )
+
+        clear_download_progress(video_id)
+        with (
+            patch(
+                'web_app.tubio.audio_downloader.DataInterface',
+                return_value=tubio_data,
+            ),
+            patch.object(
+                AudioDownloader,
+                'download_audio_file',
+                side_effect=write_download,
+            ),
+            patch.object(AudioDownloader, 'download_thumbnail', return_value=None),
+        ):
+            audio = AudioDownloader.download_youtube_audio(
+                video_id,
+                'Completed track',
+                auth_mock,
+            )
+
+        persisted = tubio_data.get_metadata()
+        progress = get_download_progress(video_id)
+        assert audio == persisted.audios[audio.crc]
+        assert persisted.users[auth_mock.id].get_playlist().audio_crcs == [audio.crc]
+        assert tubio_data.get_audio_path(audio.crc).read_bytes() == b'converted-audio'
+        assert progress.status == 'complete'
 
 
 class TestTrimAudio:
@@ -457,33 +505,36 @@ class TestTrimAudio:
         user_metadata.set_playback_trim(123, 0, 0)
         assert 123 not in user_metadata.playback_trims
 
-    @patch('web_app.tubio.DataInterface')
     def test_updates_playback_boundaries_without_writing_audio(
-        self, mock_di_class, client, auth_mock
+        self, client, auth_mock, tubio_data
     ):
-        di = mock_di_class.return_value
-        metadata = MagicMock()
-        audio_metadata = Mock(title='Original')
-        metadata.audios = {123: audio_metadata}
-        user_metadata = metadata.get_user.return_value
-        user_metadata.playlists = {
-            'Favourites': Mock(audio_crcs=[123]),
-        }
-        di.edit_metadata.return_value.__enter__.return_value = metadata
+        with tubio_data.edit_metadata() as metadata:
+            metadata.audios[123] = AudioMetadata(crc=123, title='Original')
+            metadata.get_user(auth_mock.id).get_playlist().audio_crcs = [123]
+        tubio_data.app_audio_dir.mkdir(parents=True)
+        audio_path = tubio_data.app_audio_dir / '123.m4a'
+        audio_path.write_bytes(b'original-audio')
         with client.session_transaction() as session:
             session['_user_id'] = auth_mock.id
 
-        response = client.post('/tubio/audio/123/trim', data={
-            'trim_start_s': '1.5',
-            'trim_end_s': '2',
-        }, headers={'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'})
+        with patch(
+            'web_app.tubio.routes.media.DataInterface',
+            return_value=tubio_data,
+        ):
+            response = client.post('/tubio/audio/123/trim', data={
+                'trim_start_s': '1.5',
+                'trim_end_s': '2',
+            }, headers={'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'})
 
         assert response.status_code == 200
         assert response.get_json()['trim_start_s'] == 1.5
-        user_metadata.set_playback_trim.assert_called_once_with(123, 1.5, 2)
-        di.save_audio.assert_not_called()
+        assert tubio_data.get_user_metadata(auth_mock).get_playback_trim(123).model_dump() == {
+            'start_s': 1.5,
+            'end_s': 2,
+        }
+        assert audio_path.read_bytes() == b'original-audio'
 
-    @patch('web_app.tubio.DataInterface')
+    @patch('web_app.tubio.routes.media.DataInterface')
     def test_rejects_negative_playback_boundary(
         self, mock_di_class, client, auth_mock
     ):
@@ -500,9 +551,263 @@ class TestTrimAudio:
         mock_di_class.return_value.edit_metadata.assert_not_called()
 
 
+class TestPlaylistMutations:
+    def test_deleting_regular_playlist_moves_its_tracks_to_favourites(
+        self, client, auth_mock, tubio_data
+    ):
+        with tubio_data.edit_metadata() as metadata:
+            user_metadata = metadata.get_user(auth_mock.id)
+            user_metadata.get_playlist("Road Trip").audio_crcs = [101, 202]
+
+        with client.session_transaction() as session:
+            session['_user_id'] = auth_mock.id
+
+        with patch('web_app.tubio.routes.playlists.DataInterface', return_value=tubio_data):
+            response = client.post(
+                '/tubio/delete_playlist',
+                data={'playlist_name': 'Road Trip'},
+            )
+
+        user_metadata = tubio_data.get_user_metadata(auth_mock)
+        assert response.status_code == 302
+        assert "Road Trip" not in user_metadata.playlists
+        assert user_metadata.get_playlist("Favourites").audio_crcs == [101, 202]
+
+    def test_removing_a_custom_playlist_track_deletes_unreferenced_media(
+        self, client, auth_mock, tubio_data
+    ):
+        with tubio_data.edit_metadata() as metadata:
+            metadata.audios[101] = AudioMetadata(crc=101, title="Road Song")
+            user_metadata = metadata.get_user(auth_mock.id)
+            user_metadata.get_playlist("Favourites").audio_crcs = [101]
+            user_metadata.get_playlist("Road Trip").audio_crcs = [101, 101]
+            user_metadata.set_playback_trim(101, 1.5, 2)
+
+        tubio_data.app_audio_dir.mkdir(parents=True)
+        (tubio_data.app_audio_dir / "101.m4a").write_bytes(b"audio")
+        tubio_data.app_thumbnails_dir.mkdir(parents=True)
+        (tubio_data.app_thumbnails_dir / "101.jpg").write_bytes(b"thumbnail")
+
+        with client.session_transaction() as session:
+            session['_user_id'] = auth_mock.id
+
+        with patch('web_app.tubio.routes.media.DataInterface', return_value=tubio_data):
+            response = client.post(
+                '/tubio/delete_audio/101',
+                headers={
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            )
+
+        payload = response.get_json()
+        metadata = tubio_data.get_metadata()
+        user_metadata = metadata.users[auth_mock.id]
+        assert response.status_code == 200
+        assert payload['success'] is True
+        assert 'library_html' in payload
+        assert all(
+            101 not in playlist.audio_crcs
+            for playlist in user_metadata.get_playlists()
+        )
+        assert 101 not in user_metadata.playback_trims
+        assert 101 not in metadata.audios
+        assert not (tubio_data.app_audio_dir / "101.m4a").exists()
+        assert not (tubio_data.app_thumbnails_dir / "101.jpg").exists()
+
+    def test_removing_a_track_preserves_media_referenced_by_another_user(
+        self, client, auth_mock, tubio_data
+    ):
+        with tubio_data.edit_metadata() as metadata:
+            metadata.audios[101] = AudioMetadata(crc=101, title="Shared Song")
+            metadata.get_user(auth_mock.id).get_playlist(
+                "Road Trip"
+            ).audio_crcs = [101]
+            metadata.get_user("another-listener").get_playlist().audio_crcs = [101]
+        tubio_data.app_audio_dir.mkdir(parents=True)
+        audio_path = tubio_data.app_audio_dir / "101.m4a"
+        audio_path.write_bytes(b"shared-audio")
+
+        with client.session_transaction() as session:
+            session['_user_id'] = auth_mock.id
+
+        with (
+            patch(
+                'web_app.tubio.routes.media.DataInterface',
+                return_value=tubio_data,
+            ),
+            patch.object(
+                tubio_data,
+                'cleanup_unused_resources',
+                wraps=tubio_data.cleanup_unused_resources,
+            ) as cleanup,
+        ):
+            response = client.post(
+                '/tubio/delete_audio/101',
+                headers={'Accept': 'application/json'},
+            )
+
+        metadata = tubio_data.get_metadata()
+        assert response.status_code == 200
+        assert metadata.users[auth_mock.id].playlists["Road Trip"].audio_crcs == []
+        assert metadata.users["another-listener"].get_playlist().audio_crcs == [101]
+        assert metadata.audios[101].title == "Shared Song"
+        assert audio_path.read_bytes() == b"shared-audio"
+        cleanup.assert_not_called()
+
+    def test_moving_tracks_between_regular_playlists_preserves_surprise(
+        self, client, auth_mock, tubio_data
+    ):
+        with tubio_data.edit_metadata() as metadata:
+            metadata.audios[101] = AudioMetadata(crc=101, title="Road Song")
+            user_metadata = metadata.get_user(auth_mock.id)
+            user_metadata.get_playlist("Favourites").audio_crcs = [101]
+            user_metadata.get_playlist("Road Trip")
+            user_metadata.set_surprise_playlist(Playlist(
+                name="Surprise Playlist",
+                audio_crcs=[101],
+                last_active=datetime.now(timezone.utc),
+            ))
+
+        with client.session_transaction() as session:
+            session['_user_id'] = auth_mock.id
+
+        with patch('web_app.tubio.routes.playlists.DataInterface', return_value=tubio_data):
+            response = client.post(
+                '/tubio/move_tracks_to_playlist',
+                data={
+                    'target_playlist': 'Road Trip',
+                    'song_crcs': '101',
+                },
+            )
+
+        user_metadata = tubio_data.get_user_metadata(auth_mock)
+        assert response.status_code == 302
+        assert user_metadata.playlists["Favourites"].audio_crcs == []
+        assert user_metadata.playlists["Road Trip"].audio_crcs == [101]
+        assert user_metadata.get_surprise_playlist().audio_crcs == [101]
+
+    def test_moving_tracks_rejects_audio_outside_the_users_library(
+        self, client, auth_mock, tubio_data
+    ):
+        with tubio_data.edit_metadata() as metadata:
+            metadata.audios[101] = AudioMetadata(crc=101, title="Someone Else's Song")
+            user_metadata = metadata.get_user(auth_mock.id)
+            user_metadata.get_playlist("Favourites")
+            user_metadata.get_playlist("Road Trip")
+
+        with client.session_transaction() as session:
+            session['_user_id'] = auth_mock.id
+
+        with patch('web_app.tubio.routes.playlists.DataInterface', return_value=tubio_data):
+            response = client.post(
+                '/tubio/move_tracks_to_playlist',
+                data={
+                    'target_playlist': 'Road Trip',
+                    'song_crcs': '101',
+                },
+            )
+
+        user_metadata = tubio_data.get_user_metadata(auth_mock)
+        assert response.status_code == 302
+        assert user_metadata.playlists["Road Trip"].audio_crcs == []
+
+    def test_removed_bulk_delete_route_is_not_registered(self, app):
+        tubio_rules = {
+            rule.rule
+            for rule in app.url_map.iter_rules()
+            if rule.endpoint.startswith("tubio.")
+        }
+
+        assert "/tubio/delete_selected_songs" not in tubio_rules
+
+
+class TestSearchRoutes:
+    def test_search_marks_tracks_cached_from_any_regular_playlist(
+        self, client, auth_mock, tubio_data
+    ):
+        with tubio_data.edit_metadata() as metadata:
+            metadata.audios[101] = AudioMetadata(
+                crc=101,
+                title="Road Song",
+                yt_video_id="abcdefghijk",
+            )
+            metadata.get_user(auth_mock.id).get_playlist(
+                "Road Trip"
+            ).audio_crcs = [101]
+
+        with client.session_transaction() as session:
+            session['_user_id'] = auth_mock.id
+
+        search_result = {
+            'results': [],
+            'page': 0,
+            'total_pages': 1,
+            'filtered_too_long': 0,
+            'max_video_length_minutes': 30,
+        }
+        with (
+            patch('web_app.tubio.routes.playlists.DataInterface', return_value=tubio_data),
+            patch(
+                'web_app.tubio.routes.search.AudioDownloader.search_youtube',
+                return_value=search_result,
+            ) as search_youtube,
+        ):
+            response = client.post(
+                '/tubio/search',
+                data={'youtube_query': 'road song'},
+                headers={'Accept': 'application/json'},
+            )
+
+        assert response.status_code == 200
+        assert search_youtube.call_args.args[1] == {'abcdefghijk'}
+
+    def test_search_returns_server_rendered_delegated_actions(
+        self, client, auth_mock, tubio_data
+    ):
+        with client.session_transaction() as session:
+            session['_user_id'] = auth_mock.id
+
+        search_result = {
+            'results': [{
+                'video_id': 'abcdefghijk',
+                'title': "A Road Song",
+                'description': "A description",
+                'view_count': '123',
+                'published': '2024',
+                'length': '3:20',
+                'thumbnail_url': 'https://example.test/thumbnail.jpg',
+                'cached': False,
+            }],
+            'page': 0,
+            'total_pages': 2,
+            'filtered_too_long': 0,
+            'max_video_length_minutes': 30,
+        }
+        with (
+            patch('web_app.tubio.routes.playlists.DataInterface', return_value=tubio_data),
+            patch(
+                'web_app.tubio.routes.search.AudioDownloader.search_youtube',
+                return_value=search_result,
+            ),
+        ):
+            response = client.post(
+                '/tubio/search',
+                data={'youtube_query': 'road song'},
+                headers={'Accept': 'application/json'},
+            )
+
+        html = response.get_json()['results_html']
+        assert 'A Road Song' in html
+        assert 'data-tubio-action="download-video"' in html
+        assert 'data-tubio-action="search-page"' in html
+        assert 'onclick=' not in html
+        assert 'style=' not in html
+
+
 class TestAudioRangeResponse:
     def test_clamps_open_range_to_end_of_file(self, app, tmp_path):
-        from web_app.tubio import _range_response
+        from web_app.tubio.routes.media import _range_response
 
         audio_path = tmp_path / "track.m4a"
         audio_path.write_bytes(b"abcdef")
@@ -521,7 +826,7 @@ class TestAudioRangeResponse:
 
     def test_rejects_an_unsatisfiable_range_with_file_size(self, app, tmp_path):
         from werkzeug.exceptions import RequestedRangeNotSatisfiable
-        from web_app.tubio import _range_response
+        from web_app.tubio.routes.media import _range_response
 
         audio_path = tmp_path / "track.m4a"
         audio_path.write_bytes(b"abcdef")
@@ -537,7 +842,7 @@ class TestAudioRangeResponse:
         assert response.headers["Content-Range"] == "bytes */6"
 
     def test_full_response_advertises_byte_ranges(self, app, tmp_path):
-        from web_app.tubio import _range_response
+        from web_app.tubio.routes.media import _range_response
 
         audio_path = tmp_path / "track.m4a"
         audio_path.write_bytes(b"abcdef")
@@ -551,7 +856,7 @@ class TestAudioRangeResponse:
 
 
 def test_duplicate_playlist_entries_have_unique_dom_identity(app):
-    from web_app.tubio import _add_track_occurrences
+    from web_app.tubio.routes.playlists import add_track_occurrences
 
     track = {
         "crc": 123,
@@ -569,8 +874,8 @@ def test_duplicate_playlist_entries_have_unique_dom_identity(app):
         "crc": 456,
         "title": "Inserted track",
     }
-    tracks = _add_track_occurrences([track.copy(), track.copy()])
-    rerendered_tracks = _add_track_occurrences(
+    tracks = add_track_occurrences([track.copy(), track.copy()])
+    rerendered_tracks = add_track_occurrences(
         [inserted_track, track.copy(), track.copy()]
     )
 

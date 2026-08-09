@@ -30,22 +30,25 @@ class UserMetadata(BaseModel):
     playlists: dict[str, Playlist] = Field(default_factory=dict)
     playback_trims: dict[int, PlaybackTrim] = Field(default_factory=dict)
 
-    def add_to_playlist(self, audio_crc: int, playlist_name: str = "Favourites") -> None:
+    def add_to_playlist(
+        self,
+        audio_crc: int,
+        playlist_name: str | None = None,
+    ) -> None:
         playlist = self.get_playlist(playlist_name)
         if audio_crc not in playlist.audio_crcs:
             playlist.audio_crcs.append(audio_crc)
 
-    def remove_from_playlist(self, audio_crc: int, playlist_name: str = "Favourites") -> None:
-        playlist = self.get_playlist(playlist_name)
-        if audio_crc in playlist.audio_crcs:
-            playlist.audio_crcs.remove(audio_crc)
+    def remove_from_regular_playlists(self, audio_crc: int) -> None:
+        for playlist in self.get_playlists():
+            playlist.audio_crcs = [
+                crc for crc in playlist.audio_crcs if crc != audio_crc
+            ]
 
-    def remove_from_all_playlists(self, audio_crc: int) -> None:
-        for playlist in self.playlists.values():
-            if audio_crc in playlist.audio_crcs:
-                playlist.audio_crcs.remove(audio_crc)
-
-    def get_playlist(self, playlist_name: str = "Favourites") -> Playlist:
+    def get_playlist(self, playlist_name: str | None = None) -> Playlist:
+        playlist_name = (
+            playlist_name or ConfigManager().tubio.default_playlist_name
+        )
         if playlist_name not in self.playlists:
             self.playlists[playlist_name] = Playlist(name=playlist_name)
         
@@ -119,13 +122,6 @@ class DataInterface(BaseDataInterface):
         self.app_thumbnails_dir = self.app_dir / "thumbnails"
         self.app_metadata_file = self.app_dir / "metadata.json"
 
-    def delete_audio(self, crc: int) -> None:
-        with self.edit_metadata() as metadata:
-            if crc not in metadata.audios:
-                raise ValueError(f"Audio with crc {crc} does not exist.")
-            metadata.audios.pop(crc)
-        self.atomic_delete(self.app_audio_dir / f"{crc}.m4a")
-
     def get_metadata(self) -> Metadata:
         """Read-only load. For mutations use edit_metadata() so the write is locked."""
         return self.load_model(self.app_metadata_file, Metadata, sync=False) or Metadata()
@@ -178,7 +174,12 @@ class DataInterface(BaseDataInterface):
             # convert to m4a (slow transcode — kept outside the metadata lock)
             audio = AudioSegment.from_file(audio_path, format=ext)
             output_path = self.app_audio_dir / f"{crc}.m4a"
-            audio.export(output_path, format='mp4', bitrate="128k")
+            config = ConfigManager().tubio
+            audio.export(
+                output_path,
+                format=config.upload_transcode_format,
+                bitrate=config.upload_transcode_bitrate,
+            )
             audio_path.unlink()  # remove original file
 
         self.upsert_audio_metadata(AudioMetadata(crc=crc, title=title, is_cached=True))
@@ -191,8 +192,6 @@ class DataInterface(BaseDataInterface):
             metadata.audios[audio_metadata.crc] = audio_metadata
 
     def get_audio_path(self, crc: int, metadata: Metadata|None = None) -> Path:
-        """DEPRECATED want to stream eventually"""
-
         metadata = self.get_metadata() if metadata is None else metadata
         if crc not in metadata.audios:
             raise ValueError(f"Audio with crc {crc} does not exist.")
@@ -211,25 +210,6 @@ class DataInterface(BaseDataInterface):
     def has_thumbnail(self, crc: int) -> bool:
         return self.get_thumbnail_path(crc).exists()
 
-    def cleanup_unused_tracks(self) -> None:
-        unused_crcs: set[int] = set()
-        with self.edit_metadata() as metadata:
-            used_crcs: set[int] = set()
-            for user_metadata in metadata.users.values():
-                for playlist in user_metadata.playlists.values():
-                    used_crcs.update(playlist.audio_crcs)
-            unused_crcs = set(metadata.audios) - used_crcs
-            for crc in unused_crcs:
-                metadata.audios.pop(crc)
-
-        for crc in unused_crcs:
-            self.atomic_delete(self.app_audio_dir / f"{crc}.m4a")
-            log_event("tubio", "tubio.unused_audio_deleted", crc=crc)
-        log_event(
-            "tubio", "tubio.unused_track_cleanup_completed",
-            removed=len(unused_crcs),
-        )
-
     def delete_user_data(self, user: User) -> None:
         with self.edit_metadata() as metadata:
             if user.id not in metadata.users:
@@ -237,46 +217,62 @@ class DataInterface(BaseDataInterface):
             metadata.users.pop(user.id)
         self.cleanup_unused_resources()
 
-    def cleanup_surprise_playlists(
+    def cleanup_unused_resources(
         self,
         now: datetime | None = None,
     ) -> None:
+        """Expire temporary playlists and remove their unreferenced media."""
         now = now or datetime.now(timezone.utc)
         cutoff = now - timedelta(
             seconds=ConfigManager().tubio.surprise_playlist_inactivity_ttl_s
         )
-        removed = 0
+        expired_playlists = 0
+        unused_crcs: set[int] = set()
+        remaining_crcs: set[int] = set()
+
         with self.edit_metadata() as metadata:
             for user_metadata in metadata.users.values():
                 for key, playlist in list(user_metadata.playlists.items()):
                     last_active = playlist.last_active
                     if last_active is not None and last_active.tzinfo is None:
                         last_active = last_active.replace(tzinfo=timezone.utc)
-                    if (
-                        last_active is not None
-                        and last_active < cutoff
-                    ):
+                    if last_active is not None and last_active < cutoff:
                         user_metadata.playlists.pop(key)
-                        removed += 1
+                        expired_playlists += 1
+
+            used_crcs = {
+                crc
+                for user_metadata in metadata.users.values()
+                for playlist in user_metadata.playlists.values()
+                for crc in playlist.audio_crcs
+            }
+            unused_crcs = set(metadata.audios) - used_crcs
+            for crc in unused_crcs:
+                metadata.audios.pop(crc)
+            for user_metadata in metadata.users.values():
+                for crc in unused_crcs:
+                    user_metadata.playback_trims.pop(crc, None)
+            remaining_crcs = set(metadata.audios)
+
+        for crc in unused_crcs:
+            self.atomic_delete(self.app_audio_dir / f"{crc}.m4a")
+            log_event("tubio", "tubio.unused_audio_deleted", crc=crc)
+        if self.app_thumbnails_dir.exists():
+            remaining_stems = {str(crc) for crc in remaining_crcs}
+            for thumbnail_path in self.app_thumbnails_dir.glob("*.jpg"):
+                if thumbnail_path.stem not in remaining_stems:
+                    self.atomic_delete(thumbnail_path)
+
         log_event(
-            "tubio", "tubio.surprise_cleanup_completed",
-            removed=removed,
+            "tubio",
+            "tubio.surprise_cleanup_completed",
+            removed=expired_playlists,
         )
-
-    def cleanup_unused_thumbnails(self) -> None:
-        if not self.app_thumbnails_dir.exists():
-            return
-
-        metadata = self.get_metadata()
-        used_crcs = {str(crc) for crc in metadata.audios.keys()}
-        for thumbnail_path in self.app_thumbnails_dir.glob("*.jpg"):
-            if thumbnail_path.stem not in used_crcs:
-                self.atomic_delete(thumbnail_path)
-
-    def cleanup_unused_resources(self) -> None:
-        self.cleanup_surprise_playlists()
-        self.cleanup_unused_tracks()
-        self.cleanup_unused_thumbnails()
+        log_event(
+            "tubio",
+            "tubio.unused_track_cleanup_completed",
+            removed=len(unused_crcs),
+        )
 
     def backup_data(self, backup_dir: Path) -> None:
         tubio_backup_dir = backup_dir / "tubio"
