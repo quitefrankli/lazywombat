@@ -240,187 +240,6 @@ class CrosswordsConfig:
 
 
 @dataclass
-class SentinelConfig:
-    # Explicit capability for QA against loopback/private targets. This is
-    # intentionally independent of Flask debug mode.
-    allow_local_targets: bool = False
-    abandoned_run_timeout_s: int = 900
-    verdict_reason_max_chars: int = 300
-    report_schema_version: int = 1
-    cli_schema_version: int = 1
-    cli_exit_pass: int = 0
-    cli_exit_fail: int = 1
-    cli_exit_inconclusive: int = 2
-    cli_exit_interrupted: int = 130
-    report_url_base: str = ""
-    console_finding_title: str = "Console"
-    console_finding_kind: str = "browser.console"
-    default_limit_mins: int = 5
-    min_limit_mins: int = 1
-    max_limit_mins: int = 10
-    # TTL for the Redis cancel flag. Must exceed the longest possible run
-    # (max_limit_mins) so a cancel request on any gunicorn worker still reaches
-    # the run loop's worker before the flag expires.
-    cancel_flag_ttl_s: int = 3600
-    max_steps: int = 50
-    max_screenshots: int = 50
-    # If the agent emits a malformed/non-JSON response, retry once before
-    # aborting the run. Catches transient LLM hiccups.
-    agent_parse_retry_attempts: int = 1
-    # When the agent clicks the same element_id this many times consecutively
-    # without the page URL changing, surface a finding so the agent gets a
-    # hint to try something else.
-    click_loop_threshold: int = 3
-    # If the click-loop warning fires this many distinct times in a single run,
-    # treat the agent as stuck and end the run with a "stuck" finish. Stops the
-    # agent from burning the whole step budget on broken controls.
-    click_loop_max_warnings: int = 3
-    max_retained_runs: int = 25
-    prompt_max_chars: int = 4000
-    additional_domains_max_count: int = 10
-    additional_domain_max_chars: int = 253
-    browser_width_px: int = 1366
-    browser_height_px: int = 900
-    browser_default_timeout_ms: int = 15000
-    # Desktop user-agent override: replaces Playwright's default
-    # "HeadlessChrome/..." UA, which is the most common bot-detection trigger.
-    # Mobile/tablet device profiles supply their own real-device UA and bypass
-    # this override.
-    browser_desktop_user_agent: str = (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-    )
-    # Chromium launch flags applied to every Sentinel run. Disables the
-    # AutomationControlled blink feature so navigator.webdriver and related
-    # CDP fingerprints don't immediately trip Cloudflare/Akamai bot rules.
-    browser_launch_args: list = field(default_factory=lambda: [
-        "--disable-blink-features=AutomationControlled",
-    ])
-    navigation_timeout_ms: int = 30000
-    post_click_load_timeout_ms: int = 5000
-    # Settle delay after a click. Gives modals/menus/transitions a moment to
-    # finish before the next observation runs.
-    post_click_settle_ms: int = 600
-    # Settle delay after a fill. Mostly debounced JS validators / autocomplete.
-    post_fill_settle_ms: int = 200
-    # Settle delay after a select. Native dropdowns can re-render the page.
-    post_select_settle_ms: int = 1000
-    # Settle delay after a scroll. Lazy-loaded content / IntersectionObservers.
-    post_scroll_settle_ms: int = 1000
-    # Pause for the explicit "wait" action.
-    wait_action_ms: int = 1000
-    scroll_action_delta_px: int = 650
-    scroll_position_tolerance_px: int = 2
-    full_page_scope_prompt_pattern: str = (
-        r"\b(?:all|every|each|whole|entire|full)\b.{0,80}\b"
-        r"(?:apps?|cards?|links?|items?|rows?|sections?|pages?|menus?|public|private)\b"
-        r"|\b(?:apps?|cards?|links?|items?|rows?|sections?|pages?|menus?|public|private)\b"
-        r".{0,80}\b(?:all|every|each|whole|entire|full)\b"
-    )
-    observation_max_elements: int = 80
-    observation_text_max_chars: int = 3000
-    observation_element_text_max_chars: int = 140
-    finding_detail_max_chars: int = 500
-    final_report_max_chars: int = 4000
-    final_report_max_images: int = 4
-    final_report_timeout_s: float = 60.0
-    title_max_chars: int = 80
-    llm_title_max_tokens: int = 80
-    llm_title_timeout_s: float = 15.0
-    llm_verdict_max_tokens: int = 200
-    llm_verdict_timeout_s: float = 20.0
-    # The screenshot picker decides which screenshots from the run are worth
-    # attaching to the final-report LLM call. Cheaper than blindly attaching
-    # every frame.
-    llm_picker_max_tokens: int = 300
-    llm_picker_timeout_s: float = 20.0
-    # How many screenshots the picker is allowed to select.
-    final_report_picker_budget: int = 6
-    annotation_box_width_px: int = 3
-    annotation_label_font_px: int = 14
-    annotation_label_pad_px: int = 4
-    screenshot_load_stagger_ms: int = 200
-    screenshot_load_max_retries: int = 3
-    screenshot_load_retry_delay_ms: int = 1000
-    screenshot_thumb_max_px: int = 360
-    # PDF export page geometry (Playwright page.pdf margins). Bottom is larger
-    # than top to leave room for the running footer, which renders inside the
-    # bottom margin band.
-    pdf_margin_top: str = "16mm"
-    pdf_margin_bottom: str = "18mm"
-    pdf_margin_left: str = "14mm"
-    pdf_margin_right: str = "14mm"
-    pdf_footer_label: str = "Generated by Sentinel"
-    # Batch jobs: queue several runs at once that share a batch_id (e.g. a
-    # mobile run + a desktop run). Batches are not persisted as their own
-    # entity — they are re-derived by grouping runs on batch_id.
-    max_batch_items: int = 8          # max runs queued in one batch submit
-    max_retained_batches: int = 25    # max derived batch groups shown in sidebar
-    batch_name_max_chars: int = 80    # caps the batch label stored on each run
-    batch_name_fallback: str = "Sentinel batch"
-    # Capability tier used by Meridian and Bedrock. Codex is pinned separately
-    # below because it also needs a Sentinel-specific reasoning effort.
-    llm_tier: str = "strong"  # weak | medium | strong
-    # Provider-agnostic LLM behavior knobs.
-    llm_step_timeout_s: float = 45.0
-    llm_step_max_tokens: int = 1024
-    llm_final_report_max_tokens: int = 2048
-    # Codex-specific settings. Pin these so Sentinel does not inherit mutable
-    # user-wide Codex CLI defaults.
-    codex_model: str = "gpt-5.6-sol"
-    codex_reasoning_effort: str = "medium"
-    codex_permissions_profile: str = "sentinel_qa"
-    # Friendly device key -> Playwright devices registry name. Empty string
-    # means "no emulation; use browser_width/height_px viewport".
-    device_profiles: dict = field(default_factory=lambda: {
-        "desktop":     "",
-        "tablet":      "iPad (gen 7)",
-        "large_phone": "iPhone 13 Pro Max",
-        "small_phone": "iPhone SE",
-    })
-    device_labels: dict = field(default_factory=lambda: {
-        "desktop":     "Desktop",
-        "tablet":      "Tablet",
-        "large_phone": "Large Phone",
-        "small_phone": "Small Phone",
-    })
-    default_device: str = "desktop"
-    # Demographic key -> persona sentence prepended to the agent system prompt.
-    demographic_personas: dict = field(default_factory=lambda: {
-        "child":  "You are an 8-year-old child using a website for the first time; you click colorful things, get bored fast, and cannot read long text.",
-        "adult":  "You are a typical adult web user with average tech literacy who skims interfaces and expects standard web conventions.",
-        "senior": "You are a senior in your 70s with limited tech experience; small targets, jargon, and unexpected layouts confuse you, and you prefer obvious, labeled controls.",
-        "techie": "You are a power user comfortable with developer tools, keyboard shortcuts, and dense UIs; you probe edge cases and unusual flows.",
-    })
-    demographic_labels: dict = field(default_factory=lambda: {
-        "child":  "Child",
-        "adult":  "Adult",
-        "senior": "Senior",
-        "techie": "Techie",
-    })
-    default_demographic: str = "adult"
-    # Keywords that imply the prompt depends on auth flows. If any appear in
-    # the prompt while allow_accounts=false, the run is rejected up-front so
-    # the agent doesn't immediately self-abort. Matched as whole words
-    # (case-insensitive) against the prompt.
-    account_keywords: tuple = (
-        "account", "accounts",
-        "sign up", "signup", "sign-up",
-        "sign in", "signin", "sign-in",
-        "log in", "login", "log-in",
-        "register", "registration",
-    )
-    region_labels: dict = field(default_factory=lambda: {
-        "australia": "Australia",
-        "china":     "China",
-        "us":        "US",
-        "uk":        "UK",
-        "japan":     "Japan",
-    })
-    default_region: str = "australia"
-
-
-@dataclass
 class LoftConfig:
     request_path_prefix: str = "/loft/"
     non_admin_quota_bytes: int = 50 * 1024 * 1024
@@ -604,11 +423,13 @@ class ConfigManager:
         self.debug_session_cookie_name = "session_debug"
         self.site_url = getenv("SITE_URL") or "https://nabicat.site"
         self.redis_url = getenv("REDIS_URL") or "redis://127.0.0.1:6379/0"
+        self.redis_readiness_timeout_s = 5.0
+        self.redis_readiness_poll_s = 0.1
         self.password_hash_method = "scrypt"
         self.password_hash_prefix = "nabicat$"
         self.gunicorn_workers = 4
-        self.gunicorn_request_timeout_s = 300
-        self.gunicorn_graceful_timeout_s = 300
+        self.gunicorn_request_timeout_s = 720
+        self.gunicorn_graceful_timeout_s = 720
         self.deployment_canary_port = 5001
         self.deployment_health_attempts = 30
         self.deployment_health_interval_s = 1
@@ -625,11 +446,28 @@ class ConfigManager:
         # they run once across gunicorn workers. Must exceed the longest job
         # runtime and matches the jobs' misfire_grace_time.
         self.scheduler_lock_ttl_s = 3600
-        # rmw_lock: how long a held lock auto-expires (guards a crashed
-        # holder) and how long a waiter blocks before giving up. RMW spans are
-        # short, so both are small.
+        # rmw_lock lease TTL, acquisition deadline, and renewal cadence. Active
+        # holders renew; crashed holders expire after the TTL.
         self.rmw_lock_timeout_s = 10
         self.rmw_lock_blocking_timeout_s = 5.0
+        self.rmw_lock_renewal_interval_s = 3.0
+        self.installed_app_file_mode = 0o600
+        self.installed_app_state_key_prefix = "nabicat:app:{app_id}:state:"
+        self.installed_app_lease_key_prefix = "nabicat:app:{app_id}:lease:"
+        self.installed_app_text_temp_prefix = "nabicat-{app_id}-text-"
+        self.installed_app_text_image_extensions = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/webp": ".webp",
+        }
+        self.installed_app_default_llm_tier = "medium"
+        self.installed_app_llm_tiers = {"sentinel": "strong"}
+        self.installed_app_codex_models = {"sentinel": "gpt-5.6-sol"}
+        self.installed_app_codex_reasoning_effort = {"sentinel": "medium"}
+        self.installed_app_codex_permissions_profile = {
+            "sentinel": "sentinel_qa"
+        }
+        self.installed_app_config_overrides: dict[str, dict[str, object]] = {}
         self.backup_max_count = 8
         # Requests matching these prefixes are silently dropped (404, no log) — automated bots/scanners probing for common vulnerabilities
         self.known_bot_prefixes = {
@@ -658,7 +496,6 @@ class ConfigManager:
             "/loft/static/",
             "/metrics/static/",
             "/proxy/static/",
-            "/sentinel/static/",
             "/simulations/static/",
             "/todoist/static/",
             "/tubio/static/",
@@ -675,9 +512,8 @@ class ConfigManager:
         })
         self.git_command_timeout_s = 2
         self.access_denied_redirect_endpoint = "home"
-        self.elevated_access_denied_message = "You need elevated access to use Sentinel."
+        self.elevated_access_denied_message = "You need elevated access to use this app."
         self.admin_access_denied_message = "You need admin access to use this app."
-        self.sentinel_access_denied_api_prefixes = ("/sentinel/api/",)
         self.dev_access_denied_api_prefixes = ("/dev/logs", "/dev/map-data", "/dev/terminal/")
         self.smtp_port = 587
         self.project_dir = Path.cwd()
@@ -690,7 +526,6 @@ class ConfigManager:
         self.gpt_actions = GPTActionsConfig()
         self.dev = DevConfig()
         self.crosswords = CrosswordsConfig()
-        self.sentinel = SentinelConfig()
         self.loft = LoftConfig()
         self.file_store = FileStoreConfig()
         self.proxy = ProxyConfig()

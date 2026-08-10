@@ -716,7 +716,7 @@ h6 {
   background: linear-gradient(135deg, var(--hw-forest) 0%, #1b2a24 100%);
 }
 
-.app-icon-sentinel {
+.app-icon-installed {
   background: linear-gradient(135deg, var(--hw-sage) 0%, var(--hw-gold) 100%);
 }
 

@@ -13,7 +13,7 @@ from web_app.proxy import (
     _rewrite_links,
     _validate_proxy_target,
 )
-from web_app.sentinel.target_policy import ValidatedTarget
+from web_app.web_targets import ResolvedWebTarget
 
 
 def _addrinfo(address: str):
@@ -42,7 +42,7 @@ def test_proxy_rejects_non_public_and_metadata_targets(url):
 
 def test_proxy_rejects_hostname_resolving_to_private_address():
     with patch(
-        "web_app.sentinel.target_policy.socket.getaddrinfo",
+        "web_app.web_targets.socket.getaddrinfo",
         return_value=_addrinfo("127.0.0.1"),
     ):
         with pytest.raises(ProxyPolicyError):
@@ -53,10 +53,10 @@ def test_proxy_pins_request_to_the_validated_address():
     response = Mock()
     session = Mock()
     session.get.return_value = response
-    target = ValidatedTarget(
+    target = ResolvedWebTarget(
         url="https://example.com/",
-        hostname="example.com",
-        addresses=("93.184.216.34",),
+        allowed_hosts=frozenset({"example.com"}),
+        addresses={"example.com": ("93.184.216.34",)},
     )
 
     with patch("web_app.proxy.requests.Session", return_value=session):
@@ -83,7 +83,7 @@ def test_proxy_validates_every_redirect_target():
 
     with patch("web_app.proxy._request_target", return_value=first) as request_target:
         with patch(
-            "web_app.sentinel.target_policy.socket.getaddrinfo",
+            "web_app.web_targets.socket.getaddrinfo",
             return_value=_addrinfo("93.184.216.34"),
         ):
             with pytest.raises(ProxyPolicyError):

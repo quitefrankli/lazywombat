@@ -34,7 +34,6 @@ def get_all_data_interfaces() -> list[DataInterface]:
     from web_app.tubio.data_interface import DataInterface as TubioDataInterface
     from web_app.file_store.data_interface import DataInterface as FileStoreDataInterface
     from web_app.loft.data_interface import DataInterface as LoftDataInterface
-    from web_app.sentinel.data_interface import DataInterface as SentinelDataInterface
 
     return [
         APIDataInterface,
@@ -43,7 +42,6 @@ def get_all_data_interfaces() -> list[DataInterface]:
         TubioDataInterface,
         FileStoreDataInterface,
         LoftDataInterface,
-        SentinelDataInterface,
     ]
 
 
@@ -59,7 +57,6 @@ def register_all_blueprints(app):
     from web_app.loft import loft_api
     from web_app.dev import dev_api
     from web_app.simulations import simulations_api
-    from web_app.sentinel import sentinel_api
     from web_app.oauth import oauth_api
     from web_app.todoist.api import actions_api
 
@@ -75,13 +72,39 @@ def register_all_blueprints(app):
         loft_api,
         dev_api,
         simulations_api,
-        sentinel_api,
         oauth_api,
         actions_api,
     ]
 
     for blueprint in blueprints:
         app.register_blueprint(blueprint)
+
+
+
+def register_installed_apps(app):
+    """Idempotently load V2 apps after the runtime mode is configured."""
+    registry = app.extensions.get("nabicat_apps")
+    if registry is not None:
+        return registry
+    from web_app.installed_apps import install_apps
+
+    return install_apps(
+        app,
+        config_overrides=ConfigManager().installed_app_config_overrides,
+    )
+
+
+def backup_installed_app_data(backup_dir: Path, *, flask_app=app) -> None:
+    """Back up the complete host-owned namespace for every loaded V2 app."""
+    registry = flask_app.extensions.get("nabicat_apps")
+    if registry is None:
+        return
+    data_root = ConfigManager().save_data_path
+    for installed in registry.apps:
+        app_id = installed.definition.metadata.app_id
+        from web_app.app_capabilities import FileDocuments
+
+        FileDocuments(data_root / app_id).backup_to(backup_dir / app_id)
 
 
 _EPHEMERAL_KEY_PREFIX = "nabicat:ephkey:"
@@ -424,8 +447,8 @@ def _get_bedrock_client(read_timeout_s: float):
 
     Clients are cached per read-timeout: botocore sets the socket read timeout
     on the client (not per call), so callers with different timeouts get
-    distinct clients. Without a read_timeout a stalled connection hangs the
-    calling thread forever, which defeats Sentinel's per-step deadline.
+    distinct clients. Without a read_timeout a stalled connection can hang a
+    request thread indefinitely.
     """
     key = round(float(read_timeout_s), 3)
     client = _bedrock_clients.get(key)
@@ -569,6 +592,9 @@ def codex_cli_text(
     instructions: str,
     model: str | None = None,
     timeout_s: float = 120.0,
+    image_paths: list[Path] | None = None,
+    reasoning_effort: str | None = None,
+    permissions_profile: str | None = None,
 ) -> str:
     """Run Codex CLI non-interactively and return its final message.
 
@@ -585,13 +611,33 @@ def codex_cli_text(
             "exec",
             "--ephemeral",
             "--skip-git-repo-check",
-            "--sandbox",
-            config.llm.codex_cli_sandbox,
-            "--output-last-message",
-            output.name,
         ]
+        if permissions_profile:
+            cmd.extend(
+                [
+                    "--ignore-rules",
+                    "-c",
+                    "project_doc_max_bytes=0",
+                    "-c",
+                    "project_doc_fallback_filenames=[]",
+                    "-c",
+                    f"default_permissions={json.dumps(permissions_profile)}",
+                    "-c",
+                    f"permissions.{permissions_profile}.filesystem.:minimal=\"read\"",
+                ]
+            )
+        else:
+            cmd.extend(["--sandbox", config.llm.codex_cli_sandbox])
+        if reasoning_effort:
+            cmd.extend(
+                ["-c", f"model_reasoning_effort={json.dumps(reasoning_effort)}"]
+            )
         if model:
             cmd.extend(["--model", model])
+        for image_path in image_paths or []:
+            if image_path.is_file():
+                cmd.extend(["--image", str(image_path)])
+        cmd.extend(["--output-last-message", output.name])
         cmd.append(prompt)
         try:
             proc = subprocess.run(

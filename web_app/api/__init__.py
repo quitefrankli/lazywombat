@@ -11,7 +11,7 @@ from flask import request, jsonify, Blueprint, current_app
 
 from web_app.data_interface import DataInterface
 from web_app.helpers import parse_request, authenticate_user, \
-    generate_ephemeral_keypair, get_all_data_interfaces
+    generate_ephemeral_keypair, get_all_data_interfaces, backup_installed_app_data
 from web_app.api.data_interface import DataInterface as APIDataInterface
 from web_app.config import ConfigManager
 from web_app.errors import APIError
@@ -81,10 +81,12 @@ def update_server(patch: str | None = None):
 
 @api_api.route("/health", methods=["GET"])
 def health():
+    registry = current_app.extensions.get("nabicat_apps")
     return jsonify({
         "status": "ok",
         "commit": current_app.config.get("DEPLOY_COMMIT", "unknown"),
         "pid": os.getpid(),
+        "apps": list(registry.health()) if registry is not None else [],
     })
 
 def handle_github_webhook():
@@ -170,6 +172,7 @@ def api_backup():
     data_interfaces = get_all_data_interfaces()
     for data_interface_class in data_interfaces:
         data_interface_class().backup_data(backup_dir)
+    backup_installed_app_data(backup_dir)
 
     # TODO: zip the backup and upload to s3
     # self.data_syncer.upload_file(new_backup)

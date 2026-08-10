@@ -105,7 +105,13 @@ STATIC_VERSION = BUILD_VERSION
 @app.url_defaults
 def _add_static_version(endpoint, values):
     if endpoint and endpoint.endswith('static') and 'v' not in values:
-        values['v'] = STATIC_VERSION
+        registry = app.extensions.get("nabicat_apps")
+        app_version = (
+            registry.static_version(endpoint)
+            if registry is not None
+            else None
+        )
+        values['v'] = app_version or STATIC_VERSION
 
 # Session configuration for longer-lasting sessions
 # 30 days session lifetime - especially helpful for mobile/iOS users

@@ -252,22 +252,6 @@ class TestRequestLogging:
         assert payload["ip"] == "127.0.0.1"
         assert payload["user"] == "alice"
 
-    def test_before_request_skips_sentinel_polling_logs(self, app_context, caplog):
-        from web_app import __main__ as main_module
-
-        config = Mock(
-            known_bot_prefixes=[],
-            known_bot_methods=[],
-            debug_mode=False,
-            request_log_suppressed_paths={"/dev/terminal/input", "/dev/terminal/output"},
-        )
-        with app.test_request_context("/sentinel/api/runs/abc123", method="GET", environ_base={"REMOTE_ADDR": "127.0.0.1"}), \
-             patch("web_app.__main__.ConfigManager", return_value=config), \
-             caplog.at_level(logging.INFO):
-            main_module.before_request()
-
-        assert not caplog.records
-
     def test_before_request_skips_dev_terminal_input_logs(self, app_context, caplog):
         from web_app import __main__ as main_module
 

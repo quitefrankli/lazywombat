@@ -22,7 +22,12 @@ from xml.sax.saxutils import escape as xml_escape
 
 from web_app.config import ConfigManager
 from web_app.data_interface import DataInterface
-from web_app.helpers import get_all_data_interfaces, register_all_blueprints
+from web_app.helpers import (
+    backup_installed_app_data,
+    get_all_data_interfaces,
+    register_all_blueprints,
+    register_installed_apps,
+)
 from web_app.redis_client import run_once, ensure_local_redis
 from web_app.logging_utils import log_event
 from web_app.loft.data_interface import DataInterface as LoftDataInterface
@@ -57,6 +62,7 @@ def scheduled_backup():
     DataInterface().backup_data(backup_dir)
     for data_interface_class in get_all_data_interfaces():
         data_interface_class().backup_data(backup_dir)
+    backup_installed_app_data(backup_dir)
     log_event("system", "backup.completed", source="scheduler")
 
 
@@ -190,11 +196,7 @@ def start_scheduler() -> None:
 
 
 def _skip_request_log(path: str, method: str, config: ConfigManager) -> bool:
-    if path in config.request_log_suppressed_paths:
-        return True
-    if method == 'GET' and path.startswith('/sentinel/api/runs/') and not path.endswith('/rerun'):
-        return True
-    return False
+    return path in config.request_log_suppressed_paths
 
 
 def _request_app() -> str:
@@ -312,10 +314,12 @@ def teardown_request(error: BaseException | None) -> None:
 
 @app.route('/')
 def home():
+    registry = app.extensions.get("nabicat_apps")
     return render_template(
         'home.html',
         build_version=BUILD_VERSION,
         build_version_is_tag=BUILD_VERSION_IS_TAG,
+        installed_apps=registry.navigation() if registry is not None else (),
     )
 
 
@@ -355,6 +359,10 @@ def service_worker():
     """Serve service worker from root for proper scope"""
     config = ConfigManager()
     source = (Path(app.static_folder) / 'service-worker.js').read_text()
+    registry = app.extensions.get("nabicat_apps")
+    static_prefixes = config.cache_versioned_static_path_prefixes + (
+        registry.static_prefixes() if registry is not None else ()
+    )
     source = source.replace(
         '__NABICAT_CACHE_VERSION__',
         json.dumps(config.cache_service_worker_version),
@@ -363,7 +371,7 @@ def service_worker():
         json.dumps(config.cache_service_worker_prefix),
     ).replace(
         '__NABICAT_STATIC_PATH_PREFIXES__',
-        json.dumps(config.cache_versioned_static_path_prefixes),
+        json.dumps(static_prefixes),
     ).replace(
         '__NABICAT_PUBLIC_MEDIA_PATH_PREFIXES__',
         json.dumps(config.cache_public_media_path_prefixes),
@@ -434,6 +442,7 @@ def cli_start(
     app.config["SESSION_COOKIE_NAME"] = cfg.flask_session_cookie_name
 
     ensure_local_redis()
+    register_installed_apps(app)
 
     mode = "debug" if debug else "development"
     log_event("system", "server.started", llm_source=cfg.llm.api_source, mode=mode)
@@ -455,6 +464,9 @@ def prod_entry():
     app.secret_key = config.flask_secret_key
     app.config["SESSION_COOKIE_NAME"] = config.flask_session_cookie_name
     app.config["DEPLOY_COMMIT"] = Repo(".").head.commit.hexsha
+
+    ensure_local_redis()
+    register_installed_apps(app)
 
     log_event("system", "worker.started", mode="production")
     if not config.deployment_canary:

@@ -12,10 +12,10 @@ from requests.adapters import HTTPAdapter
 from web_app.config import ConfigManager
 from web_app.helpers import register_app_name, require_admin_blueprint
 from web_app.logging_utils import log_event
-from web_app.sentinel.target_policy import (
+from web_app.web_targets import (
+    ResolvedWebTarget,
     TargetValidationError,
-    ValidatedTarget,
-    validate_public_web_url,
+    resolve_web_target,
 )
 
 
@@ -85,35 +85,24 @@ class _PinnedTargetAdapter(HTTPAdapter):
         )
 
 
-def _validate_proxy_target(raw_url: str) -> ValidatedTarget:
-    try:
-        parsed = urlparse(raw_url if "://" in raw_url else f"//{raw_url}")
-    except ValueError as error:
-        raise ProxyPolicyError("URL must include a valid host") from error
-    if parsed.username is not None or parsed.password is not None:
-        raise ProxyPolicyError("URLs containing credentials are not allowed")
-    candidate_hostname = (parsed.hostname or "").rstrip(".").lower()
+def _validate_proxy_target(raw_url: str) -> ResolvedWebTarget:
     blocked_hosts = ConfigManager().proxy.blocked_metadata_hostnames
-    if candidate_hostname in blocked_hosts:
-        raise ProxyPolicyError("Cloud metadata targets are not allowed")
-
     try:
-        target = validate_public_web_url(raw_url, allow_local=False)
+        target = resolve_web_target(
+            raw_url,
+            allow_local=False,
+            blocked_hostnames=blocked_hosts,
+        )
     except (TargetValidationError, ValueError) as error:
         raise ProxyPolicyError(str(error)) from error
-
-    if target.hostname in blocked_hosts:
-        raise ProxyPolicyError("Cloud metadata targets are not allowed")
-    if not target.addresses:
-        raise ProxyPolicyError("Could not resolve target host")
     return target
 
 
-def _request_target(target: ValidatedTarget):
+def _request_target(target: ResolvedWebTarget):
     config = ConfigManager().proxy
     session = requests.Session()
     session.trust_env = False
-    adapter = _PinnedTargetAdapter(target.addresses[0])
+    adapter = _PinnedTargetAdapter(target.addresses[target.hostname][0])
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     try:

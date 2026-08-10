@@ -1,5 +1,21 @@
 {% extends "root_base.html" %}
 
+{% macro installed_app_card(item, enabled) %}
+<div class="col-4" data-installed-app="{{ item.app_id }}">
+  <a href="{{ url_for(item.endpoint) if enabled else '#' }}"
+     class="text-decoration-none {{ '' if enabled else 'app-disabled' }}">
+    <div class="card h-100 home-app-card border-0">
+      <div class="card-body p-3 text-center">
+        <div class="app-icon-wrapper app-icon-installed app-icon-{{ item.app_id }} mb-2 mx-auto">
+          <i class="bi {{ item.icon or 'bi-grid' }}"></i>
+        </div>
+        <h3 class="app-title mb-0 text-forest">{{ item.label }}</h3>
+      </div>
+    </div>
+  </a>
+</div>
+{% endmacro %}
+
 {% block page_title %}NabiCat{% endblock %}
 {% block meta_description %}NabiCat hosts public posts, crossword puzzles, simulations, and personal web tools.{% endblock %}
 
@@ -119,6 +135,9 @@
           </a>
         </div>
 
+        {% for item in installed_apps if item.access.value == 'public' %}
+          {{ installed_app_card(item, true) }}
+        {% endfor %}
       </div>
 
       <!-- Private -->
@@ -181,6 +200,10 @@
             </div>
           </a>
         </div>
+
+        {% for item in installed_apps if item.access.value == 'authenticated' %}
+          {{ installed_app_card(item, current_user.is_authenticated) }}
+        {% endfor %}
       </div>
 
       <!-- Elevated -->
@@ -188,19 +211,9 @@
         <span class="section-label">Elevated</span>
       </div>
       <div class="row g-3 mb-4">
-        <!-- Sentinel -->
-        <div class="col-4">
-          <a href="{{ '/sentinel' if is_elevated else '#' }}" class="text-decoration-none {{ '' if is_elevated else 'app-disabled' }}">
-            <div class="card h-100 home-app-card border-0">
-              <div class="card-body p-3 text-center">
-                <div class="app-icon-wrapper app-icon-sentinel mb-2 mx-auto">
-                  <i class="bi bi-eye-fill"></i>
-                </div>
-                <h3 class="app-title mb-0 text-forest">Sentinel</h3>
-              </div>
-            </div>
-          </a>
-        </div>
+        {% for item in installed_apps if item.access.value == 'elevated' %}
+          {{ installed_app_card(item, is_elevated) }}
+        {% endfor %}
       </div>
 
       <!-- Admin -->
@@ -235,6 +248,10 @@
             </div>
           </a>
         </div>
+
+        {% for item in installed_apps if item.access.value == 'admin' %}
+          {{ installed_app_card(item, is_admin) }}
+        {% endfor %}
       </div>
       
     </div>

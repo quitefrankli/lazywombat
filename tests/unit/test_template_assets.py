@@ -46,7 +46,6 @@ def test_data_interfaces_do_not_expose_bare_model_save_methods():
     interface_modules = (
         Path("web_app/data_interface.py"),
         Path("web_app/file_store/data_interface.py"),
-        Path("web_app/sentinel/data_interface.py"),
         Path("web_app/tubio/data_interface.py"),
     )
     forbidden = {"save_model", "save_users", "save_metadata", "save_report", "save_audio_metadata"}

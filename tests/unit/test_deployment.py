@@ -1,9 +1,12 @@
 import logging
+import re
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from click.testing import CliRunner
+from nabicat_app_sdk import AccessLevel
 
 from web_app.config import ConfigManager
 
@@ -12,6 +15,34 @@ def test_nginx_forwards_original_https_scheme():
     nginx_config = Path("nabicat.conf").read_text()
 
     assert nginx_config.count("proxy_set_header X-Forwarded-Proto $scheme;") == 2
+
+
+def test_synchronous_app_requests_have_aligned_proxy_and_worker_timeouts():
+    nginx_config = Path("nabicat.conf").read_text()
+    config = ConfigManager()
+
+    assert config.gunicorn_request_timeout_s == 720
+    assert config.gunicorn_graceful_timeout_s == 720
+    for directive in (
+        "proxy_connect_timeout 720;",
+        "proxy_send_timeout 720;",
+        "proxy_read_timeout 720;",
+    ):
+        assert nginx_config.count(directive) == 2
+
+
+def test_v2_app_dependencies_use_immutable_git_revisions():
+    requirements = Path("requirements.txt").read_text()
+
+    for distribution, repository in (
+        ("nabicat-app-sdk", "nabicat-app-sdk"),
+        ("nabicat-sentinel", "nabicat-sentinel"),
+    ):
+        pattern = (
+            rf"^{re.escape(distribution)} @ git\+https://github\.com/quitefrankli/"
+            rf"{re.escape(repository)}\.git@[0-9a-f]{{40}}$"
+        )
+        assert re.search(pattern, requirements, re.MULTILINE)
 
 
 def test_ci_excludes_ffmpeg_tests_without_installing_ffmpeg():
@@ -30,6 +61,55 @@ def test_health_reports_commit_loaded_by_worker(client, app):
     assert response.status_code == 200
     assert response.get_json()["commit"] == "candidate-sha"
     assert isinstance(response.get_json()["pid"], int)
+
+
+def test_installed_app_metadata_drives_health_home_static_cache_and_versions(
+    client,
+    app,
+):
+    import web_app.__main__  # noqa: F401
+    from web_app.app import _add_static_version
+
+    class Registry:
+        def health(self):
+            return ({"app_id": "alpha", "version": "1.2.3", "status": "loaded"},)
+
+        def navigation(self):
+            return (
+                SimpleNamespace(
+                    access=AccessLevel.PUBLIC,
+                    app_id="alpha",
+                    endpoint="home",
+                    icon="bi-eye-fill",
+                    label="Alpha",
+                ),
+            )
+
+        def static_prefixes(self):
+            return ("/alpha/static/",)
+
+        def static_version(self, endpoint):
+            return "1.2.3" if endpoint == "alpha.static" else None
+
+    previous = app.extensions.get("nabicat_apps")
+    app.extensions["nabicat_apps"] = Registry()
+    try:
+        assert client.get("/api/health").get_json()["apps"] == [
+            {"app_id": "alpha", "version": "1.2.3", "status": "loaded"}
+        ]
+        home = client.get("/").text
+        assert 'data-installed-app="alpha"' in home
+        assert "Alpha" in home
+        service_worker = client.get("/service-worker.js").text
+        assert '"/alpha/static/"' in service_worker
+        values = {}
+        _add_static_version("alpha.static", values)
+        assert values == {"v": "1.2.3"}
+    finally:
+        if previous is None:
+            app.extensions.pop("nabicat_apps", None)
+        else:
+            app.extensions["nabicat_apps"] = previous
 
 
 def test_web_launcher_keeps_minimal_option_surface():
@@ -59,6 +139,7 @@ def test_debug_launcher_retains_existing_runtime_behavior():
     with (
         patch.object(web_main, "configure_logging"),
         patch.object(web_main, "ensure_local_redis"),
+        patch.object(web_main, "register_installed_apps"),
         patch.object(web_main.app, "run") as app_run,
     ):
         result = CliRunner().invoke(
@@ -90,6 +171,7 @@ def test_non_debug_launcher_uses_normal_session_cookie():
         patch.dict("os.environ", {"FLASK_SECRET_KEY": "normal-secret"}),
         patch.object(web_main, "configure_logging"),
         patch.object(web_main, "ensure_local_redis"),
+        patch.object(web_main, "register_installed_apps"),
         patch.object(web_main.app, "run"),
     ):
         result = CliRunner().invoke(web_main.cli_start, ["--port", "12346"])
@@ -199,6 +281,8 @@ def test_canary_worker_does_not_start_scheduler():
     try:
         with (
             patch.object(web_main, "configure_logging"),
+            patch.object(web_main, "ensure_local_redis"),
+            patch.object(web_main, "register_installed_apps"),
             patch.object(web_main, "start_scheduler") as start_scheduler,
             patch.object(web_main, "Repo") as repo,
         ):
@@ -235,6 +319,8 @@ def test_prod_entry_logs_gunicorn_worker_start(caplog):
     try:
         with (
             patch.object(web_main, "configure_logging"),
+            patch.object(web_main, "ensure_local_redis"),
+            patch.object(web_main, "register_installed_apps"),
             patch.object(web_main, "Repo") as repo,
             caplog.at_level(logging.INFO),
         ):
