@@ -179,7 +179,7 @@ class TestGetPostsByProjectSorting:
         result = DataInterface().get_posts_by_project()
         assert result[0].posts == ["aaa-oldest-name", "zzz-newest-name"]
 
-    def test_unlisted_posts_are_sidebar_hidden_except_for_elevated_users(self, projects_dir):
+    def test_unlisted_posts_are_sidebar_hidden_except_for_admins(self, projects_dir):
         _make_post(projects_dir, "ideas", "public")
         _make_post(projects_dir, "ideas", "private")
         _make_post(projects_dir, "private-project", "only-post")
@@ -195,7 +195,7 @@ class TestGetPostsByProjectSorting:
         assert DataInterface().get_posts_by_project()[0].posts == ["public"]
         assert DataInterface().get_posts_by_project(normal)[0].posts == ["public"]
         assert [p.name for p in DataInterface().get_posts_by_project()] == ["ideas"]
-        assert DataInterface().get_posts_by_project(elevated)[0].posts == ["public", "private"]
+        assert DataInterface().get_posts_by_project(elevated)[0].posts == ["public"]
         assert DataInterface().get_posts_by_project(admin)[0].posts == ["public", "private"]
         assert "<h1>test</h1>" in DataInterface().get_post_content("ideas", "private")
 

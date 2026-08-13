@@ -206,7 +206,15 @@ class DataInterface(BaseDataInterface):
 
     def _post_visible_in_listing(self, project: str, post: str, user: Optional[User]) -> bool:
         meta = self.get_post_meta(project, post)
-        return meta.visibility == PostVisibility.PUBLIC or self._can_see_nonpublic_posts(user)
+        if meta.visibility == PostVisibility.PUBLIC:
+            return True
+        if meta.visibility == PostVisibility.UNLISTED:
+            return bool(
+                user is not None
+                and getattr(user, "is_authenticated", False)
+                and getattr(user, "is_admin", False)
+            )
+        return self._can_see_nonpublic_posts(user)
 
     def user_can_view(self, user: Optional[User], project: str, post: str) -> bool:
         meta = self.get_post_meta(project, post)
