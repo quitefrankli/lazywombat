@@ -1015,7 +1015,7 @@ class TestRawPostRoutes:
             "/loft/quitefrankli/quitefrankli/"
         )
 
-    def test_unlisted_post_emits_noindex(self, client, projects_dir):
+    def test_unlisted_post_emits_noindex_and_visibility_notice(self, client, projects_dir):
         if "loft" not in client.application.blueprints:
             client.application.register_blueprint(loft_api)
         _make_post(projects_dir, "quitefrankli", "quitefrankli")
@@ -1027,6 +1027,9 @@ class TestRawPostRoutes:
 
         assert response.status_code == 200
         assert b'<meta name="robots" content="noindex">' in response.data
+        assert b"This post is unlisted" in response.data
+        assert b"can only be accessed with its direct link" in response.data
+        assert b"does not appear in the Loft sidebar" in response.data
 
 
 class TestLoftBackup:

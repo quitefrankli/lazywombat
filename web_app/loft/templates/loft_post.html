@@ -14,6 +14,15 @@
 
         <!-- Main Content -->
         <div class="col-12 col-md-9 col-lg-10">
+            {% if meta.visibility.value == 'unlisted' %}
+            <aside class="loft-unlisted-notice" aria-label="Unlisted post notice">
+                <i class="bi bi-link-45deg" aria-hidden="true"></i>
+                <div>
+                    <strong>This post is unlisted.</strong>
+                    It can only be accessed with its direct link and does not appear in the Loft sidebar.
+                </div>
+            </aside>
+            {% endif %}
             {% if can_edit %}
             <div class="loft-post-toolbar">
                 <a href="{{ url_for('.edit_post', project=project_name, post=post_name) }}"
