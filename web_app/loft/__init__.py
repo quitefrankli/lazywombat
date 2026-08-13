@@ -16,7 +16,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from web_app.app import csrf
 from web_app.config import ConfigManager
 from web_app.errors import APIError
-from web_app.loft.data_interface import DataInterface, slugify
+from web_app.loft.data_interface import DataInterface, PostVisibility, slugify
 from web_app.helpers import cur_user, limiter, parse_request, register_app_name
 from web_app.logging_utils import log_event
 
@@ -152,10 +152,21 @@ def new_post():
 
 @loft_api.route('/<project>/')
 def view_project(project: str):
-    posts_by_project = DataInterface().get_posts_by_project(flask_login.current_user)
+    data_interface = DataInterface()
+    posts_by_project = data_interface.get_posts_by_project(flask_login.current_user)
     project_obj = next((p for p in posts_by_project if p.name == project), None)
     if project_obj and project_obj.posts:
         return redirect(url_for('.view_post', project=project, post=project_obj.posts[0]))
+    same_named_post_dir = data_interface._post_dir(project, project)
+    if (
+        same_named_post_dir.is_dir()
+        and data_interface.user_can_view(
+            flask_login.current_user,
+            project,
+            project,
+        )
+    ):
+        return redirect(url_for('.view_post', project=project, post=project))
     return redirect(url_for('.index', open=project))
 
 
@@ -343,9 +354,25 @@ def upload_post():
     project = request_body.get("project")
     post_name = request_body.get("post_name")
     data = request_body.get("data")
+    actor = request_body.get("username") or "<api>"
 
     if not project or not post_name or not data:
         return jsonify({"error": "Missing required fields: project, post_name, data"}), 400
+
+    try:
+        visibility = PostVisibility(
+            request_body.get("visibility", PostVisibility.PUBLIC.value)
+        )
+    except (TypeError, ValueError):
+        log_event(
+            "loft",
+            "loft.raw_post_upload_rejected",
+            user=actor,
+            project=project,
+            post=post_name,
+            reason="invalid_visibility",
+        )
+        return jsonify({"error": "Invalid visibility"}), 400
 
     try:
         decoded_data = base64.b64decode(data)
@@ -372,7 +399,6 @@ def upload_post():
 
     forced_date = request_body.get("date")
     date = forced_date if forced_date else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    actor = request_body.get("username") or "<api>"
     data_interface.atomic_delete(post_dir / "meta.json")
     data_interface.register_raw_post(
         project,
@@ -380,6 +406,7 @@ def upload_post():
         request_body.get("title") or post_name,
         actor,
         date,
+        visibility,
     )
     log_event(
         "loft",
@@ -387,6 +414,7 @@ def upload_post():
         user=actor,
         project=project,
         post=post_name,
+        visibility=visibility.value,
     )
     return jsonify({"success": True, "message": f"Post {project}/{post_name} uploaded"}), 200
 

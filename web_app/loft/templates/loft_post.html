@@ -2,6 +2,7 @@
 
 {% block page_title %}{{ meta.title or post_name }} - Loft - NabiCat{% endblock %}
 {% block meta_description %}{{ ((meta.template_data.description if meta.template_data else '') or 'A public Loft post on NabiCat.') | truncate(155, True, '') }}{% endblock %}
+{% block robots_meta %}{% if meta.visibility.value == 'unlisted' %}<meta name="robots" content="noindex">{% endif %}{% endblock %}
 
 {% block page_content %}
 <div class="container-fluid">

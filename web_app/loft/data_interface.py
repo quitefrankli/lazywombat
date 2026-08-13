@@ -149,8 +149,19 @@ class MetaStore(BaseModel):
     projects: dict[str, ProjectStore] = Field(default_factory=dict)
 
 
-def make_raw_post(title: str, date: str, owner: str) -> PostMeta:
-    return PostMeta(type=PostType.RAW, title=title, date=date, owner=owner)
+def make_raw_post(
+    title: str,
+    date: str,
+    owner: str,
+    visibility: PostVisibility = PostVisibility.PUBLIC,
+) -> PostMeta:
+    return PostMeta(
+        type=PostType.RAW,
+        title=title,
+        date=date,
+        owner=owner,
+        visibility=visibility,
+    )
 
 
 def make_markdown_post(title: str, date: str, owner: str) -> PostMeta:
@@ -283,8 +294,20 @@ class DataInterface(BaseDataInterface):
         project_store = store.projects.get(project)
         return project_store.posts.get(post) if project_store else None
 
-    def register_raw_post(self, project: str, post: str, title: str, owner: str, date: str) -> None:
-        self.write_post_meta(project, post, make_raw_post(title, date, owner))
+    def register_raw_post(
+        self,
+        project: str,
+        post: str,
+        title: str,
+        owner: str,
+        date: str,
+        visibility: PostVisibility = PostVisibility.PUBLIC,
+    ) -> None:
+        self.write_post_meta(
+            project,
+            post,
+            make_raw_post(title, date, owner, visibility),
+        )
 
     def user_can_edit(self, user: Optional[User], project: str, post: str) -> bool:
         if user is None or not getattr(user, "is_authenticated", False):

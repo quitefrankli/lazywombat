@@ -1,14 +1,18 @@
 """Unit tests for Loft data interface."""
 
+import base64
+import gzip
 import json
 import shutil
 import subprocess
 import tempfile
+import zipfile
 from io import BytesIO
 from pathlib import Path
 
 import pytest
 import web_app.helpers as helpers
+import web_app.loft as loft_module
 from PIL import Image
 from werkzeug.datastructures import FileStorage
 from werkzeug.test import EnvironBuilder
@@ -51,6 +55,13 @@ def _make_post(projects_dir: Path, project: str, post: str, date: str | None = N
 
 def _post_meta(projects_dir: Path, project: str, post: str) -> dict:
     return json.loads((projects_dir.parent / "meta.json").read_text())["projects"][project]["posts"][post]
+
+
+def _raw_post_archive() -> str:
+    archive = BytesIO()
+    with zipfile.ZipFile(archive, "w") as zip_file:
+        zip_file.writestr("index.html", "<h1>uploaded</h1>")
+    return base64.b64encode(gzip.compress(archive.getvalue())).decode()
 
 
 def _png_file_storage(name: str, size: tuple[int, int] = (40, 40)) -> FileStorage:
@@ -930,6 +941,92 @@ class TestRestrictedPostRoute:
 
         assert response.status_code == 200
         assert b"<h1>test</h1>" in response.data
+
+
+class TestRawPostRoutes:
+    def test_upload_persists_unlisted_visibility(
+        self,
+        client,
+        projects_dir,
+        monkeypatch,
+    ):
+        if "loft" not in client.application.blueprints:
+            client.application.register_blueprint(loft_api)
+        monkeypatch.setattr(
+            loft_module,
+            "parse_request",
+            lambda **_kwargs: {
+                "project": "quitefrankli",
+                "post_name": "quitefrankli",
+                "data": _raw_post_archive(),
+                "visibility": "unlisted",
+            },
+        )
+
+        response = client.post("/loft/api/upload_post")
+
+        assert response.status_code == 200
+        assert _post_meta(
+            projects_dir,
+            "quitefrankli",
+            "quitefrankli",
+        )["visibility"] == "unlisted"
+
+    def test_upload_rejects_unknown_visibility(
+        self,
+        client,
+        projects_dir,
+        monkeypatch,
+    ):
+        if "loft" not in client.application.blueprints:
+            client.application.register_blueprint(loft_api)
+        monkeypatch.setattr(
+            loft_module,
+            "parse_request",
+            lambda **_kwargs: {
+                "project": "quitefrankli",
+                "post_name": "quitefrankli",
+                "data": _raw_post_archive(),
+                "visibility": "secret",
+            },
+        )
+
+        response = client.post("/loft/api/upload_post")
+
+        assert response.status_code == 400
+        assert not (projects_dir / "quitefrankli").exists()
+
+    def test_project_short_url_falls_back_to_same_named_unlisted_post(
+        self,
+        client,
+        projects_dir,
+    ):
+        if "loft" not in client.application.blueprints:
+            client.application.register_blueprint(loft_api)
+        _make_post(projects_dir, "quitefrankli", "quitefrankli")
+        meta = json.loads((projects_dir.parent / "meta.json").read_text())
+        meta["projects"]["quitefrankli"]["posts"]["quitefrankli"]["visibility"] = "unlisted"
+        (projects_dir.parent / "meta.json").write_text(json.dumps(meta))
+
+        response = client.get("/loft/quitefrankli/")
+
+        assert response.status_code == 302
+        assert response.location.endswith(
+            "/loft/quitefrankli/quitefrankli/"
+        )
+
+    def test_unlisted_post_emits_noindex(self, client, projects_dir):
+        if "loft" not in client.application.blueprints:
+            client.application.register_blueprint(loft_api)
+        _make_post(projects_dir, "quitefrankli", "quitefrankli")
+        meta = json.loads((projects_dir.parent / "meta.json").read_text())
+        meta["projects"]["quitefrankli"]["posts"]["quitefrankli"]["visibility"] = "unlisted"
+        (projects_dir.parent / "meta.json").write_text(json.dumps(meta))
+
+        response = client.get("/loft/quitefrankli/quitefrankli/")
+
+        assert response.status_code == 200
+        assert b'<meta name="robots" content="noindex">' in response.data
 
 
 class TestLoftBackup:
