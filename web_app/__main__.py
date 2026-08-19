@@ -236,7 +236,6 @@ def before_request():
             and _has_scanner_path_signature(request.path, config)
         )
     ):
-        g.invalid_url_redirect_disabled = True
         abort(404)
 
     # Auto-login as admin in debug mode.
@@ -358,15 +357,6 @@ def legacy_loft_redirect(legacy_path: str):
     if request.query_string:
         target += "?" + request.query_string.decode("latin-1")
     return redirect(target, code=308)
-
-
-@app.errorhandler(404)
-def redirect_invalid_url(error):
-    if request.url_rule is None and not getattr(
-        g, "invalid_url_redirect_disabled", False
-    ):
-        return redirect(url_for("home"))
-    return error
 
 
 @app.route('/privacy')

@@ -104,13 +104,13 @@ class TestCanonicalRoutes:
         assert response.status_code == 308
         assert response.headers["Location"] == "/loft/journal/entry/?view=full"
 
-    def test_unknown_url_redirects_to_home(self, client):
+    def test_unknown_url_returns_not_found(self, client):
         import web_app.__main__  # noqa: F401
 
         response = client.get("/definitely-not-a-real-page")
 
-        assert response.status_code == 302
-        assert response.headers["Location"] == "/"
+        assert response.status_code == 404
+        assert "Location" not in response.headers
 
 
 class TestHome:
