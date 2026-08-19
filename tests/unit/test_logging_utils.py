@@ -91,6 +91,10 @@ def test_ordinary_unknown_url_keeps_request_lifecycle_logs(client, caplog):
     with caplog.at_level(logging.INFO):
         response = client.get("/family/environmental-report")
 
-    assert response.status_code == 302
-    assert len(_event_records(caplog, "request.started")) == 1
-    assert len(_event_records(caplog, "request.completed")) == 1
+    started = _event_records(caplog, "request.started")
+    completed = _event_records(caplog, "request.completed")
+
+    assert response.status_code == 404
+    assert len(started) == 1
+    assert len(completed) == 1
+    assert completed[0]["status"] == 404
