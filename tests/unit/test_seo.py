@@ -61,6 +61,18 @@ def test_sitemap_lists_public_pages_and_loft_posts(client, loft_posts):
     assert "/metrics/" not in body
 
 
+def test_robots_txt_allows_crawlers_and_advertises_sitemap(client):
+    response = client.get("/robots.txt")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/plain"
+    assert response.get_data(as_text=True) == (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Sitemap: https://nabicat.site/sitemap.xml\n"
+    )
+
+
 def test_public_pages_render_seo_metadata(client):
     response = client.get("/crosswords/")
 

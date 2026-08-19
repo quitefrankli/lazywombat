@@ -1,6 +1,7 @@
 import json
 import logging
 
+import pytest
 from flask import g
 
 import web_app.__main__  # noqa: F401
@@ -62,3 +63,34 @@ def test_request_lifecycle_uses_one_correlation_id(client, caplog):
     assert completed[0]["app"] == "web"
     assert completed[0]["ip"] == "127.0.0.1"
     assert completed[0]["user"] is None
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/backend/.env.production",
+        "/files/.GIT/config",
+        "/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php",
+        "/wordpress/WP-LOGIN.PHP",
+    ),
+)
+def test_scanner_probe_returns_404_without_request_lifecycle_logs(
+    client,
+    caplog,
+    path,
+):
+    with caplog.at_level(logging.INFO):
+        response = client.get(path)
+
+    assert response.status_code == 404
+    assert _event_records(caplog, "request.started") == []
+    assert _event_records(caplog, "request.completed") == []
+
+
+def test_ordinary_unknown_url_keeps_request_lifecycle_logs(client, caplog):
+    with caplog.at_level(logging.INFO):
+        response = client.get("/family/environmental-report")
+
+    assert response.status_code == 302
+    assert len(_event_records(caplog, "request.started")) == 1
+    assert len(_event_records(caplog, "request.completed")) == 1
