@@ -18,6 +18,8 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from web_app.config import ConfigManager
+
 
 KEYRING_APP_ID = "nabicat"
 DEFAULT_BASE_URL = "https://nabicat.site"
@@ -515,9 +517,13 @@ def test_handshake() -> None:
               help="Show what would be transferred without copying")
 def sync_data_from_prod(dest: str, dry_run: bool) -> None:
     """
-    Rsync ~/.nabicat from nabicat.site to a local directory, excluding backups/.
+    Rsync durable production data without backups or runtime logs.
     """
-    cmd = ["rsync", "-azhP", "--exclude=backups/"]
+    cmd = ["rsync", "-azhP"]
+    cmd.extend(
+        f"--exclude={path}"
+        for path in ConfigManager().production_sync_excluded_paths
+    )
     if dry_run:
         cmd.append("--dry-run")
     cmd += ["nabicat.site:~/.nabicat", dest]

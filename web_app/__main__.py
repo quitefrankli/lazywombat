@@ -444,7 +444,7 @@ def robots_txt():
 
 def configure_logging(debug: bool) -> None:
     config = ConfigManager()
-    log_path = config.dev.log_file_path.resolve()
+    log_path = config.log_file_path.resolve()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     rotating_log_handler = ConcurrentRotatingFileHandler(
         str(log_path),

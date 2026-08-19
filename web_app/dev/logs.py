@@ -7,9 +7,6 @@ from flask import jsonify, request
 from web_app.config import ConfigManager
 
 
-_LOGS_DIR = Path(__file__).resolve().parents[2] / "logs"
-
-
 def _log_sort_key(path: Path) -> int | None:
     if path.name == "web_app.log":
         return 0
@@ -72,7 +69,7 @@ def get_logs():
     since = request.args.get('since', type=int)
     requested_limit = request.args.get('limit', type=int)
 
-    all_lines = _read_log_lines(_LOGS_DIR)
+    all_lines = _read_log_lines(config.log_file_path.parent)
     total = len(all_lines)
     if since is not None:
         lines = all_lines[since:]

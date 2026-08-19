@@ -1,7 +1,8 @@
 from collections import Counter
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 from web_app.app import app
+from web_app.config import ConfigManager
 from web_app.dev.logs import _read_log_lines, get_logs
 from web_app.dev.map import (
     _build_hit_series,
@@ -128,7 +129,15 @@ def test_read_log_lines_hides_structured_lifecycle_logs_for_suppressed_paths(tmp
 def test_get_logs_returns_all_selected_files_without_default_line_limit(tmp_path):
     (tmp_path / "web_app.log").write_text("".join(f"line {idx}\n" for idx in range(2100)))
 
-    with app.test_request_context("/dev/logs"), patch("web_app.dev.logs._LOGS_DIR", tmp_path):
+    with (
+        app.test_request_context("/dev/logs"),
+        patch.object(
+            ConfigManager,
+            "log_file_path",
+            new_callable=PropertyMock,
+            return_value=tmp_path / "web_app.log",
+        ),
+    ):
         payload = get_logs().get_json()
 
     assert payload["start"] == 0
@@ -184,7 +193,16 @@ def test_map_data_returns_located_public_ips_and_summary(tmp_path):
         }
     }
 
-    with app.test_request_context(), patch("web_app.dev.map._LOGS_DIR", tmp_path), patch("web_app.dev.map._geolocate_ips", return_value=geo):
+    with (
+        app.test_request_context(),
+        patch.object(
+            ConfigManager,
+            "log_file_path",
+            new_callable=PropertyMock,
+            return_value=tmp_path / "web_app.log",
+        ),
+        patch("web_app.dev.map._geolocate_ips", return_value=geo),
+    ):
         payload = map_data().get_json()
 
     assert payload["summary"]["unique_ips"] == 2
@@ -215,7 +233,16 @@ def test_map_data_applies_path_filter(tmp_path):
         }
     }
 
-    with app.test_request_context("/dev/map-data?path=/loft/*"), patch("web_app.dev.map._LOGS_DIR", tmp_path), patch("web_app.dev.map._geolocate_ips", return_value=geo):
+    with (
+        app.test_request_context("/dev/map-data?path=/loft/*"),
+        patch.object(
+            ConfigManager,
+            "log_file_path",
+            new_callable=PropertyMock,
+            return_value=tmp_path / "web_app.log",
+        ),
+        patch("web_app.dev.map._geolocate_ips", return_value=geo),
+    ):
         payload = map_data().get_json()
 
     assert payload["summary"]["path_filter"] == "/loft/*"
