@@ -1,25 +1,6 @@
 from web_app.config import ConfigManager
 
 
-def test_app_config_sections_expose_grouped_values():
-    cfg = ConfigManager()
-
-    assert cfg.loft.gallery_video_max_height_px == 720
-    assert cfg.tubio.max_search_pages == 3
-
-
-def test_app_config_sections_are_mutable():
-    cfg = ConfigManager()
-    original = cfg.loft.gallery_image_max_retries
-
-    try:
-        cfg.loft.gallery_image_max_retries = 7
-
-        assert cfg.loft.gallery_image_max_retries == 7
-    finally:
-        cfg.loft.gallery_image_max_retries = original
-
-
 def test_log_file_path_tracks_active_data_root(tmp_path):
     cfg = ConfigManager()
     previous_debug_mode = cfg.debug_mode

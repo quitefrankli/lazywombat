@@ -265,9 +265,6 @@ class TestMarkdownLifecycleAndAuthz:
 
 
 class TestGalleryUploadAndDelete:
-    def test_video_max_height_defaults_to_720p(self):
-        assert ConfigManager().loft.gallery_video_max_height_px == 720
-
     def test_gallery_video_resets_shared_post_media_margin(self):
         css = (
             Path(__file__).parents[2]

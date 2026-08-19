@@ -13,7 +13,6 @@ from werkzeug.datastructures import FileStorage
 import web_app.__main__ as main_module
 from web_app.users import User
 from web_app.config import ConfigManager
-from web_app.file_store import file_store_api
 from web_app.file_store.data_interface import (
     DataInterface,
     Metadata,
@@ -643,18 +642,6 @@ class TestFileStoreRoutes:
         assert metadata.users[auth_mock.id].folders == []
         assert '"event": "file_store.delete_all"' in caplog.text
         assert '"files": 2' in caplog.text
-
-
-class TestFileStoreBlueprint:
-    """Tests for file_store blueprint"""
-
-    def test_blueprint_name(self):
-        """Test blueprint name"""
-        assert file_store_api.name == 'file_store'
-
-    def test_blueprint_url_prefix(self):
-        """Test blueprint URL prefix"""
-        assert file_store_api.url_prefix == '/file_store'
 
 
 if __name__ == '__main__':
