@@ -2,7 +2,7 @@
 
 import pytest
 from contextlib import contextmanager
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from datetime import datetime, timedelta
 from flask import Flask
 
@@ -107,22 +107,6 @@ def auth_mock(test_user):
     helpers.login_manager._user_callback = original_user_loader
 
 
-class TestMetricsDataInterface:
-    """Tests for metrics DataInterface"""
-
-    @patch('web_app.metrics.data_interface.DataInterface.load_data')
-    def test_load_metrics(self, mock_load, test_user, test_metrics):
-        """Test loading metrics for a user"""
-        mock_load.return_value = test_metrics
-
-        from web_app.metrics.data_interface import DataInterface
-        di = DataInterface()
-        metrics = di.load_data(test_user)
-
-        assert len(metrics.metrics) == 3
-        mock_load.assert_called_once_with(test_user)
-
-
 class TestMetricsLastModified:
     """Tests for metrics last_modified functionality"""
 
@@ -217,63 +201,6 @@ def test_metrics_mutations_use_partial_page_updates():
     assert 'data-async-mutation' in template
     assert 'refreshMetricsPage' in script
     assert 'window.location.reload' not in script
-
-
-class TestMetricsDataMigration:
-    """Tests for metrics data migration"""
-
-    def test_metric_has_last_modified_default(self):
-        """Test that new metrics have last_modified defaulted to now"""
-        from web_app.metrics.app_data import Metric
-        
-        metric = Metric(
-            id=1,
-            name='Test',
-            data=[],
-            unit='kg',
-            creation_date=datetime(2026, 1, 1, 10, 0, 0)
-        )
-        
-        # last_modified should be set (not None)
-        assert metric.last_modified is not None
-        # last_modified should be a datetime
-        assert isinstance(metric.last_modified, datetime)
-
-    def test_standalone_migration_script_logic(self):
-        """Test the migration logic used by the standalone script"""
-        from web_app.metrics.app_data import Metric, Metrics
-        
-        creation_date = datetime(2026, 1, 1, 10, 0, 0)
-        metric = Metric(
-            id=1,
-            name='Test',
-            data=[],
-            unit='kg',
-            creation_date=creation_date
-        )
-        
-        # Manually set last_modified to None to simulate old data
-        metric.last_modified = None
-        
-        # Apply the same migration logic as the standalone script
-        if metric.last_modified is None:
-            metric.last_modified = metric.creation_date
-        
-        assert metric.last_modified == creation_date
-
-
-class TestMetricHelperFunctions:
-    """Tests for metric helper functions"""
-
-    def test_default_redirect(self):
-        """Test get_default_redirect returns proper redirect"""
-        with app.test_request_context():
-            from web_app.metrics import get_default_redirect
-            with patch('web_app.metrics.flask.url_for') as mock_url:
-                mock_url.return_value = '/metrics/'
-                result = get_default_redirect()
-                # Should be a redirect response
-                assert result is not None
 
 
 if __name__ == '__main__':

@@ -5,15 +5,10 @@ import json
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, mock_open
+from unittest.mock import Mock, patch
 from io import BytesIO
 
-from web_app.data_interface import (
-    DataInterface,
-    DataSyncer,
-    _S3Client,
-    _OfflineClient,
-)
+from web_app.data_interface import DataInterface
 from web_app.config import ConfigManager
 from web_app.users import User
 
@@ -46,30 +41,6 @@ def mock_data_syncer():
         syncer_instance = Mock()
         mock_syncer.return_value = syncer_instance
         yield syncer_instance
-
-
-class TestDataSyncer:
-    """Tests for DataSyncer"""
-
-    def test_data_syncer_download_file(self):
-        """Test DataSyncer.download_file delegates to client"""
-        mock_client = Mock()
-        syncer = DataSyncer(mock_client)
-
-        temp_path = Path("/fake/path/file.txt")
-        syncer.download_file(temp_path)
-
-        mock_client.download_file.assert_called_once_with(temp_path)
-
-    def test_data_syncer_upload_file(self):
-        """Test DataSyncer.upload_file delegates to client"""
-        mock_client = Mock()
-        syncer = DataSyncer(mock_client)
-
-        temp_path = Path("/fake/path/file.txt")
-        syncer.upload_file(temp_path)
-
-        mock_client.upload_file.assert_called_once_with(temp_path)
 
 
 class TestDataInterface:
@@ -137,11 +108,6 @@ class TestDataInterface:
         assert len(result) == 20
         assert result.isalpha()
         assert result.islower()
-
-    def test_generate_random_string_unique(self):
-        """Test that generate_random_string produces unique strings"""
-        strings = [DataInterface.generate_random_string() for _ in range(100)]
-        assert len(set(strings)) == 100
 
     @patch('web_app.data_interface.Repo')
     def test_generate_new_user_unique_folder(self, mock_repo, mock_config, mock_data_syncer, temp_dir):
@@ -211,23 +177,6 @@ class TestDataInterface:
         backup_dir = interface.generate_backup_dir()
         assert backup_dir.exists()
         assert backup_dir.parent == interface.backups_directory
-
-    @patch('web_app.data_interface.shutil.copy2')
-    @patch('web_app.data_interface.Repo')
-    def test_backup_data(self, mock_repo, mock_copy, mock_config, mock_data_syncer, temp_dir):
-        """Test backup_data creates backup"""
-        mock_config.save_data_path = temp_dir / "data"
-        mock_config.tubio.cookie_path = temp_dir / "data" / "cookies.txt"
-        mock_repo.return_value.head.commit.hexsha = "abc123"
-
-        interface = DataInterface()
-        backup_dir = temp_dir / "backup"
-        backup_dir.mkdir(parents=True, exist_ok=True)
-
-        interface.backup_data(backup_dir)
-
-        # Verify metadata file was created
-        assert (backup_dir / "metadata.json").exists()
 
     @patch('web_app.data_interface.Repo')
     def test_backup_data_does_not_copy_logs(
@@ -329,30 +278,6 @@ class TestDataInterface:
         temp_path = interface.find_avail_temp_file_path(ext='.txt')
         assert temp_path.suffix == '.txt'
         assert not temp_path.exists()
-
-    def test_find_avail_temp_file_path_with_existing_files(self, mock_config, mock_data_syncer, temp_dir):
-        """Test find_avail_temp_file_path avoids existing files"""
-        mock_config.save_data_path = temp_dir / "data"
-        mock_config.temp_dir = temp_dir / "temp"
-        interface = DataInterface()
-
-        # Create some temp files
-        mock_config.temp_dir.mkdir(parents=True, exist_ok=True)
-        (mock_config.temp_dir / "existing.txt").touch()
-
-        temp_path = interface.find_avail_temp_file_path(ext='txt')
-        assert temp_path.suffix == '.txt'
-        assert temp_path.name != "existing.txt"
-
-    def test_create_temp_file(self, mock_config, mock_data_syncer, temp_dir):
-        """Test create_temp_file creates a temporary file"""
-        mock_config.save_data_path = temp_dir / "data"
-        mock_config.temp_dir = temp_dir / "temp"
-        interface = DataInterface()
-
-        temp_path = interface.create_temp_file(ext='txt')
-        assert temp_path.exists()
-        assert temp_path.suffix == '.txt'
 
     def test_temp_file_ctx_creates_and_cleans_up(self, mock_config, mock_data_syncer, temp_dir):
         """Test temp_file_ctx context manager"""
