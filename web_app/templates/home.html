@@ -251,6 +251,7 @@
           {% endfor %}
         </div>
 
+        {% if is_admin %}
         <!-- Admin -->
         <div class="section-divider">
           <span class="section-label">Admin</span>
@@ -258,7 +259,7 @@
         <div class="row g-3 mb-4">
           <!-- Proxy -->
           <div class="col-4">
-            <a href="{{ '/proxy' if is_admin else '#' }}" class="text-decoration-none {{ '' if is_admin else 'app-disabled' }}">
+            <a href="/proxy" class="text-decoration-none">
               <div class="card h-100 home-app-card border-0">
                 <div class="card-body p-3 text-center">
                   <div class="app-icon-wrapper app-icon-proxy mb-2 mx-auto">
@@ -272,7 +273,7 @@
 
           <!-- Dev -->
           <div class="col-4">
-            <a href="{{ '/dev' if is_admin else '#' }}" class="text-decoration-none {{ '' if is_admin else 'app-disabled' }}">
+            <a href="/dev" class="text-decoration-none">
               <div class="card h-100 home-app-card border-0">
                 <div class="card-body p-3 text-center">
                   <div class="app-icon-wrapper app-icon-dev mb-2 mx-auto">
@@ -285,9 +286,10 @@
           </div>
 
           {% for item in installed_apps if item.access.value == 'admin' %}
-            {{ installed_app_card(item, is_admin) }}
+            {{ installed_app_card(item, true) }}
           {% endfor %}
         </div>
+        {% endif %}
       </div>
       {% endif %}
       
