@@ -210,7 +210,7 @@ class DevConfig:
     terminal_idle_timeout_s: int = 1800
     terminal_buffer_bytes: int = 1_048_576
     terminal_read_chunk: int = 4096
-    log_file_path: Path = Path("logs/web_app.log")
+    log_relative_path: Path = Path("logs/web_app.log")
     log_rotation_max_bytes: int = 1_000_000
     log_rotation_backup_count: int = 20
     log_viewer_file_count: int = 2
@@ -471,6 +471,10 @@ class ConfigManager:
         }
         self.installed_app_config_overrides: dict[str, dict[str, object]] = {}
         self.backup_max_count = 8
+        self.production_sync_excluded_paths = (
+            "backups/",
+            "data/logs/",
+        )
         # Unmatched paths containing these segments are high-confidence
         # vulnerability probes. They receive a direct 404 without generic
         # request lifecycle logs; ordinary unknown URLs remain logged.
@@ -554,6 +558,10 @@ class ConfigManager:
     @property
     def temp_dir(self) -> Path:
         return self.save_data_path / "temp"
+
+    @property
+    def log_file_path(self) -> Path:
+        return self.save_data_path / self.dev.log_relative_path
 
     @property
     def flask_secret_key(self) -> str:

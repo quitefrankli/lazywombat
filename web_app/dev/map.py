@@ -14,8 +14,6 @@ from flask import jsonify, request
 from web_app.config import ConfigManager
 from web_app.helpers import limiter
 
-
-_LOGS_DIR = Path(__file__).resolve().parents[2] / "logs"
 _CLIENT_RE = re.compile(r"\bclient=([^,\s]+)")
 _PATH_RE = re.compile(r"\bpath=([^,\s]+)")
 _TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d{3}")
@@ -292,7 +290,13 @@ def map_data():
     end = _parse_datetime_param(request.args.get('to'))
     interval = _parse_interval(request.args.get('interval'))
     excluded_ips = _parse_ip_filters(request.args.get('exclude_ips'))
-    events = _matching_log_events(_LOGS_DIR, path_filter, start, end, excluded_ips)
+    events = _matching_log_events(
+        config.log_file_path.parent,
+        path_filter,
+        start,
+        end,
+        excluded_ips,
+    )
     counts = Counter(ip for _, ip in events)
     ranked_ips = [ip for ip, _ in counts.most_common(config.dev.map_max_ips)]
     public_ips = [ip for ip in ranked_ips if _is_public_ip(ip)]

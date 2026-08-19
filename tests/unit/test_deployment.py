@@ -305,7 +305,7 @@ def test_production_logging_identifies_worker_and_thread():
 
     config = ConfigManager()
     handler.assert_called_once_with(
-        str(config.dev.log_file_path.resolve()),
+        str(config.log_file_path.resolve()),
         maxBytes=config.dev.log_rotation_max_bytes,
         backupCount=config.dev.log_rotation_backup_count,
     )
@@ -314,6 +314,22 @@ def test_production_logging_identifies_worker_and_thread():
     assert "thread=%(thread)d" in log_format
     assert logging.getLogger("apscheduler.scheduler").level == logging.WARNING
     assert logging.getLogger("redis").level == logging.INFO
+
+
+def test_prod_data_sync_excludes_server_backups_and_logs(tmp_path):
+    from scripts.api_helper import sync_data_from_prod
+
+    with patch("scripts.api_helper.subprocess.run") as run:
+        run.return_value.returncode = 0
+        result = CliRunner().invoke(
+            sync_data_from_prod,
+            ["--dest", str(tmp_path)],
+        )
+
+    assert result.exit_code == 0
+    command = run.call_args.args[0]
+    assert "--exclude=backups/" in command
+    assert "--exclude=data/logs/" in command
 
 
 def test_prod_entry_logs_gunicorn_worker_start(caplog):

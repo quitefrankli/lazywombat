@@ -229,6 +229,29 @@ class TestDataInterface:
         # Verify metadata file was created
         assert (backup_dir / "metadata.json").exists()
 
+    @patch('web_app.data_interface.Repo')
+    def test_backup_data_does_not_copy_logs(
+        self,
+        mock_repo,
+        mock_config,
+        mock_data_syncer,
+        temp_dir,
+    ):
+        mock_repo.return_value.head.commit.hexsha = "abc123"
+        data_root = mock_config.save_data_path
+        data_root.mkdir(parents=True)
+        (data_root / "users.json").write_text("[]")
+        logs_dir = data_root / "logs"
+        logs_dir.mkdir()
+        (logs_dir / "web_app.log").write_text("request log")
+
+        backup_dir = temp_dir / "backup"
+        backup_dir.mkdir()
+        DataInterface().backup_data(backup_dir)
+
+        assert (backup_dir / "users.json").read_text() == "[]"
+        assert not (backup_dir / "logs").exists()
+
     def test_atomic_write_with_data(self, mock_config, mock_data_syncer, temp_dir):
         """Test atomic_write with data string"""
         mock_config.save_data_path = temp_dir / "data"
