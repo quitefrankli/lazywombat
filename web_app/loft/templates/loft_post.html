@@ -1,8 +1,49 @@
 {% extends "loft_base.html" %}
 
+{% set post_description = ((meta.template_data.description if meta.template_data else '') or 'A public Loft post on NabiCat.') | truncate(155, True, '') %}
+
 {% block page_title %}{{ meta.title or post_name }} - Loft - NabiCat{% endblock %}
-{% block meta_description %}{{ ((meta.template_data.description if meta.template_data else '') or 'A public Loft post on NabiCat.') | truncate(155, True, '') }}{% endblock %}
-{% block robots_meta %}{% if meta.visibility.value == 'unlisted' %}<meta name="robots" content="noindex">{% endif %}{% endblock %}
+{% block meta_description %}{{ post_description }}{% endblock %}
+{% block robots_meta %}{% if meta.visibility.value != 'public' %}<meta name="robots" content="noindex">{% endif %}{% endblock %}
+{% block og_type %}article{% endblock %}
+
+{% block extra_meta %}
+  {% if meta.type.value in ['markdown', 'gallery'] %}
+    {% if meta.date %}<meta property="article:published_time" content="{{ meta.date }}">{% endif %}
+    {% if meta.owner %}<meta name="author" content="{{ meta.owner }}">{% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block structured_data %}
+  {% if meta.visibility.value == 'public'
+        and meta.type.value in ['markdown', 'gallery']
+        and meta.title
+        and meta.date
+        and meta.owner %}
+    {% set post_schema = {
+      "@context": "https://schema.org",
+      "@type": "BlogPosting",
+      "headline": meta.title,
+      "description": post_description,
+      "datePublished": meta.date,
+      "author": {
+        "@type": "Person",
+        "name": meta.owner
+      },
+      "mainEntityOfPage": {
+        "@type": "WebPage",
+        "@id": seo_canonical_url
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": app_name,
+        "url": seo_site_url ~ "/"
+      },
+      "inLanguage": "en"
+    } %}
+    <script type="application/ld+json">{{ post_schema | tojson }}</script>
+  {% endif %}
+{% endblock %}
 
 {% block page_content %}
 <div class="container-fluid">

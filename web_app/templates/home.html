@@ -16,8 +16,23 @@
 </div>
 {% endmacro %}
 
+{% set page_description = "NabiCat hosts public writing, crossword puzzles, browser simulations, and small web tools." %}
+
 {% block page_title %}NabiCat{% endblock %}
-{% block meta_description %}NabiCat hosts public posts, crossword puzzles, simulations, and personal web tools.{% endblock %}
+{% block meta_description %}{{ page_description }}{% endblock %}
+
+{% block structured_data %}
+  {% set website_schema = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": app_name,
+    "url": seo_site_url ~ "/",
+    "description": page_description,
+    "image": seo_social_image_url,
+    "inLanguage": "en"
+  } %}
+  <script type="application/ld+json">{{ website_schema | tojson }}</script>
+{% endblock %}
 
 {% block actions_menu %}
   {% if current_user.is_authenticated %}
@@ -49,12 +64,21 @@
       <!-- Welcome Section -->
       <div class="text-center mb-5">
         <h1 class="display-4 mb-3 text-forest">
-          <img src="{{ url_for('static', filename='nabicat.png') }}" class="home-logo" alt="Nabicat">
+          <img
+            src="{{ url_for('static', filename='nabicat.png') }}"
+            class="home-logo"
+            alt="NabiCat"
+            decoding="async"
+            fetchpriority="high"
+          >
         </h1>
+        <p class="lead text-muted mb-0">
+          Public writing, themed puzzles, and interactive browser experiments.
+        </p>
       </div>
       
       <!-- Build Version + Cache Card -->
-      <div class="card mb-4 border-0 shadow-soft">
+      <div class="card mb-4 border-0 shadow-soft" data-nosnippet>
         <div class="card-body p-3">
           <div class="row align-items-center g-0">
             <div class="col-6 text-center info-col-divider">
@@ -85,7 +109,7 @@
 
       <!-- Public -->
       <div class="section-divider">
-        <span class="section-label">Public</span>
+        <h2 class="section-label h6 mb-0">Public apps</h2>
       </div>
       <div class="row g-3 mb-4">
         <!-- Loft -->
@@ -102,6 +126,9 @@
                   >
                 </div>
                 <h3 class="app-title mb-0 text-forest">Loft</h3>
+                <p class="small text-muted mt-2 mb-0">
+                  Public notes, essays, and galleries.
+                </p>
               </div>
             </div>
           </a>
@@ -109,13 +136,16 @@
 
         <!-- Crosswords -->
         <div class="col-4">
-          <a href="/crosswords" class="text-decoration-none">
+          <a href="{{ url_for('crosswords.index') }}" class="text-decoration-none">
             <div class="card h-100 home-app-card border-0">
               <div class="card-body p-3 text-center">
                 <div class="app-icon-wrapper app-icon-crosswords mb-2 mx-auto">
                   <i class="bi bi-grid-3x3"></i>
                 </div>
                 <h3 class="app-title mb-0 text-forest">Crosswords</h3>
+                <p class="small text-muted mt-2 mb-0">
+                  Generate compact themed puzzles.
+                </p>
               </div>
             </div>
           </a>
@@ -123,13 +153,16 @@
 
         <!-- Simulations -->
         <div class="col-4">
-          <a href="/simulations" class="text-decoration-none">
+          <a href="{{ url_for('simulations_api.index') }}" class="text-decoration-none">
             <div class="card h-100 home-app-card border-0">
               <div class="card-body p-3 text-center">
                 <div class="app-icon-wrapper app-icon-simulations mb-2 mx-auto">
                   <i class="bi bi-grid-3x3-gap-fill"></i>
                 </div>
                 <h3 class="app-title mb-0 text-forest">Simulations</h3>
+                <p class="small text-muted mt-2 mb-0">
+                  Explore cellular automata and pathfinding.
+                </p>
               </div>
             </div>
           </a>
@@ -140,119 +173,123 @@
         {% endfor %}
       </div>
 
-      <!-- Private -->
-      <div class="section-divider">
-        <span class="section-label">Private</span>
-      </div>
-      <div class="row g-3 mb-4">
-        <!-- Metrics -->
-        <div class="col-4">
-          <a href="/metrics" class="text-decoration-none">
-            <div class="card h-100 home-app-card border-0">
-              <div class="card-body p-3 text-center">
-                <div class="app-icon-wrapper app-icon-metrics mb-2 mx-auto">
-                  <i class="bi bi-graph-up-arrow"></i>
+      {% if current_user.is_authenticated %}
+      <div data-nosnippet>
+        <!-- Private -->
+        <div class="section-divider">
+          <span class="section-label">Private</span>
+        </div>
+        <div class="row g-3 mb-4">
+          <!-- Metrics -->
+          <div class="col-4">
+            <a href="/metrics" class="text-decoration-none">
+              <div class="card h-100 home-app-card border-0">
+                <div class="card-body p-3 text-center">
+                  <div class="app-icon-wrapper app-icon-metrics mb-2 mx-auto">
+                    <i class="bi bi-graph-up-arrow"></i>
+                  </div>
+                  <h3 class="app-title mb-0 text-forest">Metrics</h3>
                 </div>
-                <h3 class="app-title mb-0 text-forest">Metrics</h3>
               </div>
-            </div>
-          </a>
+            </a>
+          </div>
+
+          <!-- Tubio -->
+          <div class="col-4">
+            <a href="/tubio" class="text-decoration-none">
+              <div class="card h-100 home-app-card border-0">
+                <div class="card-body p-3 text-center">
+                  <div class="app-icon-wrapper app-icon-tubio mb-2 mx-auto">
+                    <i class="bi bi-music-note-beamed"></i>
+                  </div>
+                  <h3 class="app-title mb-0 text-forest">Tubio</h3>
+                </div>
+              </div>
+            </a>
+          </div>
+
+          <!-- Todoist -->
+          <div class="col-4">
+            <a href="/todoist" class="text-decoration-none">
+              <div class="card h-100 home-app-card border-0">
+                <div class="card-body p-3 text-center">
+                  <div class="app-icon-wrapper app-icon-todoist mb-2 mx-auto">
+                    <i class="bi bi-check2-square"></i>
+                  </div>
+                  <h3 class="app-title mb-0 text-forest">Todoist</h3>
+                </div>
+              </div>
+            </a>
+          </div>
+
+          <!-- File Store -->
+          <div class="col-4">
+            <a href="/file_store" class="text-decoration-none">
+              <div class="card h-100 home-app-card border-0">
+                <div class="card-body p-3 text-center">
+                  <div class="app-icon-wrapper app-icon-file-store mb-2 mx-auto">
+                    <i class="bi bi-cloud-upload-fill"></i>
+                  </div>
+                  <h3 class="app-title mb-0 text-forest">File Store</h3>
+                </div>
+              </div>
+            </a>
+          </div>
+
+          {% for item in installed_apps if item.access.value == 'authenticated' %}
+            {{ installed_app_card(item, true) }}
+          {% endfor %}
         </div>
 
-        <!-- Tubio -->
-        <div class="col-4">
-          <a href="/tubio" class="text-decoration-none">
-            <div class="card h-100 home-app-card border-0">
-              <div class="card-body p-3 text-center">
-                <div class="app-icon-wrapper app-icon-tubio mb-2 mx-auto">
-                  <i class="bi bi-music-note-beamed"></i>
-                </div>
-                <h3 class="app-title mb-0 text-forest">Tubio</h3>
-              </div>
-            </div>
-          </a>
+        <!-- Elevated -->
+        <div class="section-divider">
+          <span class="section-label">Elevated</span>
+        </div>
+        <div class="row g-3 mb-4">
+          {% for item in installed_apps if item.access.value == 'elevated' %}
+            {{ installed_app_card(item, is_elevated) }}
+          {% endfor %}
         </div>
 
-        <!-- Todoist -->
-        <div class="col-4">
-          <a href="/todoist" class="text-decoration-none">
-            <div class="card h-100 home-app-card border-0">
-              <div class="card-body p-3 text-center">
-                <div class="app-icon-wrapper app-icon-todoist mb-2 mx-auto">
-                  <i class="bi bi-check2-square"></i>
-                </div>
-                <h3 class="app-title mb-0 text-forest">Todoist</h3>
-              </div>
-            </div>
-          </a>
+        <!-- Admin -->
+        <div class="section-divider">
+          <span class="section-label">Admin</span>
         </div>
-
-        <!-- File Store -->
-        <div class="col-4">
-          <a href="/file_store" class="text-decoration-none">
-            <div class="card h-100 home-app-card border-0">
-              <div class="card-body p-3 text-center">
-                <div class="app-icon-wrapper app-icon-file-store mb-2 mx-auto">
-                  <i class="bi bi-cloud-upload-fill"></i>
+        <div class="row g-3 mb-4">
+          <!-- Proxy -->
+          <div class="col-4">
+            <a href="{{ '/proxy' if is_admin else '#' }}" class="text-decoration-none {{ '' if is_admin else 'app-disabled' }}">
+              <div class="card h-100 home-app-card border-0">
+                <div class="card-body p-3 text-center">
+                  <div class="app-icon-wrapper app-icon-proxy mb-2 mx-auto">
+                    <i class="bi bi-globe2"></i>
+                  </div>
+                  <h3 class="app-title mb-0 text-forest">Proxy</h3>
                 </div>
-                <h3 class="app-title mb-0 text-forest">File Store</h3>
               </div>
-            </div>
-          </a>
-        </div>
+            </a>
+          </div>
 
-        {% for item in installed_apps if item.access.value == 'authenticated' %}
-          {{ installed_app_card(item, current_user.is_authenticated) }}
-        {% endfor %}
-      </div>
-
-      <!-- Elevated -->
-      <div class="section-divider">
-        <span class="section-label">Elevated</span>
-      </div>
-      <div class="row g-3 mb-4">
-        {% for item in installed_apps if item.access.value == 'elevated' %}
-          {{ installed_app_card(item, is_elevated) }}
-        {% endfor %}
-      </div>
-
-      <!-- Admin -->
-      <div class="section-divider">
-        <span class="section-label">Admin</span>
-      </div>
-      <div class="row g-3 mb-4">
-        <!-- Proxy -->
-        <div class="col-4">
-          <a href="{{ '/proxy' if is_admin else '#' }}" class="text-decoration-none {{ '' if is_admin else 'app-disabled' }}">
-            <div class="card h-100 home-app-card border-0">
-              <div class="card-body p-3 text-center">
-                <div class="app-icon-wrapper app-icon-proxy mb-2 mx-auto">
-                  <i class="bi bi-globe2"></i>
+          <!-- Dev -->
+          <div class="col-4">
+            <a href="{{ '/dev' if is_admin else '#' }}" class="text-decoration-none {{ '' if is_admin else 'app-disabled' }}">
+              <div class="card h-100 home-app-card border-0">
+                <div class="card-body p-3 text-center">
+                  <div class="app-icon-wrapper app-icon-dev mb-2 mx-auto">
+                    <i class="bi bi-terminal-fill"></i>
+                  </div>
+                  <h3 class="app-title mb-0 text-forest">Dev</h3>
                 </div>
-                <h3 class="app-title mb-0 text-forest">Proxy</h3>
               </div>
-            </div>
-          </a>
-        </div>
+            </a>
+          </div>
 
-        <!-- Dev -->
-        <div class="col-4">
-          <a href="{{ '/dev' if is_admin else '#' }}" class="text-decoration-none {{ '' if is_admin else 'app-disabled' }}">
-            <div class="card h-100 home-app-card border-0">
-              <div class="card-body p-3 text-center">
-                <div class="app-icon-wrapper app-icon-dev mb-2 mx-auto">
-                  <i class="bi bi-terminal-fill"></i>
-                </div>
-                <h3 class="app-title mb-0 text-forest">Dev</h3>
-              </div>
-            </div>
-          </a>
+          {% for item in installed_apps if item.access.value == 'admin' %}
+            {{ installed_app_card(item, is_admin) }}
+          {% endfor %}
         </div>
-
-        {% for item in installed_apps if item.access.value == 'admin' %}
-          {{ installed_app_card(item, is_admin) }}
-        {% endfor %}
       </div>
+      {% endif %}
       
     </div>
   </div>

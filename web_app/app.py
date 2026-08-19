@@ -8,6 +8,7 @@ from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from web_app.config import ConfigManager
+from web_app.seo import register_seo
 
 
 class SetCookieNoStoreMiddleware:
@@ -124,3 +125,5 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection while allowing 
 
 bootstrap = Bootstrap5(app)
 csrf = CSRFProtect(app)
+
+register_seo(app)

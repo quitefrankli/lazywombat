@@ -11,7 +11,7 @@ from playwright.sync_api import expect
 def test_home_page_loads(logged_in_page, test_server):
     """Test that the home page loads successfully."""
     expect(logged_in_page).to_have_title("NabiCat")
-    expect(logged_in_page.locator("img.home-logo[alt='Nabicat']")).to_be_visible()
+    expect(logged_in_page.locator("img.home-logo[alt='NabiCat']")).to_be_visible()
 
 
 def test_app_grid_visible(logged_in_page, test_server):
