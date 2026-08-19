@@ -9,7 +9,9 @@ import uuid
 import flask_login
 import http.cookiejar
 import urllib.request
+from urllib.parse import unquote
 
+from concurrent_log_handler import ConcurrentRotatingFileHandler
 from git import Repo
 from packaging.version import Version
 from typing import * # type: ignore
@@ -17,7 +19,6 @@ from pathlib import Path
 from email.mime.text import MIMEText
 from flask import Response, abort, g, redirect, render_template, request, url_for
 from flask_apscheduler import APScheduler
-from logging.handlers import RotatingFileHandler
 from xml.sax.saxutils import escape as xml_escape
 
 from web_app.config import ConfigManager
@@ -199,6 +200,19 @@ def _skip_request_log(path: str, method: str, config: ConfigManager) -> bool:
     return path in config.request_log_suppressed_paths
 
 
+def _has_scanner_path_signature(path: str, config: ConfigManager) -> bool:
+    segments = tuple(
+        segment
+        for segment in unquote(path).casefold().split("/")
+        if segment
+    )
+    return any(
+        segment in config.scanner_path_segment_names
+        or segment.startswith(config.scanner_path_segment_prefixes)
+        for segment in segments
+    )
+
+
 def _request_app() -> str:
     blueprint = request.blueprint or "web"
     return blueprint.split(".", 1)[0].removesuffix("_api")
@@ -215,7 +229,13 @@ def before_request():
     g.request_user = None
     # Scanner paths abort before normal logging and must remain suppressed.
     g.request_log_suppressed = True
-    if any(request.path.startswith(p) for p in config.known_bot_prefixes) or request.method in config.known_bot_methods:
+    if (
+        request.method.upper() in config.scanner_methods
+        or (
+            request.url_rule is None
+            and _has_scanner_path_signature(request.path, config)
+        )
+    ):
         g.invalid_url_redirect_disabled = True
         abort(404)
 
@@ -409,13 +429,28 @@ def sitemap():
         mimetype='application/xml',
     )
 
+
+@app.route('/robots.txt')
+def robots_txt():
+    config = ConfigManager()
+    sitemap_url = f'{config.site_url.rstrip("/")}{url_for("sitemap")}'
+    return Response(
+        "User-agent: *\n"
+        "Allow: /\n"
+        f"Sitemap: {sitemap_url}\n",
+        mimetype="text/plain",
+    )
+
+
 def configure_logging(debug: bool) -> None:
     config = ConfigManager()
-    log_path = Path("logs/web_app.log")
+    log_path = config.dev.log_file_path.resolve()
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    rotating_log_handler = RotatingFileHandler(str(log_path),
-                                                   maxBytes=int(1e6),
-                                                   backupCount=config.dev.log_rotation_backup_count)
+    rotating_log_handler = ConcurrentRotatingFileHandler(
+        str(log_path),
+        maxBytes=config.dev.log_rotation_max_bytes,
+        backupCount=config.dev.log_rotation_backup_count,
+    )
     logging.basicConfig(level=logging.DEBUG if debug else logging.INFO,
                         handlers=[] if debug else [rotating_log_handler],
                         format=config.log_format)

@@ -210,6 +210,8 @@ class DevConfig:
     terminal_idle_timeout_s: int = 1800
     terminal_buffer_bytes: int = 1_048_576
     terminal_read_chunk: int = 4096
+    log_file_path: Path = Path("logs/web_app.log")
+    log_rotation_max_bytes: int = 1_000_000
     log_rotation_backup_count: int = 20
     log_viewer_file_count: int = 2
     log_viewer_max_lines: int = 5000
@@ -469,17 +471,28 @@ class ConfigManager:
         }
         self.installed_app_config_overrides: dict[str, dict[str, object]] = {}
         self.backup_max_count = 8
-        # Requests matching these prefixes are silently dropped (404, no log) — automated bots/scanners probing for common vulnerabilities
-        self.known_bot_prefixes = {
-            '/.env',        # env file harvesting (.env, .env.local, .env.production, etc.)
-            '/.git/',       # git config/object exposure
-            '/wp-',         # WordPress scanners (wp-admin, wp-login, wp-includes, xmlrpc)
-            '/xmlrpc',      # WordPress XML-RPC
-            '/phpmyadmin',  # phpMyAdmin probes
-            '/.mist/',      # Juniper/Mist IoT probes
-            '/dns-query',   # DNS-over-HTTPS probes
-        }
-        self.known_bot_methods = {'PROPFIND', 'TRACK', 'TRACE'}
+        # Unmatched paths containing these segments are high-confidence
+        # vulnerability probes. They receive a direct 404 without generic
+        # request lifecycle logs; ordinary unknown URLs remain logged.
+        self.scanner_path_segment_names = frozenset({
+            ".aws",
+            ".env",
+            ".git",
+            ".mist",
+            ".ssh",
+            "actuator",
+            "dns-query",
+            "eval-stdin.php",
+            "phpunit",
+            "xmlrpc",
+            "xmlrpc.php",
+        })
+        self.scanner_path_segment_prefixes = (
+            ".env.",
+            "phpmyadmin",
+            "wp-",
+        )
+        self.scanner_methods = frozenset({"PROPFIND", "TRACK", "TRACE"})
         self.request_log_suppressed_paths = {
             '/dev/terminal/input',
             '/dev/terminal/output',

@@ -298,11 +298,17 @@ def test_production_logging_identifies_worker_and_thread():
     import web_app.__main__ as web_main
 
     with (
-        patch.object(web_main, "RotatingFileHandler"),
+        patch.object(web_main, "ConcurrentRotatingFileHandler") as handler,
         patch.object(web_main.logging, "basicConfig") as basic_config,
     ):
         web_main.configure_logging(debug=False)
 
+    config = ConfigManager()
+    handler.assert_called_once_with(
+        str(config.dev.log_file_path.resolve()),
+        maxBytes=config.dev.log_rotation_max_bytes,
+        backupCount=config.dev.log_rotation_backup_count,
+    )
     log_format = basic_config.call_args.kwargs["format"]
     assert "worker=%(process)d" in log_format
     assert "thread=%(thread)d" in log_format

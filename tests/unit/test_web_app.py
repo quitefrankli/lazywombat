@@ -211,8 +211,9 @@ class TestRequestLogging:
         from web_app import __main__ as main_module
 
         config = Mock(
-            known_bot_prefixes=[],
-            known_bot_methods=[],
+            scanner_methods=frozenset(),
+            scanner_path_segment_names=frozenset(),
+            scanner_path_segment_prefixes=(),
             debug_mode=False,
             request_log_suppressed_paths={"/dev/terminal/input", "/dev/terminal/output"},
         )
@@ -234,8 +235,9 @@ class TestRequestLogging:
         from web_app import __main__ as main_module
 
         config = Mock(
-            known_bot_prefixes=[],
-            known_bot_methods=[],
+            scanner_methods=frozenset(),
+            scanner_path_segment_names=frozenset(),
+            scanner_path_segment_prefixes=(),
             debug_mode=False,
             request_log_suppressed_paths={"/dev/terminal/input", "/dev/terminal/output"},
         )
@@ -256,8 +258,9 @@ class TestRequestLogging:
         from web_app import __main__ as main_module
 
         config = Mock(
-            known_bot_prefixes=[],
-            known_bot_methods=[],
+            scanner_methods=frozenset(),
+            scanner_path_segment_names=frozenset(),
+            scanner_path_segment_prefixes=(),
             debug_mode=False,
             request_log_suppressed_paths={"/dev/terminal/input", "/dev/terminal/output"},
         )
