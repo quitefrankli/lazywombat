@@ -31,7 +31,7 @@ def test_templates_keep_css_and_executable_javascript_in_static_assets():
             if re.search(r"\bsrc\s*=", attributes, re.IGNORECASE):
                 continue
             if re.search(
-                r"\btype\s*=\s*['\"]application/json['\"]",
+                r"\btype\s*=\s*['\"]application/(?:json|ld\+json)['\"]",
                 attributes,
                 re.IGNORECASE,
             ):
