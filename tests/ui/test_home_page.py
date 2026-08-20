@@ -16,7 +16,16 @@ def test_home_page_loads(logged_in_page, test_server):
 
 def test_app_grid_visible(logged_in_page, test_server):
     """Test that the app grid is displayed with all expected apps for admin."""
-    expected_apps = ["Loft", "Todoist", "Metrics", "Tubio", "File Store", "JSwipe"]
+    expected_apps = [
+        "Loft",
+        "Todoist",
+        "Metrics",
+        "Tubio",
+        "File Store",
+        "Proxy",
+        "Dev",
+        "JSwipe",
+    ]
     
     for app_name in expected_apps:
         app_card = logged_in_page.locator("text=" + app_name)
@@ -74,8 +83,8 @@ def test_logout_button_present(logged_in_page):
     expect(logged_in_page.locator("a:has-text('Logout')")).to_be_visible()
 
 
-def test_admin_only_apps_disabled_for_non_admin(page, test_server):
-    """Test that admin-only apps are visible but disabled for non-admin users."""
+def test_admin_only_apps_hidden_for_non_admin(page, test_server):
+    """Test that admin-only apps are not rendered for non-admin users."""
     # Register and log in as a fresh non-admin user (self-contained test)
     username = f"ui_non_admin_{int(time.time() * 1000)}"
     password = "testpass123"
@@ -97,8 +106,6 @@ def test_admin_only_apps_disabled_for_non_admin(page, test_server):
     expect(page.locator("text=Todoist")).to_be_visible()
     expect(page.locator("text=Crosswords")).to_be_visible()
 
-    # Verify admin-only apps are shown as disabled entries.
+    # Verify admin-only apps are not disclosed on the homepage.
     for app_name in ["Proxy", "Dev", "JSwipe"]:
-        link = page.locator(f"a.app-disabled:has-text('{app_name}')")
-        expect(link).to_be_visible()
-        expect(link).to_have_attribute("href", "#")
+        expect(page.locator(f".home-app-card:has-text('{app_name}')")).to_have_count(0)
