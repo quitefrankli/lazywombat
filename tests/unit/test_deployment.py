@@ -330,7 +330,7 @@ def test_deployment_loads_scheduled_config_from_candidate_before_reconciling():
         'backup_system_file "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}"'
     )
     dependency_install_index = script.index(
-        "pip install -r requirements.txt --quiet",
+        "install_runtime_requirements",
         scheduled_backup_index,
     )
 
