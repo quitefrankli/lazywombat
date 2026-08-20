@@ -5,12 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block page_title %}{{ app_name }}{% endblock %}</title>
     <meta name="description" content="{% block meta_description %}NabiCat is a collection of small web apps, tools, posts, and experiments.{% endblock %}">
-    {% block robots_meta %}{% endblock %}
-    <link rel="canonical" href="{% block canonical_url %}{{ request.base_url }}{% endblock %}">
+    {% block robots_meta %}
+      {% if not seo_indexable %}
+    <meta name="robots" content="noindex, nofollow">
+      {% endif %}
+    {% endblock %}
+    <link rel="canonical" href="{% block canonical_url %}{{ seo_canonical_url }}{% endblock %}">
     <meta property="og:title" content="{% block og_title %}{{ self.page_title() | trim }}{% endblock %}">
     <meta property="og:description" content="{% block og_description %}{{ self.meta_description() | trim }}{% endblock %}">
     <meta property="og:url" content="{% block og_url %}{{ self.canonical_url() | trim }}{% endblock %}">
     <meta property="og:type" content="{% block og_type %}website{% endblock %}">
+    <meta property="og:site_name" content="{{ app_name }}">
+    <meta property="og:image" content="{% block social_image_url %}{{ seo_social_image_url }}{% endblock %}">
+    <meta property="og:image:secure_url" content="{{ self.social_image_url() | trim }}">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="{% block social_image_alt %}{{ seo_social_image_alt }}{% endblock %}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ self.og_title() | trim }}">
+    <meta name="twitter:description" content="{{ self.og_description() | trim }}">
+    <meta name="twitter:url" content="{{ self.og_url() | trim }}">
+    <meta name="twitter:image" content="{{ self.social_image_url() | trim }}">
+    <meta name="twitter:image:alt" content="{{ self.social_image_alt() | trim }}">
+    {% block extra_meta %}{% endblock %}
+    {% block structured_data %}{% endblock %}
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -40,7 +59,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="{{ app_name }}">
     <meta name="theme-color" content="#87A878">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='cat.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='nabicat.png') }}">
     <meta name="format-detection" content="telephone=no, email=no">
     
     <!-- CSRF token for all forms -->
