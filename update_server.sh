@@ -59,30 +59,28 @@ do
     esac
 done
 
-mapfile -t DEPLOY_CONFIG < <(python - <<'PY'
+mapfile -t RECOVERY_CONFIG < <(python - <<'PY'
 from web_app.config import ConfigManager
 
 config = ConfigManager()
-print(config.gunicorn_workers)
-print(config.gunicorn_request_timeout_s)
-print(config.gunicorn_graceful_timeout_s)
-print(config.deployment_canary_port)
 print(config.deployment_health_attempts)
 print(config.deployment_health_interval_s)
 PY
 )
-WORKERS="${DEPLOY_CONFIG[0]}"
-REQUEST_TIMEOUT="${DEPLOY_CONFIG[1]}"
-GRACEFUL_TIMEOUT="${DEPLOY_CONFIG[2]}"
-CANARY_PORT="${DEPLOY_CONFIG[3]}"
-HEALTH_ATTEMPTS="${DEPLOY_CONFIG[4]}"
-HEALTH_INTERVAL="${DEPLOY_CONFIG[5]}"
+if [[ "${#RECOVERY_CONFIG[@]}" -ne 2 ]]; then
+    deploy_error "could not load rollback health-check configuration"
+    exit 1
+fi
+HEALTH_ATTEMPTS="${RECOVERY_CONFIG[0]}"
+HEALTH_INTERVAL="${RECOVERY_CONFIG[1]}"
+SCHEDULED_JOB_SERVICE_UNIT=""
+SCHEDULED_JOB_TIMEOUT=""
+SCHEDULED_JOB_SPECS=()
+SCHEDULED_JOB_TIMER_NAMES=()
+PYTHON_BIN=$(which python)
+FLOCK_BIN=$(which flock)
 
 CANDIDATE_COMMIT=$(git rev-parse origin/main)
-if [[ "$PREVIOUS_COMMIT" == "$CANDIDATE_COMMIT" ]]; then
-    deploy_log "already running ${CANDIDATE_COMMIT}; nothing to deploy"
-    exit 0
-fi
 
 BACKUP_DIR=$(mktemp -d)
 CANARY_PID=""
@@ -116,6 +114,37 @@ restore_system_file() {
     fi
 }
 
+restore_scheduled_job_units() {
+    local job_name
+    local timer_spec
+    local timer_name
+    [[ -n "$SCHEDULED_JOB_SERVICE_UNIT" ]] || return 0
+    for timer_name in "${SCHEDULED_JOB_TIMER_NAMES[@]}"; do
+        sudo systemctl stop "$timer_name" || true
+    done
+    for timer_spec in "${SCHEDULED_JOB_SPECS[@]}"; do
+        IFS=$'\t' read -r _ job_name _ <<< "$timer_spec"
+        sudo systemctl stop "${SCHEDULED_JOB_SERVICE_UNIT%@.service}@${job_name}.service" || true
+    done
+    for timer_name in "${SCHEDULED_JOB_TIMER_NAMES[@]}"; do
+        if [[ -f "${BACKUP_DIR}/${timer_name}.missing" ]]; then
+            sudo systemctl disable --now "$timer_name" || true
+        fi
+        restore_system_file "/etc/systemd/system/${timer_name}" "$timer_name"
+    done
+    restore_system_file "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}" "$SCHEDULED_JOB_SERVICE_UNIT"
+}
+
+enable_restored_scheduled_job_timers() {
+    local timer_name
+    [[ -n "$SCHEDULED_JOB_SERVICE_UNIT" ]] || return 0
+    for timer_name in "${SCHEDULED_JOB_TIMER_NAMES[@]}"; do
+        if [[ ! -f "${BACKUP_DIR}/${timer_name}.missing" ]]; then
+            sudo systemctl enable --now "$timer_name"
+        fi
+    done
+}
+
 wait_for_commit() {
     local url="$1"
     local expected="$2"
@@ -146,8 +175,10 @@ rollback() {
         restore_system_file /etc/nginx/conf.d/nabicat.conf nginx.conf
         restore_system_file /etc/systemd/system/nabicat.service nabicat.service
         restore_system_file /etc/systemd/system/meridian.service meridian.service
+        restore_scheduled_job_units
         sudo nginx -t
         sudo systemctl daemon-reload
+        enable_restored_scheduled_job_timers
         sudo systemctl reload nginx
         sudo systemctl restart nabicat.service
         if wait_for_commit "http://127.0.0.1:5000/api/health" "$PREVIOUS_COMMIT"; then
@@ -173,15 +204,53 @@ deploy_log "deploying ${CANDIDATE_COMMIT} over ${PREVIOUS_COMMIT}"
 ROLLBACK_ARMED=1
 git reset --hard "$CANDIDATE_COMMIT"
 
+mapfile -t DEPLOY_CONFIG < <(python - <<'PY'
+from web_app.config import ConfigManager
+
+config = ConfigManager()
+print(config.gunicorn_workers)
+print(config.gunicorn_request_timeout_s)
+print(config.gunicorn_graceful_timeout_s)
+print(config.deployment_canary_port)
+print(config.deployment_health_attempts)
+print(config.deployment_health_interval_s)
+print(config.scheduled_job_service_unit_name)
+print(config.scheduled_job_timeout_s)
+for timer_name, job_name, on_calendar in config.scheduled_job_timers:
+    print("\t".join((timer_name, job_name, on_calendar)))
+PY
+)
+if [[ "${#DEPLOY_CONFIG[@]}" -lt 9 ]]; then
+    deploy_error "candidate scheduled-job configuration is incomplete"
+    false
+fi
+WORKERS="${DEPLOY_CONFIG[0]}"
+REQUEST_TIMEOUT="${DEPLOY_CONFIG[1]}"
+GRACEFUL_TIMEOUT="${DEPLOY_CONFIG[2]}"
+CANARY_PORT="${DEPLOY_CONFIG[3]}"
+HEALTH_ATTEMPTS="${DEPLOY_CONFIG[4]}"
+HEALTH_INTERVAL="${DEPLOY_CONFIG[5]}"
+SCHEDULED_JOB_SERVICE_UNIT="${DEPLOY_CONFIG[6]}"
+SCHEDULED_JOB_TIMEOUT="${DEPLOY_CONFIG[7]}"
+SCHEDULED_JOB_SPECS=("${DEPLOY_CONFIG[@]:8}")
+for timer_spec in "${SCHEDULED_JOB_SPECS[@]}"; do
+    IFS=$'\t' read -r timer_name _ _ <<< "$timer_spec"
+    SCHEDULED_JOB_TIMER_NAMES+=("$timer_name")
+done
+
+backup_system_file "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}" "$SCHEDULED_JOB_SERVICE_UNIT"
+for timer_name in "${SCHEDULED_JOB_TIMER_NAMES[@]}"; do
+    backup_system_file "/etc/systemd/system/${timer_name}" "$timer_name"
+done
+
 pip install -r requirements.txt --quiet
-sudo "$(which python)" -m playwright install-deps chromium
+sudo "$PYTHON_BIN" -m playwright install-deps chromium
 python -m playwright install chromium
 sudo apt-get install -y redis-server
 sudo systemctl enable --now redis-server
 
 GUNICORN_BIN=$(which gunicorn)
-NABICAT_DEPLOYMENT_CANARY=1 "$GUNICORN_BIN" \
-    -b "127.0.0.1:${CANARY_PORT}" \
+"$GUNICORN_BIN" -b "127.0.0.1:${CANARY_PORT}" \
     -w 1 \
     --timeout "$REQUEST_TIMEOUT" \
     --graceful-timeout "$GRACEFUL_TIMEOUT" \
@@ -201,6 +270,7 @@ USER_NAME=$(whoami)
 MERIDIAN_BIN=$(which meridian)
 NABICAT_UNIT="${BACKUP_DIR}/nabicat.service.new"
 MERIDIAN_UNIT="${BACKUP_DIR}/meridian.service.new"
+SCHEDULED_JOB_SERVICE_FILE="${BACKUP_DIR}/${SCHEDULED_JOB_SERVICE_UNIT}.new"
 
 cat >"$NABICAT_UNIT" <<EOF
 [Unit]
@@ -242,28 +312,79 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
+cat >"$SCHEDULED_JOB_SERVICE_FILE" <<EOF
+[Unit]
+Description=Nabicat scheduled job (%i)
+Requires=redis-server.service
+After=network-online.target redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${USER_NAME}
+WorkingDirectory=${PROJECT_DIR}
+TimeoutStartSec=${SCHEDULED_JOB_TIMEOUT}
+ExecStart=${FLOCK_BIN} "${LOCK_PATH}" "${PYTHON_BIN}" -m web_app.scheduled_jobs %i
+EOF
+
+for timer_spec in "${SCHEDULED_JOB_SPECS[@]}"; do
+    IFS=$'\t' read -r TIMER_NAME JOB_NAME ON_CALENDAR <<< "$timer_spec"
+    TIMER_FILE="${BACKUP_DIR}/${TIMER_NAME}.new"
+    cat >"$TIMER_FILE" <<EOF
+[Unit]
+Description=Nabicat scheduled job timer (${JOB_NAME})
+
+[Timer]
+OnCalendar=${ON_CALENDAR}
+Persistent=true
+Unit=${SCHEDULED_JOB_SERVICE_UNIT%@.service}@${JOB_NAME}.service
+
+[Install]
+WantedBy=timers.target
+EOF
+done
+
 sudo cp nabicat.conf /etc/nginx/conf.d/
 sudo nginx -t
 sudo systemctl reload nginx
 
 NABICAT_UNIT_CHANGED=1
 MERIDIAN_UNIT_CHANGED=1
+SCHEDULED_JOB_UNITS_CHANGED=1
 if sudo test -f /etc/systemd/system/nabicat.service && sudo cmp -s "$NABICAT_UNIT" /etc/systemd/system/nabicat.service; then
     NABICAT_UNIT_CHANGED=0
 fi
 if sudo test -f /etc/systemd/system/meridian.service && sudo cmp -s "$MERIDIAN_UNIT" /etc/systemd/system/meridian.service; then
     MERIDIAN_UNIT_CHANGED=0
 fi
+if sudo test -f "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}" \
+    && sudo cmp -s "$SCHEDULED_JOB_SERVICE_FILE" "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}"; then
+    SCHEDULED_JOB_UNITS_CHANGED=0
+    for timer_name in "${SCHEDULED_JOB_TIMER_NAMES[@]}"; do
+        if ! sudo test -f "/etc/systemd/system/${timer_name}" \
+            || ! sudo cmp -s "${BACKUP_DIR}/${timer_name}.new" "/etc/systemd/system/${timer_name}"; then
+            SCHEDULED_JOB_UNITS_CHANGED=1
+            break
+        fi
+    done
+fi
 sudo cp "$NABICAT_UNIT" /etc/systemd/system/nabicat.service
 sudo cp "$MERIDIAN_UNIT" /etc/systemd/system/meridian.service
+sudo cp "$SCHEDULED_JOB_SERVICE_FILE" "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}"
+for timer_name in "${SCHEDULED_JOB_TIMER_NAMES[@]}"; do
+    sudo cp "${BACKUP_DIR}/${timer_name}.new" "/etc/systemd/system/${timer_name}"
+done
 sudo systemctl daemon-reload
 sudo systemctl enable meridian.service nabicat.service
+sudo systemctl enable --now "${SCHEDULED_JOB_TIMER_NAMES[@]}"
 
 if [[ "$MERIDIAN_UNIT_CHANGED" -eq 1 ]] || ! sudo systemctl is-active --quiet meridian.service; then
     sudo systemctl restart meridian.service
 fi
 
-if sudo systemctl is-active --quiet nabicat.service && [[ "$NABICAT_UNIT_CHANGED" -eq 0 ]]; then
+if sudo systemctl is-active --quiet nabicat.service \
+    && [[ "$NABICAT_UNIT_CHANGED" -eq 0 ]] \
+    && [[ "$SCHEDULED_JOB_UNITS_CHANGED" -eq 0 ]]; then
     sudo systemctl reload nabicat.service
 else
     sudo systemctl restart nabicat.service

@@ -8,6 +8,28 @@ from typing import Any
 
 import flask
 import flask_login
+from concurrent_log_handler import ConcurrentRotatingFileHandler
+
+from web_app.config import ConfigManager
+
+
+def configure_logging(debug: bool) -> None:
+    """Configure consistent process-safe logging for web and scheduled workers."""
+    config = ConfigManager()
+    log_path = config.log_file_path.resolve()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    rotating_log_handler = ConcurrentRotatingFileHandler(
+        str(log_path),
+        maxBytes=config.dev.log_rotation_max_bytes,
+        backupCount=config.dev.log_rotation_backup_count,
+    )
+    logging.basicConfig(
+        level=logging.DEBUG if debug else logging.INFO,
+        handlers=[] if debug else [rotating_log_handler],
+        format=config.log_format,
+    )
+    logging.getLogger("markdown_it").setLevel(logging.INFO)
+    logging.getLogger("redis").setLevel(logging.INFO)
 
 
 def _user_id(user: Any | None) -> str | None:

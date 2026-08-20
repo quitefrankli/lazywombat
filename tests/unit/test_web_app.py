@@ -4,8 +4,7 @@ import pytest
 import json
 import logging
 import flask_login
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import Mock, patch
 
 from web_app.app import app, _add_static_version
 from web_app.config import ConfigManager
@@ -270,30 +269,6 @@ class TestRequestLogging:
             main_module.before_request()
 
         assert not caplog.records
-
-
-class TestScheduledTasks:
-    @patch('web_app.__main__.get_all_data_interfaces')
-    @patch('web_app.__main__.DataInterface')
-    def test_scheduled_backup_calls_all_backup_handlers(self,
-                                                        mock_data_interface,
-                                                        mock_get_all_data_interfaces):
-        """Test scheduled backup creates one backup dir and dispatches to all handlers."""
-        from web_app import __main__ as main_module
-
-        backup_dir = Path('/tmp/nabicat-test-backup')
-        mock_data_interface.return_value.generate_backup_dir.return_value = backup_dir
-
-        module_interface_1 = MagicMock()
-        module_interface_2 = MagicMock()
-        mock_get_all_data_interfaces.return_value = [module_interface_1, module_interface_2]
-
-        main_module.scheduled_backup()
-
-        mock_data_interface.return_value.generate_backup_dir.assert_called_once_with()
-        mock_data_interface.return_value.backup_data.assert_called_once_with(backup_dir)
-        module_interface_1.return_value.backup_data.assert_called_once_with(backup_dir)
-        module_interface_2.return_value.backup_data.assert_called_once_with(backup_dir)
 
 
 if __name__ == '__main__':

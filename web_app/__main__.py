@@ -1,38 +1,26 @@
-import re
 import json
 import click
 import logging
-import smtplib
-import tempfile
 import time
 import uuid
 import flask_login
-import http.cookiejar
-import urllib.request
 from urllib.parse import unquote
 
-from concurrent_log_handler import ConcurrentRotatingFileHandler
 from git import Repo
-from packaging.version import Version
 from typing import * # type: ignore
 from pathlib import Path
-from email.mime.text import MIMEText
 from flask import Response, abort, g, redirect, render_template, request, url_for
-from flask_apscheduler import APScheduler
 from xml.sax.saxutils import escape as xml_escape
 
 from web_app.config import ConfigManager
 from web_app.data_interface import DataInterface
 from web_app.helpers import (
-    backup_installed_app_data,
-    get_all_data_interfaces,
     register_all_blueprints,
     register_installed_apps,
 )
-from web_app.redis_client import run_once, ensure_local_redis
-from web_app.logging_utils import log_event
+from web_app.redis_client import ensure_local_redis
+from web_app.logging_utils import configure_logging, log_event
 from web_app.loft.data_interface import DataInterface as LoftDataInterface
-from web_app.tubio.audio_downloader import AudioDownloader
 from web_app.app import BUILD_VERSION, BUILD_VERSION_IS_TAG, app
 
 
@@ -51,150 +39,6 @@ def inject_app_name():
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
-
-scheduler = APScheduler()
-
-
-@scheduler.task('cron', id='scheduled_backup', day_of_week='sun', hour=0, minute=0, misfire_grace_time=3600)
-@run_once('scheduled_backup')
-def scheduled_backup():
-    log_event("system", "backup.started", source="scheduler")
-    backup_dir = DataInterface().generate_backup_dir()
-    DataInterface().backup_data(backup_dir)
-    for data_interface_class in get_all_data_interfaces():
-        data_interface_class().backup_data(backup_dir)
-    backup_installed_app_data(backup_dir)
-    log_event("system", "backup.completed", source="scheduler")
-
-
-@scheduler.task('cron', id='scheduled_cookie_keepalive', day='*', hour=4, minute=0, misfire_grace_time=3600)
-@run_once('scheduled_cookie_keepalive')
-def run_cookie_keepalive() -> None:
-    log_event("tubio", "cookie_keepalive.started", source="scheduler")
-    cookie_path = ConfigManager().tubio.cookie_path
-
-    jar = http.cookiejar.MozillaCookieJar(cookie_path)
-    jar.load(ignore_discard=True, ignore_expires=True)
-
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
-    opener.addheaders = [
-        ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
-    ]
-
-    try:
-        response = opener.open("https://www.youtube.com/feed/subscriptions", timeout=30)
-        jar.save(ignore_discard=True, ignore_expires=True)
-        log_event(
-            "tubio", "cookie_keepalive.completed",
-            source="scheduler", status=response.status,
-        )
-    except Exception as error:
-        log_event(
-            "tubio", "cookie_keepalive.failed",
-            level=logging.ERROR, source="scheduler", exc_info=error,
-            error_type=type(error).__name__,
-        )
-
-
-def send_alert_email(subject: str, body: str) -> None:
-    config = ConfigManager()
-    msg = MIMEText(body)
-    msg['Subject'] = subject
-    msg['From'] = config.smtp_user
-    msg['To'] = config.alert_email_to
-    with smtplib.SMTP(config.smtp_host, config.smtp_port) as server:
-        server.starttls()
-        server.login(config.smtp_user, config.smtp_password)
-        server.sendmail(config.smtp_user, config.alert_email_to, msg.as_string())
-
-
-def _check_and_update_ytdlp() -> None:
-    req_path = Path(__file__).resolve().parents[1] / "requirements.txt"
-    req_text = req_path.read_text()
-
-    match = re.search(r'yt-dlp\[default\]>=([\d.]+)', req_text)
-    if not match:
-        return
-    current_ver = match.group(1)
-
-    resp = urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json")
-    latest_ver = json.loads(resp.read())["info"]["version"]
-
-    if Version(latest_ver) <= Version(current_ver):
-        log_event("tubio", "ytdlp_update_not_needed", version=current_ver)
-        return
-
-    log_event(
-        "tubio", "ytdlp_update_started",
-        current_version=current_ver, target_version=latest_ver,
-    )
-    req_path.write_text(req_text.replace(f"yt-dlp[default]>={current_ver}", f"yt-dlp[default]>={latest_ver}"))
-
-    repo = Repo(req_path.parent)
-    repo.index.add(["requirements.txt"])
-    repo.index.commit(f"update yt-dlp to {latest_ver}")
-    repo.remotes.origin.push()
-
-    from web_app.api import update_server as _update_server
-    _update_server()
-
-
-@scheduler.task('cron', id='scheduled_download_health_check', day='*', hour=4, minute=10, misfire_grace_time=3600)
-@run_once('scheduled_download_health_check')
-def run_download_health_check() -> None:
-    log_event("tubio", "download_health_check.started", source="scheduler")
-
-    try:
-        _check_and_update_ytdlp()
-    except Exception as e:
-        log_event(
-            "tubio", "ytdlp_update_check.failed",
-            level=logging.ERROR, exc_info=e, error_type=type(e).__name__,
-        )
-
-    config = ConfigManager()
-    video_id = config.tubio.test_video_id
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        out_path = str(Path(tmp_dir) / "health_check.%(ext)s")
-        ydl_opts = AudioDownloader._build_ydl_opts(out_path)
-
-        try:
-            AudioDownloader.download_audio_file(video_id, ydl_opts)
-
-            result_file = Path(tmp_dir) / "health_check.m4a"
-            if result_file.exists() and result_file.stat().st_size > 0:
-                send_alert_email(
-                    "Tubio Health Check: OK",
-                    f"Download health check passed for video {video_id}.\nFile size: {result_file.stat().st_size} bytes."
-                )
-                log_event("tubio", "download_health_check.completed", result="passed")
-            else:
-                send_alert_email(
-                    "Tubio Health Check: FAIL",
-                    f"Download completed but output file is missing or empty for video {video_id}."
-                )
-                log_event(
-                    "tubio", "download_health_check.failed",
-                    level=logging.ERROR, reason="missing_or_empty_output",
-                )
-        except Exception as e:
-            log_event(
-                "tubio", "download_health_check.failed",
-                level=logging.ERROR, exc_info=e, error_type=type(e).__name__,
-            )
-            send_alert_email(
-                "Tubio Health Check: FAIL",
-                f"Download health check failed for video {video_id}.\nError: {e}"
-            )
-
-
-def start_scheduler() -> None:
-    scheduler.init_app(app)
-    if scheduler.running:
-        return
-    scheduler.start()
-
 
 def _skip_request_log(path: str, method: str, config: ConfigManager) -> bool:
     return path in config.request_log_suppressed_paths
@@ -432,22 +276,6 @@ def robots_txt():
     )
 
 
-def configure_logging(debug: bool) -> None:
-    config = ConfigManager()
-    log_path = config.log_file_path.resolve()
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    rotating_log_handler = ConcurrentRotatingFileHandler(
-        str(log_path),
-        maxBytes=config.dev.log_rotation_max_bytes,
-        backupCount=config.dev.log_rotation_backup_count,
-    )
-    logging.basicConfig(level=logging.DEBUG if debug else logging.INFO,
-                        handlers=[] if debug else [rotating_log_handler],
-                        format=config.log_format)
-    logging.getLogger("markdown_it").setLevel(logging.INFO)
-    logging.getLogger("redis").setLevel(logging.INFO)
-    logging.getLogger("apscheduler.scheduler").setLevel(logging.WARNING)
-
 @click.command()
 @click.option('--debug', is_flag=True, default=False)
 @click.option('--port', default=ConfigManager().server_default_port, type=int)
@@ -494,8 +322,6 @@ def prod_entry():
     register_installed_apps(app)
 
     log_event("system", "worker.started", mode="production")
-    if not config.deployment_canary:
-        start_scheduler()
     return app
 
 

@@ -1,6 +1,5 @@
 import atexit
 from contextlib import contextmanager
-from functools import wraps
 import logging
 import math
 import shutil
@@ -239,38 +238,3 @@ def rmw_lock(name: str, timeout_s: float | None = None, blocking_timeout_s: floa
             )
         if ownership_lost.is_set() and not body_failed:
             raise RuntimeError(f"redis lock {name!r} lost ownership while held")
-
-
-def run_once(job_id: str):
-    """Decorate a scheduled job so it runs on exactly one gunicorn worker.
-
-    Every worker starts its own APScheduler, so a cron job fires once per
-    worker. This gates the body on a Redis SET NX with a TTL: the first worker
-    to fire for a given occurrence acquires the key and runs; the rest find it
-    already set and skip. The TTL (scheduler_lock_ttl_s) outlives a single
-    occurrence's duplicate fires but expires well before the next occurrence.
-
-    Fails safe: if Redis is unreachable the job is skipped (logged), never run
-    N-way, since a duplicated backup/git-push/cookie-write is worse than a miss.
-    """
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            key = f"nabicat:sched:{job_id}"
-            try:
-                acquired = get_redis().set(
-                    key, b"1", nx=True, ex=ConfigManager().scheduler_lock_ttl_s
-                )
-            except Exception as error:
-                log_event(
-                    "redis", "redis.scheduler_claim_failed",
-                    level=logging.ERROR, job_id=job_id, exc_info=error,
-                    error_type=type(error).__name__,
-                )
-                return None
-            if not acquired:
-                log_event("redis", "redis.scheduler_job_skipped", job_id=job_id)
-                return None
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator

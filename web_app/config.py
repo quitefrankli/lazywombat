@@ -108,6 +108,13 @@ class TubioConfig:
     )
     youtube_search_request_timeout_s: float = 10.0
     youtube_thumbnail_request_timeout_s: float = 10.0
+    cookie_keepalive_url: str = "https://www.youtube.com/feed/subscriptions"
+    cookie_keepalive_timeout_s: float = 30.0
+    cookie_keepalive_user_agent: str = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
     youtube_download_format: str = "bestaudio[ext=m4a]/bestaudio/best"
     youtube_audio_preferred_codec: str = "m4a"
     youtube_audio_preferred_quality: str = "32"
@@ -436,7 +443,28 @@ class ConfigManager:
         self.deployment_health_attempts = 30
         self.deployment_health_interval_s = 1
         self.deployment_lock_path = Path.home() / ".nabicat" / "update.lock"
-        self.deployment_canary = getenv("NABICAT_DEPLOYMENT_CANARY") == "1"
+        self.scheduled_job_service_unit_name = "nabicat-scheduled-job@.service"
+        self.scheduled_job_timeout_s = 3600
+        self.scheduled_backup_job_id = "backup"
+        self.scheduled_cookie_keepalive_job_id = "cookie-keepalive"
+        self.scheduled_download_health_check_job_id = "download-health-check"
+        self.scheduled_job_timers = (
+            (
+                "nabicat-backup.timer",
+                self.scheduled_backup_job_id,
+                "Sun *-*-* 00:00:00",
+            ),
+            (
+                "nabicat-cookie-keepalive.timer",
+                self.scheduled_cookie_keepalive_job_id,
+                "*-*-* 04:00:00",
+            ),
+            (
+                "nabicat-download-health-check.timer",
+                self.scheduled_download_health_check_job_id,
+                "*-*-* 04:10:00",
+            ),
+        )
         self.log_format = (
             "%(asctime)s %(levelname)s worker=%(process)d "
             "thread=%(thread)d %(message)s"
@@ -444,10 +472,6 @@ class ConfigManager:
         self.request_id_header = "X-Request-ID"
         self.request_log_warning_status = 400
         self.request_log_error_status = 500
-        # TTL for the per-job exactly-once lock guarding scheduled cron jobs so
-        # they run once across gunicorn workers. Must exceed the longest job
-        # runtime and matches the jobs' misfire_grace_time.
-        self.scheduler_lock_ttl_s = 3600
         # rmw_lock lease TTL, acquisition deadline, and renewal cadence. Active
         # holders renew; crashed holders expire after the TTL.
         self.rmw_lock_timeout_s = 10
@@ -528,6 +552,12 @@ class ConfigManager:
             "tubio.serve_thumbnail",
         })
         self.git_command_timeout_s = 2
+        self.ytdlp_pypi_url = "https://pypi.org/pypi/yt-dlp/json"
+        self.ytdlp_requirement_pattern = (
+            r"^yt-dlp\[default\]>=(?P<version>[^ \t;#\r\n]+)"
+            r"[ \t]*(?:#.*)?\r?$"
+        )
+        self.ytdlp_update_timeout_s = 10.0
         self.access_denied_redirect_endpoint = "home"
         self.elevated_access_denied_message = "You need elevated access to use this app."
         self.admin_access_denied_message = "You need admin access to use this app."

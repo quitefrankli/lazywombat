@@ -11,9 +11,8 @@ flask_app.secret_key = "test-secret-key"
 def _redis_backend():
     """Back get_redis() with fakeredis and disable the rate limiter for tests.
 
-    Redis is a hard runtime dependency (scheduler run_once, ephemeral keys,
-    rate limiting), but the test environment has no live server. fakeredis
-    faithfully implements the SET NX EX semantics those paths rely on.
+    Redis is a hard runtime dependency (ephemeral keys, rate limiting, and
+    cross-worker state), but the test environment has no live server.
     """
     import fakeredis
     import web_app.redis_client as redis_client

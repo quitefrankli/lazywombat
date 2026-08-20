@@ -63,12 +63,30 @@ Make sure to replace the email with your own for certbot
 
 ### Systemd Services
 
-`update_server.sh` generates and manages two systemd units:
+`update_server.sh` generates and manages the long-running services plus a
+templated oneshot service for scheduled jobs:
 
 * `nabicat.service` — the gunicorn web app
 * `meridian.service` — the Meridian LLM proxy used by LLM-backed app features
+* `nabicat-scheduled-job@.service` — runs one host-local job under the app user
 
+Three persistent timers invoke that template in the server's local timezone:
+
+* `nabicat-backup.timer` — weekly backup, Sunday at 00:00
+* `nabicat-cookie-keepalive.timer` — YouTube cookie keepalive, daily at 04:00
+* `nabicat-download-health-check.timer` — Tubio download check, daily at 04:10
+
+The scheduled service takes the same deployment lock as `update_server.sh`, so
+a due job waits for an in-progress deployment rather than running against a
+changing checkout.
+
+```bash
 sudo systemctl status nabicat meridian
+systemctl list-timers 'nabicat-*'
+
+# Run a job immediately when needed
+sudo systemctl start nabicat-scheduled-job@backup.service
+```
 
 ### Logs
 
@@ -77,6 +95,8 @@ stdout is captured by journald
 ```bash
 journalctl -u nabicat -f      # for stdout/stderr from update_server.sh bash script
 journalctl -u meridian -f     # live meridian logs
+journalctl -u 'nabicat-scheduled-job@*' --since today
+tail -f ~/.nabicat/data/logs/web_app.log  # structured web and scheduled-job events
 ```
 
 ### Claude Login (first-time Meridian setup)
@@ -100,6 +120,10 @@ to bring down the server
 a. simply push from main branch, force push also works too
 b. on main branch run - `python scripts/api_helper.py update`
 c. run on server - `bash update_server.sh`
+
+The scheduled `Update yt-dlp` GitHub Actions workflow checks PyPI daily and can
+also be run manually. It validates the updater before committing a newer stable
+yt-dlp requirement to `main`; the normal main-branch update path then deploys it.
 
 ## Renewing Cert
 

@@ -42,7 +42,7 @@
 
 The app runs under gunicorn with multiple sync worker **processes** (`-w`, set via `WORKERS` in `update_server.sh`, default 4). Each worker is a separate OS process, so anything that must be shared across requests lives in **Redis**, not module-level globals. Redis is a hard runtime dependency (`redis_url` in `ConfigManager`, default `redis://127.0.0.1:6379/0`); `update_server.sh` installs/enables `redis-server`, and `ensure_local_redis()` auto-starts one for local `python -m web_app` runs.
 
-- **`web_app/redis_client.py`** is the hub: `get_redis()` (process-cached client), `run_once(job_id)` (scheduler decorator — each APScheduler job fires in every worker but a Redis `SET NX EX` ensures the body runs once), and `rmw_lock(name)` (the distributed mutex).
+- **`web_app/redis_client.py`** is the hub: `get_redis()` (process-cached client) and `rmw_lock(name)` (the distributed mutex).
 - **Rate limiter** (`helpers.py`) and **ephemeral RSA handshake keys** are Redis-backed so limits and the handshake work across workers. Sessions are signed cookies (stateless — fine). Subapp state that must cross worker boundaries must also use Redis.
 
 ### rmw_lock + edit_model (the read-modify-write pattern)

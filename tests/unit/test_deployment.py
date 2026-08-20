@@ -260,6 +260,189 @@ def test_update_server_pipes_patch_to_detached_systemd_deployment(_uuid, popen):
     popen.return_value.stdin.close.assert_called_once()
 
 
+def test_scheduled_job_systemd_configuration():
+    config = ConfigManager()
+
+    assert config.scheduled_job_service_unit_name == (
+        "nabicat-scheduled-job@.service"
+    )
+    assert config.scheduled_job_timeout_s == 3600
+    assert config.scheduled_job_timers == (
+        ("nabicat-backup.timer", "backup", "Sun *-*-* 00:00:00"),
+        (
+            "nabicat-cookie-keepalive.timer",
+            "cookie-keepalive",
+            "*-*-* 04:00:00",
+        ),
+        (
+            "nabicat-download-health-check.timer",
+            "download-health-check",
+            "*-*-* 04:10:00",
+        ),
+    )
+
+
+def test_deployment_installs_templated_scheduled_job_service():
+    script = Path("update_server.sh").read_text()
+    service = re.search(
+        r'cat >"\$SCHEDULED_JOB_SERVICE_FILE" <<EOF\n(.*?)\nEOF',
+        script,
+        re.DOTALL,
+    )
+
+    assert service is not None
+    assert "Type=oneshot" in service.group(1)
+    assert "Requires=redis-server.service" in service.group(1)
+    assert "After=network-online.target redis-server.service" in service.group(1)
+    assert "TimeoutStartSec=${SCHEDULED_JOB_TIMEOUT}" in service.group(1)
+    assert "User=${USER_NAME}" in service.group(1)
+    assert "WorkingDirectory=${PROJECT_DIR}" in service.group(1)
+    assert (
+        'ExecStart=${FLOCK_BIN} "${LOCK_PATH}" "${PYTHON_BIN}" '
+        "-m web_app.scheduled_jobs %i"
+    ) in service.group(1)
+    assert "PYTHON_BIN=$(which python)" in script
+    assert "FLOCK_BIN=$(which flock)" in script
+    assert 'exec 9>"$LOCK_PATH"\nflock 9' in script
+    assert (
+        'sudo cp "$SCHEDULED_JOB_SERVICE_FILE" '
+        '"/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}"'
+    ) in script
+
+
+def test_deployment_loads_scheduled_config_from_candidate_before_reconciling():
+    script = Path("update_server.sh").read_text()
+    reset_index = script.index('git reset --hard "$CANDIDATE_COMMIT"')
+    scheduled_config_index = script.index(
+        "print(config.scheduled_job_service_unit_name)"
+    )
+    scheduled_backup_index = script.index(
+        'backup_system_file "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}"'
+    )
+    dependency_install_index = script.index(
+        "pip install -r requirements.txt --quiet",
+        scheduled_backup_index,
+    )
+
+    assert reset_index < scheduled_config_index
+    assert scheduled_config_index < scheduled_backup_index < dependency_install_index
+    assert "deployment_is_reconciled" not in script
+    assert 'if [[ "${#DEPLOY_CONFIG[@]}" -lt 9 ]]; then' in script
+
+
+def test_deployment_installs_persistent_scheduled_job_timers():
+    script = Path("update_server.sh").read_text()
+    timer = re.search(
+        r'cat >"\$TIMER_FILE" <<EOF\n(.*?)\nEOF',
+        script,
+        re.DOTALL,
+    )
+
+    assert timer is not None
+    assert "OnCalendar=${ON_CALENDAR}" in timer.group(1)
+    assert "Persistent=true" in timer.group(1)
+    assert (
+        "Unit=${SCHEDULED_JOB_SERVICE_UNIT%@.service}@${JOB_NAME}.service"
+        in timer.group(1)
+    )
+    assert "WantedBy=timers.target" in timer.group(1)
+    assert (
+        'sudo cp "${BACKUP_DIR}/${timer_name}.new" '
+        '"/etc/systemd/system/${timer_name}"'
+    ) in script
+    assert (
+        "sudo systemctl daemon-reload\n"
+        "sudo systemctl enable meridian.service nabicat.service\n"
+        'sudo systemctl enable --now "${SCHEDULED_JOB_TIMER_NAMES[@]}"'
+        in script
+    )
+    assert "SCHEDULED_JOB_UNITS_CHANGED=1" in script
+    assert (
+        '[[ "$SCHEDULED_JOB_UNITS_CHANGED" -eq 0 ]]'
+        in script
+    )
+    assert re.search(
+        r'if sudo systemctl is-active --quiet nabicat\.service.*?'
+        r'\[\[ "\$NABICAT_UNIT_CHANGED" -eq 0 \]\].*?'
+        r'\[\[ "\$SCHEDULED_JOB_UNITS_CHANGED" -eq 0 \]\]; then',
+        script,
+        re.DOTALL,
+    )
+
+
+def test_scheduled_job_units_are_rollback_safe_on_first_migration():
+    script = Path("update_server.sh").read_text()
+    restore_file = re.search(
+        r"restore_system_file\(\) \{\n(.*?)\n\}",
+        script,
+        re.DOTALL,
+    )
+    restore = re.search(
+        r"restore_scheduled_job_units\(\) \{\n(.*?)\n\}",
+        script,
+        re.DOTALL,
+    )
+    enable_restored = re.search(
+        r"enable_restored_scheduled_job_timers\(\) \{\n(.*?)\n\}",
+        script,
+        re.DOTALL,
+    )
+    rollback = re.search(r"rollback\(\) \{\n(.*?)\n\}", script, re.DOTALL)
+
+    assert restore_file is not None
+    assert restore is not None
+    assert enable_restored is not None
+    assert rollback is not None
+    assert (
+        'backup_system_file "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}" '
+        '"$SCHEDULED_JOB_SERVICE_UNIT"'
+    ) in script
+    assert (
+        'backup_system_file "/etc/systemd/system/${timer_name}" "$timer_name"'
+        in script
+    )
+    assert (
+        'if [[ -f "${BACKUP_DIR}/${timer_name}.missing" ]]; then'
+        in restore.group(1)
+    )
+    assert (
+        'sudo systemctl disable --now "$timer_name" || true'
+        in restore.group(1)
+    )
+    assert 'sudo systemctl stop "$timer_name" || true' in restore.group(1)
+    assert (
+        'sudo systemctl stop '
+        '"${SCHEDULED_JOB_SERVICE_UNIT%@.service}@${job_name}.service" || true'
+        in restore.group(1)
+    )
+    assert 'if [[ -f "${BACKUP_DIR}/${name}.missing" ]]; then' in (
+        restore_file.group(1)
+    )
+    assert 'sudo rm -f -- "$target"' in restore_file.group(1)
+    assert (
+        'restore_system_file "/etc/systemd/system/${timer_name}" "$timer_name"'
+        in restore.group(1)
+    )
+    assert (
+        'restore_system_file "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}" '
+        '"$SCHEDULED_JOB_SERVICE_UNIT"'
+    ) in restore.group(1)
+    assert (
+        'if [[ ! -f "${BACKUP_DIR}/${timer_name}.missing" ]]; then'
+        in enable_restored.group(1)
+    )
+    assert (
+        'sudo systemctl enable --now "$timer_name"'
+        in enable_restored.group(1)
+    )
+    assert (
+        "restore_scheduled_job_units\n"
+        "        sudo nginx -t\n"
+        "        sudo systemctl daemon-reload\n"
+        "        enable_restored_scheduled_job_timers"
+    ) in rollback.group(1)
+
+
 @patch("web_app.api.update_server")
 @patch("web_app.api.parse_request", return_value={"patch": "patch contents"})
 def test_api_update_queues_patch_through_update_server(_parse_request, update, client):
@@ -272,36 +455,14 @@ def test_api_update_queues_patch_through_update_server(_parse_request, update, c
     update.assert_called_once_with("patch contents")
 
 
-def test_canary_worker_does_not_start_scheduler():
-    import web_app.__main__ as web_main
-
-    config = ConfigManager()
-    previous = config.deployment_canary
-    config.deployment_canary = True
-    try:
-        with (
-            patch.object(web_main, "configure_logging"),
-            patch.object(web_main, "ensure_local_redis"),
-            patch.object(web_main, "register_installed_apps"),
-            patch.object(web_main, "start_scheduler") as start_scheduler,
-            patch.object(web_main, "Repo") as repo,
-        ):
-            repo.return_value.head.commit.hexsha = "candidate-sha"
-            web_main.prod_entry()
-    finally:
-        config.deployment_canary = previous
-
-    start_scheduler.assert_not_called()
-
-
 def test_production_logging_identifies_worker_and_thread():
-    import web_app.__main__ as web_main
+    from web_app import logging_utils
 
     with (
-        patch.object(web_main, "ConcurrentRotatingFileHandler") as handler,
-        patch.object(web_main.logging, "basicConfig") as basic_config,
+        patch.object(logging_utils, "ConcurrentRotatingFileHandler") as handler,
+        patch.object(logging_utils.logging, "basicConfig") as basic_config,
     ):
-        web_main.configure_logging(debug=False)
+        logging_utils.configure_logging(debug=False)
 
     config = ConfigManager()
     handler.assert_called_once_with(
@@ -312,7 +473,6 @@ def test_production_logging_identifies_worker_and_thread():
     log_format = basic_config.call_args.kwargs["format"]
     assert "worker=%(process)d" in log_format
     assert "thread=%(thread)d" in log_format
-    assert logging.getLogger("apscheduler.scheduler").level == logging.WARNING
     assert logging.getLogger("redis").level == logging.INFO
 
 
@@ -335,21 +495,15 @@ def test_prod_data_sync_excludes_server_backups_and_logs(tmp_path):
 def test_prod_entry_logs_gunicorn_worker_start(caplog):
     import web_app.__main__ as web_main
 
-    config = ConfigManager()
-    previous = config.deployment_canary
-    config.deployment_canary = True
-    try:
-        with (
-            patch.object(web_main, "configure_logging"),
-            patch.object(web_main, "ensure_local_redis"),
-            patch.object(web_main, "register_installed_apps"),
-            patch.object(web_main, "Repo") as repo,
-            caplog.at_level(logging.INFO),
-        ):
-            repo.return_value.head.commit.hexsha = "candidate-sha"
-            web_main.prod_entry()
-    finally:
-        config.deployment_canary = previous
+    with (
+        patch.object(web_main, "configure_logging"),
+        patch.object(web_main, "ensure_local_redis"),
+        patch.object(web_main, "register_installed_apps"),
+        patch.object(web_main, "Repo") as repo,
+        caplog.at_level(logging.INFO),
+    ):
+        repo.return_value.head.commit.hexsha = "candidate-sha"
+        web_main.prod_entry()
 
     assert '"event": "worker.started"' in caplog.text
     assert '"event": "server.started"' not in caplog.text
