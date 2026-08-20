@@ -21,6 +21,7 @@ markdown-it-py==3.0.0
 MarkupSafe==3.0.2
 mdurl==0.1.2
 nabicat-app-sdk @ git+https://github.com/quitefrankli/nabicat-app-sdk.git@010b8903db3003d3902865aa6a75ecb9620638b5
+nabicat-jswipe @ git+https://github.com/quitefrankli/nabicat-jswipe.git@26ff35d1084ac1cba43a612e8bd3e995f09b57ba
 nabicat-sentinel @ git+https://github.com/quitefrankli/nabicat-sentinel.git@dcdc5d0bdc545644b4122bc9d5e9259236d1d53b
 narwhals==1.34.1
 numpy==2.2.4
