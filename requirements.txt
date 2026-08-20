@@ -49,7 +49,7 @@ WTForms==3.2.1
 urllib3>=2.5.0
 atomicwrites==1.4.1
 gitpython>=3.1.45
-yt-dlp[default]>=2026.7.4
+yt-dlp[default]>=2026.8.19
 keyring==25.7.0
 pydub>=0.25.1
 requests>=2.32.5
