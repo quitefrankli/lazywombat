@@ -26,6 +26,15 @@ deploy_error() {
     write_deploy_log ERROR "$message"
 }
 
+install_runtime_requirements() {
+    pip install -r requirements.txt --quiet
+    if grep -q '^nabicat-jswipe @ ' requirements.txt; then
+        python -m nabicat_jswipe.install_career_ops
+    else
+        pip uninstall --yes --quiet nabicat-jswipe || true
+    fi
+}
+
 LOCK_PATH=$(python -c 'from web_app.config import ConfigManager; print(ConfigManager().deployment_lock_path)')
 mkdir -p "$(dirname "$LOCK_PATH")"
 exec 9>"$LOCK_PATH"
@@ -171,7 +180,7 @@ rollback() {
             CANARY_PID=""
         fi
         git reset --hard "$PREVIOUS_COMMIT"
-        pip install -r requirements.txt --quiet
+        install_runtime_requirements
         restore_system_file /etc/nginx/conf.d/nabicat.conf nginx.conf
         restore_system_file /etc/systemd/system/nabicat.service nabicat.service
         restore_system_file /etc/systemd/system/meridian.service meridian.service
@@ -243,7 +252,7 @@ for timer_name in "${SCHEDULED_JOB_TIMER_NAMES[@]}"; do
     backup_system_file "/etc/systemd/system/${timer_name}" "$timer_name"
 done
 
-pip install -r requirements.txt --quiet
+install_runtime_requirements
 sudo "$PYTHON_BIN" -m playwright install-deps chromium
 python -m playwright install chromium
 sudo apt-get install -y redis-server

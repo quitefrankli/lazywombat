@@ -36,6 +36,7 @@ def test_v2_app_dependencies_use_immutable_git_revisions():
 
     for distribution, repository in (
         ("nabicat-app-sdk", "nabicat-app-sdk"),
+        ("nabicat-jswipe", "nabicat-jswipe"),
         ("nabicat-sentinel", "nabicat-sentinel"),
     ):
         pattern = (
@@ -43,6 +44,15 @@ def test_v2_app_dependencies_use_immutable_git_revisions():
             rf"{re.escape(repository)}\.git@[0-9a-f]{{40}}$"
         )
         assert re.search(pattern, requirements, re.MULTILINE)
+
+
+def test_deployment_provisions_jswipe_and_removes_it_during_pre_jswipe_rollback():
+    script = Path("update_server.sh").read_text()
+
+    assert "if grep -q '^nabicat-jswipe @ ' requirements.txt; then" in script
+    assert "python -m nabicat_jswipe.install_career_ops" in script
+    assert "pip uninstall --yes --quiet nabicat-jswipe" in script
+    assert script.count("install_runtime_requirements") == 3
 
 
 def test_ci_excludes_ffmpeg_tests_without_installing_ffmpeg():
