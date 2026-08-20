@@ -4,7 +4,10 @@ import pytest
 import json
 import logging
 import flask_login
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
+
+from nabicat_app_sdk import AccessLevel
 
 from web_app.app import app, _add_static_version
 from web_app.config import ConfigManager
@@ -125,6 +128,51 @@ class TestHome:
         icon_response = client.get("/loft/static/loft-icon.webp")
         assert icon_response.status_code == 200
         assert icon_response.mimetype == "image/webp"
+
+    def test_admin_apps_are_hidden_from_non_admins(self, client):
+        import web_app.__main__  # noqa: F401
+
+        class Registry:
+            def navigation(self):
+                return (
+                    SimpleNamespace(
+                        access=AccessLevel.ADMIN,
+                        app_id="jswipe",
+                        endpoint="jswipe.index",
+                        icon="bi-briefcase-fill",
+                        label="JSwipe",
+                    ),
+                )
+
+            def static_version(self, _endpoint):
+                return None
+
+        user = User(
+            username="plain",
+            password="pw",
+            folder="plain",
+            is_admin=False,
+        )
+        previous = app.extensions.get("nabicat_apps")
+        app.extensions["nabicat_apps"] = Registry()
+        try:
+            with patch("web_app.helpers.DataInterface") as data_interface:
+                data_interface.return_value.load_users.return_value = {"plain": user}
+                with client.session_transaction() as session:
+                    session["_user_id"] = "plain"
+
+                response = client.get("/")
+
+            assert response.status_code == 200
+            assert b'<span class="section-label">Admin</span>' not in response.data
+            assert b"app-icon-proxy" not in response.data
+            assert b"app-icon-dev" not in response.data
+            assert b'data-installed-app="jswipe"' not in response.data
+        finally:
+            if previous is None:
+                app.extensions.pop("nabicat_apps", None)
+            else:
+                app.extensions["nabicat_apps"] = previous
 
 
 class TestUserModel:
