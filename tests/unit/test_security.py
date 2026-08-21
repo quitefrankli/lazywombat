@@ -1,10 +1,9 @@
 """Tests for security fixes: path traversal, CSRF, ProxyFix, log redaction"""
 
-import pytest
-from unittest.mock import patch, MagicMock
-from pathlib import Path
+from unittest.mock import patch
 
-import web_app.__main__ as main_module
+import pytest
+
 from web_app.app import app
 from web_app.users import User, UsersFile
 
@@ -51,10 +50,13 @@ class TestPathTraversal:
         with pytest.raises(ValueError, match="Invalid filename"):
             di.delete_data("../users.json", user)
 
+    @patch('web_app.data_interface.ConfigManager')
     @patch('web_app.api.data_interface.ConfigManager')
-    def test_allows_normal_filename(self, mock_config, tmp_path):
+    def test_allows_normal_filename(self, mock_api_config, mock_base_config, tmp_path):
         from web_app.api.data_interface import DataInterface
-        mock_config.return_value.save_data_path = tmp_path
+        mock_api_config.return_value.save_data_path = tmp_path
+        mock_base_config.return_value.save_data_path = tmp_path
+        mock_base_config.return_value.use_offline_syncer = True
         di = DataInterface()
         user = User(username='test', password='x', folder='testfolder', is_admin=False)
         user_dir = di._get_user_dir(user)

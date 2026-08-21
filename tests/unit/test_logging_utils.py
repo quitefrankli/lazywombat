@@ -1,5 +1,7 @@
 import json
 import logging
+import subprocess
+import sys
 
 import pytest
 from flask import g
@@ -18,6 +20,28 @@ def _event_records(caplog, event: str) -> list[dict]:
         if payload.get("event") == event:
             records.append(payload)
     return records
+
+
+def test_debug_logging_emits_application_debug_events_without_gitpython_noise() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import logging; "
+                "from web_app.logging_utils import configure_logging, log_event; "
+                "configure_logging(debug=True); "
+                "logging.getLogger('git.util').debug('gitpython-debug-probe'); "
+                "log_event('jswipe', 'jswipe.debug_probe', level=logging.DEBUG)"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert '"event": "jswipe.debug_probe"' in result.stderr
+    assert "gitpython-debug-probe" not in result.stderr
 
 
 def test_log_event_has_consistent_context_fields(app, caplog):

@@ -142,3 +142,30 @@ class TestDeleteAccountRoute:
                 assert session.get('_user_id') == admin_user.id
 
         helpers.login_manager._user_callback = original_user_loader
+
+    @patch('web_app.account_api.get_all_data_interfaces')
+    @patch('web_app.account_api.DataInterface')
+    def test_cleanup_failure_leaves_account(
+        self,
+        mock_data_interface,
+        mock_get_all_data_interfaces,
+        logged_in_user,
+        regular_user,
+        wire_edit_users,
+    ):
+        failing_data_interface = Mock()
+        failing_data_interface.return_value.delete_user_data.side_effect = OSError(
+            'disk full'
+        )
+        mock_get_all_data_interfaces.return_value = [failing_data_interface]
+        users_file = UsersFile(root=[regular_user])
+        wire_edit_users(mock_data_interface, users_file)
+
+        response = logged_in_user.post(
+            '/account/delete',
+            data={'password': 'testpass'},
+        )
+
+        assert response.status_code == 302
+        assert response.location.endswith('/account/delete')
+        assert regular_user.id in users_file

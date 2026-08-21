@@ -1,5 +1,11 @@
 # TODO
 
+## Misc
+
+* make repos private
+* remove "user documents"
+* convert nabicat to use uv instead of mamba+pypi
+
 ## Tubio streaming support
 
 - [ ] Add immediate playback for uncached YouTube tracks using their native browser-compatible audio stream.
@@ -36,11 +42,9 @@
 
 ## V2 apps
 
-NabiCat may be extended with independently maintained subapps, referred to as
-`v2_apps`. A v2 app lives in its own repository and is distributed as an
-installable Python package. It runs within the NabiCat web application so it can
-participate in the existing authentication, UI, storage, logging, caching, and
-operational environment.
+NabiCat's `v2_apps` are strongly coupled, independently packaged dependencies.
+A v2 app may live in its own repository, but it is installed and versioned as
+part of the NabiCat deployment and runs inside the NabiCat web application.
 
 This model separates source ownership without requiring each subapp to become a
 separate web service. V2 apps are trusted application code and do not represent
@@ -54,20 +58,22 @@ The design has three parts:
   application, and provides the concrete runtime services they need.
 - **V2 app packages** own their routes, domain logic, templates, static assets,
   data models, and app-specific configuration.
-- **NabiCat subapp SDK** is a small shared Python package that defines the stable
-  contract between the host and v2 apps.
+- **NabiCat app SDK** owns the shared coupled framework: the canonical user and
+  data types, filesystem documents, runtime object, and integration contract.
 
-Both NabiCat and each v2 app depend on the SDK. V2 apps should depend on the
-SDK's public contract rather than importing arbitrary modules from the NabiCat
-repository.
+Both NabiCat and each v2 app depend on the SDK. V2 apps import its public APIs,
+including `User`, `UsersFile`, `AppData`, `DataRoot`, `DataInterface`,
+`DataSyncer`, `FilesystemDocuments`, and `CoupledRuntime`. Because they are
+trusted NabiCat dependencies rather than host-neutral plugins, they may also use
+explicit host integration types such as `ConfigManager` when runtime injection
+is not available.
 
 ### SDK scope
 
-The SDK should remain narrow and stable. It may define plugin metadata,
-compatibility information, service interfaces, common errors, and testing
-support. It should not own the Flask application, connect to production
-infrastructure, select filesystem locations, or become a general collection of
-unrelated helpers.
+The SDK should remain cohesive and stable. It defines app metadata,
+compatibility information, service interfaces, common errors, testing support,
+and the framework shared directly with NabiCat. The host still creates the
+Flask application and supplies configured production resources.
 
 Reusable functionality belongs in the SDK only when it is part of the subapp
 integration contract. Larger domain-specific capabilities should remain in the
@@ -75,8 +81,12 @@ host or move into their own focused packages when genuine reuse justifies it.
 
 ### Host-provided services
 
-The host supplies v2 apps with supported capabilities rather than exposing its
-internal modules directly. These capabilities can include:
+Each packaged app declares the single `NABICAT_RUNTIME` capability. The host
+constructs that `CoupledRuntime` with the app and host configuration, canonical
+current user, app-scoped data paths and interface, Redis, sync/Git services, and
+the operational adapters used by the app.
+
+Those adapters include:
 
 - authentication and access control;
 - application logging and audit context;
@@ -84,16 +94,18 @@ internal modules directly. These capabilities can include:
 - configuration;
 - persistent model storage and distributed read-modify-write locking;
 - namespaced ephemeral or Redis-backed state;
-- optional lifecycle facilities such as scheduling.
+- host-integrated scheduling when a concrete app requires it.
 
 This boundary lets NabiCat change its internal implementation without forcing
 corresponding changes across every v2 app. It also allows v2 apps to use fake
 host services in their own tests.
 
-Persistent storage should follow a host-managed, app-namespaced convention.
-The host remains responsible for safe paths, locking, atomic writes, backups,
-and user-data deletion. V2 apps own their data models and mutations but should
-not need to reproduce those operational mechanisms.
+Persistent user storage follows `data/<app_id>/<User.folder>/...`; usernames do
+not form filesystem paths. V2 app `DataInterface` subclasses participate in the
+same host registry as built-in apps. Backup and account deletion enumerate
+`get_all_data_interfaces()`, so each registered interface owns its normal sync
+and deletion behavior without a separate plugin lifecycle or generic document
+purge hook.
 
 ### Integration and presentation
 

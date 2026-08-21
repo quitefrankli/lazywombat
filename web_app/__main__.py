@@ -10,6 +10,7 @@ from git import Repo
 from typing import * # type: ignore
 from pathlib import Path
 from flask import Response, abort, g, redirect, render_template, request, url_for
+from werkzeug.serving import is_running_from_reloader
 from xml.sax.saxutils import escape as xml_escape
 
 from web_app.config import ConfigManager
@@ -298,7 +299,8 @@ def cli_start(
     register_installed_apps(app)
 
     mode = "debug" if debug else "development"
-    log_event("system", "server.started", llm_source=cfg.llm.api_source, mode=mode)
+    if not debug or is_running_from_reloader():
+        log_event("system", "server.started", llm_source=cfg.llm.api_source, mode=mode)
     # Under --debug, Werkzeug's reloader re-execs this whole module in a child
     # process, so everything from here up runs twice: once in the supervising
     # parent and once in the serving child (WERKZEUG_RUN_MAIN=true). The parent

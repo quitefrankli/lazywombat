@@ -16,7 +16,6 @@ from web_app.app import app
 from web_app.config import ConfigManager
 from web_app.data_interface import DataInterface
 from web_app.helpers import (
-    backup_installed_app_data,
     get_all_data_interfaces,
     register_installed_apps,
 )
@@ -37,7 +36,6 @@ def run_backup() -> None:
         subapp_interfaces = get_all_data_interfaces()
         for data_interface_class in subapp_interfaces:
             data_interface_class().backup_data(backup_dir)
-        backup_installed_app_data(backup_dir)
     except Exception as error:
         log_event(
             "system",

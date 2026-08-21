@@ -36,6 +36,29 @@ def app_context():
 
 
 class TestHelpers:
+    def test_jswipe_multipart_requests_use_the_host_cap(self, monkeypatch):
+        config = ConfigManager()
+        monkeypatch.setattr(config, "jswipe_multipart_request_max_bytes", 1234)
+        with app.test_request_context(
+            "/jswipe/api/import",
+            method="POST",
+            content_type="multipart/form-data",
+            environ_base={"CONTENT_LENGTH": "5000"},
+        ):
+            assert flask_login.current_user is not None
+            from flask import request
+
+            assert request.max_content_length == 1234
+
+    def test_jswipe_post_without_content_type_uses_the_default_cap(self):
+        with app.test_request_context(
+            "/jswipe/api/resume",
+            method="POST",
+        ):
+            from flask import request
+
+            assert request.max_content_length is None
+
     @patch('web_app.app.STATIC_VERSION', 'fresh-build')
     def test_static_version_uses_value_loaded_at_server_start(self):
         with app.test_request_context():

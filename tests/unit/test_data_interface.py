@@ -1,16 +1,43 @@
 """Unit tests for data_interface module"""
 
-import pytest
 import json
-import tempfile
 import shutil
+import tempfile
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock, patch
-from io import BytesIO
+
+import pytest
 
 from web_app.data_interface import DataInterface
-from web_app.config import ConfigManager
 from web_app.users import User
+
+
+def test_host_reexports_the_sdk_user_models() -> None:
+    from nabicat_app_sdk import User as SdkUser
+    from nabicat_app_sdk import UsersFile as SdkUsersFile
+
+    from web_app.users import UsersFile
+
+    assert User is SdkUser
+    assert UsersFile is SdkUsersFile
+
+
+def test_host_data_interface_extends_the_sdk_persistence_core() -> None:
+    from nabicat_app_sdk import DataInterface as SdkDataInterface
+
+    assert issubclass(DataInterface, SdkDataInterface)
+
+
+def test_v2_dependencies_participate_in_the_host_data_interface_registry() -> None:
+    from nabicat_jswipe.data_interface import DataInterface as JSwipeDataInterface
+    from nabicat_sentinel.data_interface import DataInterface as SentinelDataInterface
+
+    from web_app.helpers import get_all_data_interfaces
+
+    interfaces = get_all_data_interfaces()
+    assert JSwipeDataInterface in interfaces
+    assert SentinelDataInterface in interfaces
 
 
 @pytest.fixture

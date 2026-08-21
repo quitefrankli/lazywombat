@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
-import threading
 import time
 from datetime import timedelta
 from unittest.mock import Mock, patch
@@ -12,7 +10,11 @@ import pytest
 from flask import Flask
 from flask_login import LoginManager
 from nabicat_app_sdk import (
+    ACCESS_CONTROL,
     DOCUMENTS,
+    STATE,
+    USER_DOCUMENTS,
+    WEB_TARGETS,
     AccessDenied,
     AccessLevel,
     Lease,
@@ -24,13 +26,16 @@ from web_app.app_capabilities import (
     FileDocuments,
     HostAccessControl,
     HostTextGeneration,
+    HostUserDocuments,
     RedisLeases,
     RedisState,
     production_capabilities,
 )
 from web_app.config import ConfigManager
+from web_app.data_interface import DataInterface
 from web_app.helpers import codex_cli_text
 from web_app.redis_client import get_redis
+from web_app.users import User
 
 
 class _JsonCodec:
@@ -58,149 +63,12 @@ def test_file_documents_keep_an_app_inside_its_namespace(tmp_path):
         "runs/run-1/report.json",
         "runs/run-1/screenshots/step-00.png",
     )
-    documents.backup_to(tmp_path / "backup" / "sentinel")
     report.write({"verdict": "fail"})
-    assert (
-        tmp_path / "backup" / "sentinel" / "runs/run-1/report.json"
-    ).read_bytes() == b'{"verdict": "pass"}'
     assert documents.delete_tree("runs/run-1/screenshots") == 1
     assert documents.names() == ("runs/run-1/report.json",)
     assert documents.blob("runs/run-1/report.json").delete()
-    assert (
-        tmp_path / "backup" / "sentinel" / "runs/run-1/report.json"
-    ).read_bytes() == b'{"verdict": "pass"}'
     with pytest.raises(ValueError, match="safe logical name"):
         documents.blob("../users.json")
-
-
-def test_backup_holds_renewed_document_lock_for_the_complete_snapshot(
-    tmp_path,
-    monkeypatch,
-):
-    config = ConfigManager()
-    monkeypatch.setattr(config, "rmw_lock_timeout_s", 1)
-    monkeypatch.setattr(config, "rmw_lock_renewal_interval_s", 0.1)
-    monkeypatch.setattr(config, "rmw_lock_blocking_timeout_s", 3.0)
-    documents = FileDocuments(tmp_path / "sentinel")
-    documents.blob("first.json").write(b"old-first")
-    documents.blob("second.json").write(b"old-second")
-
-    real_link = os.link
-    first_linked = threading.Event()
-    resume_backup = threading.Event()
-    linked_first: list[str] = []
-
-    def paused_link(source, destination, *args, **kwargs):
-        result = real_link(source, destination, *args, **kwargs)
-        if not linked_first:
-            linked_first.append(os.path.basename(source))
-            first_linked.set()
-            assert resume_backup.wait(3)
-        return result
-
-    monkeypatch.setattr("web_app.app_capabilities.os.link", paused_link)
-    backup_errors: list[BaseException] = []
-
-    def back_up():
-        try:
-            documents.backup_to(tmp_path / "backup")
-        except Exception as error:  # noqa: BLE001 - assert thread failures below
-            backup_errors.append(error)
-
-    backup_thread = threading.Thread(target=back_up)
-    backup_thread.start()
-    assert first_linked.wait(1)
-    time.sleep(1.1)
-
-    remaining_name = "second.json" if linked_first == ["first.json"] else "first.json"
-    writer_done = threading.Event()
-
-    def write_remaining():
-        documents.blob(remaining_name).write(b"new")
-        writer_done.set()
-
-    writer_thread = threading.Thread(target=write_remaining)
-    writer_thread.start()
-    assert not writer_done.wait(0.2)
-    resume_backup.set()
-    backup_thread.join()
-    writer_thread.join()
-
-    assert backup_errors == []
-    assert (tmp_path / "backup/first.json").read_bytes() == b"old-first"
-    assert (tmp_path / "backup/second.json").read_bytes() == b"old-second"
-    assert documents.blob(remaining_name).read() == b"new"
-
-
-def test_backup_never_publishes_a_snapshot_after_lock_ownership_is_lost(
-    tmp_path,
-    monkeypatch,
-):
-    config = ConfigManager()
-    monkeypatch.setattr(config, "rmw_lock_timeout_s", 2)
-    monkeypatch.setattr(config, "rmw_lock_renewal_interval_s", 0.05)
-    documents = FileDocuments(tmp_path / "sentinel")
-    documents.blob("first.json").write(b"first")
-    documents.blob("second.json").write(b"second")
-
-    real_link = os.link
-    first_linked = threading.Event()
-    resume_backup = threading.Event()
-
-    def paused_link(source, destination, *args, **kwargs):
-        result = real_link(source, destination, *args, **kwargs)
-        if not first_linked.is_set():
-            first_linked.set()
-            assert resume_backup.wait(3)
-        return result
-
-    monkeypatch.setattr("web_app.app_capabilities.os.link", paused_link)
-    errors: list[BaseException] = []
-
-    def back_up():
-        try:
-            documents.backup_to(tmp_path / "backup")
-        except Exception as error:  # noqa: BLE001 - assert thread failures below
-            errors.append(error)
-
-    thread = threading.Thread(target=back_up)
-    thread.start()
-    assert first_linked.wait(1)
-    redis = get_redis()
-    [lock_key] = redis.keys("nabicat:lock:installed-app-documents:*")
-    redis.delete(lock_key)
-    redis.set(lock_key, b"other-owner", px=2_000)
-    time.sleep(0.1)
-    resume_backup.set()
-    thread.join()
-    redis.delete(lock_key)
-
-    assert len(errors) == 1
-    assert "lost ownership" in str(errors[0])
-    assert not (tmp_path / "backup").exists()
-
-
-def test_backup_rolls_back_if_publish_lock_is_lost(tmp_path, monkeypatch):
-    documents = FileDocuments(tmp_path / "sentinel")
-    documents.blob("report.json").write(b"report")
-    redis = get_redis()
-    real_rename = type(tmp_path).rename
-
-    def rename_then_steal_lock(path, destination):
-        result = real_rename(path, destination)
-        [lock_key] = redis.keys("nabicat:lock:installed-app-documents:*")
-        redis.delete(lock_key)
-        redis.set(lock_key, b"other-owner", px=2_000)
-        return result
-
-    monkeypatch.setattr(type(tmp_path), "rename", rename_then_steal_lock)
-
-    with pytest.raises(RuntimeError, match="lost ownership"):
-        documents.backup_to(tmp_path / "backup")
-
-    for lock_key in redis.keys("nabicat:lock:installed-app-documents:*"):
-        redis.delete(lock_key)
-    assert not (tmp_path / "backup").exists()
 
 
 def test_state_replacement_preserves_ttl_and_leases_are_token_safe():
@@ -375,3 +243,137 @@ def test_production_documents_use_the_finalized_runtime_data_root(tmp_path):
         tmp_path / "production/sentinel/runs/production/report.json"
     ).read_bytes() == b"production"
     assert not (tmp_path / "production/sentinel/runs/debug/report.json").exists()
+
+
+def test_production_capabilities_provide_coupled_sdk_runtime(
+    tmp_path,
+    monkeypatch,
+):
+    from nabicat_app_sdk import NABICAT_RUNTIME, CoupledRuntime
+
+    config = ConfigManager()
+    previous_mode = config.debug_mode
+    previous_root = config.debug_data_root
+    config.debug_mode = True
+    config.debug_data_root = tmp_path
+    app_config = object()
+    try:
+        capabilities = production_capabilities("sentinel", app_config)
+    finally:
+        config.debug_mode = previous_mode
+        config.debug_data_root = previous_root
+
+    runtime = capabilities[NABICAT_RUNTIME]
+    assert isinstance(runtime, CoupledRuntime)
+    assert runtime.config is app_config
+    assert runtime.host_config is config
+    assert runtime.redis is get_redis()
+    assert runtime.data.data.app_id == "sentinel"
+    assert runtime.data.data.data_root == tmp_path
+    assert runtime.data.data_syncer is runtime.data_syncer
+    assert runtime.access is capabilities[ACCESS_CONTROL]
+    assert runtime.documents is capabilities[DOCUMENTS]
+    assert runtime.user_documents is capabilities[USER_DOCUMENTS]
+    assert runtime.state is capabilities[STATE]
+    assert runtime.web_targets is capabilities[WEB_TARGETS]
+
+    user = User(username="alice", folder="opaque-7")
+    config.debug_mode = True
+    config.debug_data_root = tmp_path
+    try:
+        with DataInterface().edit_users() as users:
+            users.add(user)
+        monkeypatch.setattr("web_app.app_capabilities.flask_login.current_user", user)
+        assert runtime.user().id == "alice"
+        assert runtime.user().folder == "opaque-7"
+        scope = runtime.current_user_data()
+        assert scope.user is user
+        scope.documents.blob("private/report.txt").write(b"private")
+        assert (tmp_path / "sentinel/opaque-7/private/report.txt").read_bytes() == b"private"
+    finally:
+        config.debug_mode = previous_mode
+        config.debug_data_root = previous_root
+
+
+def test_user_documents_use_opaque_folder_and_revalidate_active_user(
+    tmp_path,
+    monkeypatch,
+):
+    user = User(username="alice", password="pw", folder="opaque-7")
+    users = {user.id: user}
+    synchronized_loads = 0
+
+    def load_synchronized(_self):
+        nonlocal synchronized_loads
+        synchronized_loads += 1
+        return users
+
+    monkeypatch.setattr(
+        "web_app.data_interface.DataInterface.load_users",
+        load_synchronized,
+    )
+    monkeypatch.setattr(
+        "web_app.data_interface.DataInterface.load_users_local",
+        lambda _self: users,
+    )
+    monkeypatch.setattr("web_app.app_capabilities.flask_login.current_user", user)
+
+    scope = HostUserDocuments("sentinel", data_root=tmp_path).current()
+    assert scope is not None
+    if hasattr(scope, "principal"):
+        assert scope.principal.subject == "alice"
+    documents = getattr(scope, "documents", scope)
+    documents.blob("private/report.txt").write(b"report")
+    assert (
+        tmp_path / "sentinel/opaque-7/private/report.txt"
+    ).read_bytes() == b"report"
+
+    users.clear()
+    with pytest.raises(RuntimeError, match="no longer active"):
+        documents.blob("private/report.txt").read()
+    assert synchronized_loads == 1
+
+
+def test_user_documents_reject_a_symlinked_user_scope(tmp_path, monkeypatch):
+    user = User(username="alice", password="pw", folder="opaque-7")
+    users = {user.id: user}
+    external = tmp_path / "external"
+    external.mkdir()
+    app_root = tmp_path / "sentinel"
+    app_root.mkdir()
+    (app_root / user.folder).symlink_to(external, target_is_directory=True)
+    monkeypatch.setattr(
+        "web_app.data_interface.DataInterface.load_users",
+        lambda _self: users,
+    )
+    monkeypatch.setattr("web_app.app_capabilities.flask_login.current_user", user)
+
+    with pytest.raises(RuntimeError, match="symlink"):
+        HostUserDocuments("sentinel", data_root=tmp_path).current()
+
+
+def test_users_file_rejects_duplicate_document_folders():
+    from web_app.users import UsersFile
+
+    with pytest.raises(ValueError, match="folders must be unique"):
+        UsersFile(
+            root=[
+                User(username="alice", password="pw", folder="shared"),
+                User(username="bob", password="pw", folder="shared"),
+            ]
+        )
+
+    users = UsersFile(root=[User(username="alice", password="pw", folder="shared")])
+    with pytest.raises(ValueError, match="folders must be unique"):
+        users.add(User(username="bob", password="pw", folder="shared"))
+
+
+def test_users_file_rejects_unsafe_document_folders():
+    from web_app.users import UsersFile
+
+    with pytest.raises(ValueError, match="safe opaque names"):
+        UsersFile(
+            root=[
+                User(username="alice", password="pw", folder="../shared"),
+            ]
+        )

@@ -16,9 +16,10 @@ from nabicat_app_sdk import (
     Navigation,
 )
 
-from web_app.config import ConfigManager
-from web_app.helpers import backup_installed_app_data
-from web_app.installed_apps import InstalledAppError, install_apps
+from web_app.installed_apps import (
+    InstalledAppError,
+    install_apps,
+)
 
 
 @dataclass(frozen=True)
@@ -417,33 +418,6 @@ def test_navigation_must_name_an_endpoint_constructed_by_the_app():
             entry_points=(_EntryPoint(definition, "nabicat-alpha"),),
             capability_provider=lambda _app_id, _config: {},
         )
-
-
-def test_backup_copies_only_loaded_app_namespaces(tmp_path):
-    app = Flask(__name__)
-    install_apps(
-        app,
-        entry_points=(_EntryPoint(_definition("alpha"), "nabicat-alpha"),),
-        capability_provider=lambda _app_id, _config: {},
-    )
-    config = ConfigManager()
-    previous_debug = config.debug_mode
-    previous_root = config.debug_data_root
-    config.debug_mode = True
-    config.debug_data_root = tmp_path / "data"
-    (config.save_data_path / "alpha").mkdir(parents=True)
-    (config.save_data_path / "alpha" / "report.json").write_text("report")
-    (config.save_data_path / "not-installed").mkdir()
-    (config.save_data_path / "not-installed" / "private.txt").write_text("private")
-
-    try:
-        backup_installed_app_data(tmp_path / "backup", flask_app=app)
-    finally:
-        config.debug_mode = previous_debug
-        config.debug_data_root = previous_root
-
-    assert (tmp_path / "backup" / "alpha" / "report.json").read_text() == "report"
-    assert not (tmp_path / "backup" / "not-installed").exists()
 
 
 def test_installed_static_prefix_and_distribution_version_are_host_visible(tmp_path):

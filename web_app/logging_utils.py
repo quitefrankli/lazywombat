@@ -18,16 +18,23 @@ def configure_logging(debug: bool) -> None:
     config = ConfigManager()
     log_path = config.log_file_path.resolve()
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    rotating_log_handler = ConcurrentRotatingFileHandler(
-        str(log_path),
-        maxBytes=config.dev.log_rotation_max_bytes,
-        backupCount=config.dev.log_rotation_backup_count,
-    )
+    handlers: list[logging.Handler]
+    if debug:
+        handlers = [logging.StreamHandler()]
+    else:
+        handlers = [
+            ConcurrentRotatingFileHandler(
+                str(log_path),
+                maxBytes=config.dev.log_rotation_max_bytes,
+                backupCount=config.dev.log_rotation_backup_count,
+            )
+        ]
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.INFO,
-        handlers=[] if debug else [rotating_log_handler],
+        handlers=handlers,
         format=config.log_format,
     )
+    logging.getLogger("git").setLevel(logging.INFO)
     logging.getLogger("markdown_it").setLevel(logging.INFO)
     logging.getLogger("redis").setLevel(logging.INFO)
 

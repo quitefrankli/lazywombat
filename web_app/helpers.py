@@ -8,6 +8,7 @@ import flask_login
 import logging
 
 import requests as http_requests
+from nabicat_app_sdk import AppDataLifecycle
 from io import BytesIO
 from pathlib import Path
 from flask import request
@@ -27,7 +28,9 @@ from web_app.errors import *
 from web_app.logging_utils import log_event
 
 
-def get_all_data_interfaces() -> list[DataInterface]:
+def get_all_data_interfaces() -> list[type[AppDataLifecycle]]:
+    from nabicat_jswipe.data_interface import DataInterface as JSwipeDataInterface
+    from nabicat_sentinel.data_interface import DataInterface as SentinelDataInterface
     from web_app.api.data_interface import DataInterface as APIDataInterface
     from web_app.todoist.data_interface import DataInterface as TodoistDataInterface
     from web_app.metrics.data_interface import DataInterface as MetricsDataInterface
@@ -42,6 +45,8 @@ def get_all_data_interfaces() -> list[DataInterface]:
         TubioDataInterface,
         FileStoreDataInterface,
         LoftDataInterface,
+        JSwipeDataInterface,
+        SentinelDataInterface,
     ]
 
 
@@ -92,19 +97,6 @@ def register_installed_apps(app):
         app,
         config_overrides=ConfigManager().installed_app_config_overrides,
     )
-
-
-def backup_installed_app_data(backup_dir: Path, *, flask_app=app) -> None:
-    """Back up the complete host-owned namespace for every loaded V2 app."""
-    registry = flask_app.extensions.get("nabicat_apps")
-    if registry is None:
-        return
-    data_root = ConfigManager().save_data_path
-    for installed in registry.apps:
-        app_id = installed.definition.metadata.app_id
-        from web_app.app_capabilities import FileDocuments
-
-        FileDocuments(data_root / app_id).backup_to(backup_dir / app_id)
 
 
 _EPHEMERAL_KEY_PREFIX = "nabicat:ephkey:"

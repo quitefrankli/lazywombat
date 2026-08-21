@@ -2,6 +2,7 @@ import subprocess
 import time
 from datetime import timedelta
 from pathlib import Path
+
 from flask import Flask, Request
 from flask_bootstrap import Bootstrap5
 from flask_wtf.csrf import CSRFProtect
@@ -31,12 +32,13 @@ class SetCookieNoStoreMiddleware:
 
 
 class NabicatRequest(Request):
-    """Apply Loft's upload cap before CSRF parses multipart forms."""
+    """Apply route-specific request caps before Flask parses form data."""
 
     @property
     def max_content_length(self) -> int | None:
         configured_limit = super().max_content_length
-        loft = ConfigManager().loft
+        config = ConfigManager()
+        loft = config.loft
         if (
             self.method == "POST"
             and self.path.startswith(loft.request_path_prefix)
@@ -47,6 +49,14 @@ class NabicatRequest(Request):
                 configured_limit,
                 loft.gallery_request_max_bytes,
             )
+        if (
+            self.method == "POST"
+            and self.path.startswith(config.jswipe_request_path_prefix)
+            and (self.content_type or "").startswith("multipart/")
+        ):
+            if configured_limit is None:
+                return config.jswipe_multipart_request_max_bytes
+            return min(configured_limit, config.jswipe_multipart_request_max_bytes)
         return configured_limit
 
     @max_content_length.setter

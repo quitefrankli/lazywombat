@@ -25,7 +25,6 @@ def test_backup_job_dispatches_all_backup_sources():
             "get_all_data_interfaces",
             return_value=[subapp_interface_1, subapp_interface_2],
         ),
-        patch.object(scheduled_jobs, "backup_installed_app_data") as backup_apps,
     ):
         scheduled_jobs.run_backup()
 
@@ -35,7 +34,6 @@ def test_backup_job_dispatches_all_backup_sources():
     root_interface.backup_data.assert_called_once_with(backup_dir)
     subapp_interface_1.return_value.backup_data.assert_called_once_with(backup_dir)
     subapp_interface_2.return_value.backup_data.assert_called_once_with(backup_dir)
-    backup_apps.assert_called_once_with(backup_dir)
 
 
 @pytest.mark.parametrize("failure_stage", ["options", "download"])

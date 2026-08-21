@@ -171,6 +171,29 @@ def test_debug_launcher_retains_existing_runtime_behavior():
         web_main.app.config["SESSION_COOKIE_NAME"] = previous_cookie_name
 
 
+def test_debug_reloader_parent_does_not_log_server_started():
+    import web_app.__main__ as web_main
+
+    config = ConfigManager()
+    previous_debug = config.debug_mode
+    previous_cookie_name = web_main.app.config["SESSION_COOKIE_NAME"]
+    with (
+        patch.dict("os.environ", {}, clear=True),
+        patch.object(web_main, "configure_logging"),
+        patch.object(web_main, "ensure_local_redis"),
+        patch.object(web_main, "register_installed_apps"),
+        patch.object(web_main, "log_event") as log_event,
+        patch.object(web_main.app, "run"),
+    ):
+        result = CliRunner().invoke(web_main.cli_start, ["--debug"])
+    try:
+        assert result.exit_code == 0, result.output
+        log_event.assert_not_called()
+    finally:
+        config.debug_mode = previous_debug
+        web_main.app.config["SESSION_COOKIE_NAME"] = previous_cookie_name
+
+
 def test_non_debug_launcher_uses_normal_session_cookie():
     import web_app.__main__ as web_main
 

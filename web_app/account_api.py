@@ -7,7 +7,11 @@ from typing import * # type: ignore
 from flask import request, Blueprint, render_template
 
 from web_app.data_interface import DataInterface
-from web_app.helpers import limiter, from_req, get_all_data_interfaces
+from web_app.helpers import (
+    from_req,
+    get_all_data_interfaces,
+    limiter,
+)
 from web_app.logging_utils import log_event
 
 
@@ -88,49 +92,72 @@ def delete_account():
     password = request.form.get('password', '')
     current_user_id = flask_login.current_user.id
 
-    with DataInterface().edit_users() as users:
-        user = users.get(current_user_id)
-        if user is None:
-            log_event(
-                "account",
-                "account.delete_rejected",
-                level=logging.WARNING,
-                user=current_user_id,
-                reason="not_found",
-            )
-            flask_login.logout_user()
-            flask.flash('Account not found', category='error')
-            return get_default_redirect()
+    try:
+        with DataInterface().edit_users() as users:
+            user = users.get(current_user_id)
+            if user is None:
+                log_event(
+                    "account",
+                    "account.delete_rejected",
+                    level=logging.WARNING,
+                    user=current_user_id,
+                    reason="not_found",
+                )
+                flask_login.logout_user()
+                flask.flash('Account not found', category='error')
+                return get_default_redirect()
 
-        if not user.verify_password(password):
-            log_event(
-                "account",
-                "account.delete_rejected",
-                level=logging.WARNING,
-                user=current_user_id,
-                reason="invalid_password",
-            )
-            flask.flash('Password is incorrect', category='error')
-            return flask.redirect(flask.url_for('.delete_account'))
+            if not user.verify_password(password):
+                log_event(
+                    "account",
+                    "account.delete_rejected",
+                    level=logging.WARNING,
+                    user=current_user_id,
+                    reason="invalid_password",
+                )
+                flask.flash('Password is incorrect', category='error')
+                return flask.redirect(flask.url_for('.delete_account'))
 
-        admin_count = sum(1 for existing_user in users.root if existing_user.is_admin)
-        if user.is_admin and admin_count <= 1:
-            log_event(
-                "account",
-                "account.delete_rejected",
-                level=logging.WARNING,
-                user=current_user_id,
-                reason="last_admin",
-            )
-            flask.flash('Cannot delete the last admin account', category='error')
-            return flask.redirect(flask.url_for('.delete_account'))
+            admin_count = sum(1 for existing_user in users.root if existing_user.is_admin)
+            if user.is_admin and admin_count <= 1:
+                log_event(
+                    "account",
+                    "account.delete_rejected",
+                    level=logging.WARNING,
+                    user=current_user_id,
+                    reason="last_admin",
+                )
+                flask.flash('Cannot delete the last admin account', category='error')
+                return flask.redirect(flask.url_for('.delete_account'))
 
-        users.remove(current_user_id)
+        for data_interface_class in get_all_data_interfaces():
+            data_interface_class().delete_user_data(user)
+        from web_app.oauth import revoke_user_tokens
+        revoke_user_tokens(current_user_id)
 
-    for data_interface_class in get_all_data_interfaces():
-        data_interface_class().delete_user_data(user)
-    from web_app.oauth import revoke_user_tokens
-    revoke_user_tokens(current_user_id)
+        with DataInterface().edit_users() as users:
+            active_user = users.get(current_user_id)
+            if active_user is not None:
+                if active_user.folder != user.folder:
+                    raise RuntimeError("account identity changed during deletion")
+                admin_count = sum(
+                    1 for existing_user in users.root if existing_user.is_admin
+                )
+                if active_user.is_admin and admin_count <= 1:
+                    raise RuntimeError("account became the last admin during deletion")
+                users.remove(current_user_id)
+    except Exception as error:
+        log_event(
+            "account",
+            "account.delete_failed",
+            level=logging.ERROR,
+            user=current_user_id,
+            reason="cleanup_failed",
+            exc_info=error,
+            error_type=type(error).__name__,
+        )
+        flask.flash('Account could not be deleted. Please try again.', category='error')
+        return flask.redirect(flask.url_for('.delete_account'))
 
     log_event("account", "account.deleted", user=current_user_id)
     flask_login.logout_user()

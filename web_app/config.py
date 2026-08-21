@@ -478,6 +478,7 @@ class ConfigManager:
         self.rmw_lock_blocking_timeout_s = 5.0
         self.rmw_lock_renewal_interval_s = 3.0
         self.installed_app_file_mode = 0o600
+        self.installed_app_user_folder_pattern = r"[a-z0-9][a-z0-9._-]*"
         self.installed_app_state_key_prefix = "nabicat:app:{app_id}:state:"
         self.installed_app_lease_key_prefix = "nabicat:app:{app_id}:lease:"
         self.installed_app_text_temp_prefix = "nabicat-{app_id}-text-"
@@ -495,6 +496,8 @@ class ConfigManager:
         }
         self.installed_app_config_overrides: dict[str, dict[str, object]] = {}
         self.backup_max_count = 8
+        self.jswipe_request_path_prefix = "/jswipe/"
+        self.jswipe_multipart_request_max_bytes = 6 * 1024 * 1024
         self.production_sync_excluded_paths = (
             "backups/",
             "data/logs/",

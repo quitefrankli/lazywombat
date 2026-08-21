@@ -3,8 +3,10 @@
 Backed by fakeredis (see tests/conftest.py). Verifies the load-inside-lock,
 auto-save, and no-op-skip behaviors.
 """
+import pytest
 from pydantic import BaseModel
 
+import web_app.data_interface as data_interface_module
 from web_app.data_interface import DataInterface
 
 
@@ -12,9 +14,22 @@ class _Box(BaseModel):
     items: dict[int, str] = {}
 
 
-def test_edit_model_persists_mutation(tmp_path):
-    di = DataInterface()
-    path = tmp_path / "box.json"
+@pytest.fixture
+def scoped_interface(tmp_path, monkeypatch):
+    config = type(
+        "Config",
+        (),
+        {
+            "save_data_path": tmp_path / "data",
+            "use_offline_syncer": True,
+        },
+    )()
+    monkeypatch.setattr(data_interface_module, "ConfigManager", lambda: config)
+    return DataInterface(), config.save_data_path / "box.json"
+
+
+def test_edit_model_persists_mutation(scoped_interface):
+    di, path = scoped_interface
 
     with di.edit_model(path, _Box) as box:
         box.items[1] = "a"
@@ -22,9 +37,8 @@ def test_edit_model_persists_mutation(tmp_path):
     assert di.load_model(path, _Box).items == {1: "a"}
 
 
-def test_edit_model_skips_write_when_unchanged(tmp_path):
-    di = DataInterface()
-    path = tmp_path / "box.json"
+def test_edit_model_skips_write_when_unchanged(scoped_interface):
+    di, path = scoped_interface
 
     # Seed a file, then record its mtime.
     with di.edit_model(path, _Box) as box:
@@ -37,9 +51,8 @@ def test_edit_model_skips_write_when_unchanged(tmp_path):
     assert path.stat().st_mtime_ns == first_mtime
 
 
-def test_edit_model_discards_on_exception(tmp_path):
-    di = DataInterface()
-    path = tmp_path / "box.json"
+def test_edit_model_discards_on_exception(scoped_interface):
+    di, path = scoped_interface
     with di.edit_model(path, _Box) as box:
         box.items[1] = "a"
 
