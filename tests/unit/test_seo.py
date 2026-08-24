@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+from nabicat_app_sdk import DataInterface as SdkDataInterface, DataRoot
 
 import web_app.__main__  # noqa: F401 - registers app routes
 from web_app.app import app
@@ -40,7 +41,11 @@ def loft_posts(tmp_path, monkeypatch):
 
     def patched_init(self):
         from markdown_it import MarkdownIt
+        from web_app.redis_client import rmw_lock
 
+        SdkDataInterface.__init__(
+            self, DataRoot(root=tmp_path), lock_factory=rmw_lock
+        )
         self.projects_dir = projects_dir
         self._content_dir = projects_dir.parent
         self._md = MarkdownIt("commonmark", {"html": False, "linkify": True, "breaks": True})

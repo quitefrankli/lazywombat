@@ -11,6 +11,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
+from nabicat_app_sdk import DataInterface as SdkDataInterface, DataRoot
 import web_app.helpers as helpers
 import web_app.loft as loft_module
 from PIL import Image
@@ -28,9 +29,13 @@ from web_app.config import ConfigManager
 def projects_dir(tmp_path, monkeypatch):
     d = tmp_path / "loft" / "projects"
     d.mkdir(parents=True)
+    monkeypatch.setattr(ConfigManager().loft, "gallery_staging_root", d.parent / "temp")
 
     def patched_init(self):
         from markdown_it import MarkdownIt
+        from web_app.redis_client import rmw_lock
+
+        SdkDataInterface.__init__(self, DataRoot(root=tmp_path), lock_factory=rmw_lock)
         self.projects_dir = d
         self._content_dir = d.parent
         self._md = MarkdownIt("commonmark", {"html": False, "linkify": True, "breaks": True})

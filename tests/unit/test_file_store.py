@@ -11,6 +11,7 @@ from werkzeug.datastructures import FileStorage
 
 # Import app from __main__ where blueprints are registered
 import web_app.__main__ as main_module
+from nabicat_app_sdk import DataRoot
 from web_app.users import User
 from web_app.config import ConfigManager
 from web_app.file_store.data_interface import (
@@ -71,8 +72,10 @@ def auth_mock(test_user):
 def data_interface(tmp_path):
     """Create a DataInterface with temporary directory"""
     di = DataInterface()
+    di.data = DataRoot(root=tmp_path)
     di.file_store_dir = tmp_path / "file_store"
     di.files_dir = di.file_store_dir / "files"
+    di.thumbnails_dir = di.file_store_dir / "thumbnails"
     di.metadata_file = di.file_store_dir / "metadata.json"
     return di
 
