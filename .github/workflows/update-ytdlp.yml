@@ -50,8 +50,16 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Configure private dependency access
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_DEPS_TOKEN }}
+        run: gh auth setup-git
+
       - name: Install updated application dependencies
         if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_DEPS_TOKEN }}
         run: pip install -r requirements.txt
 
       - name: Install system test dependencies

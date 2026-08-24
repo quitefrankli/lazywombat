@@ -24,7 +24,14 @@ jobs:
           python-version: "3.13"
           cache: pip
 
+      - name: Configure private dependency access
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_DEPS_TOKEN }}
+        run: gh auth setup-git
+
       - name: Install dependencies
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_DEPS_TOKEN }}
         run: pip install -r requirements.txt
 
       - name: Install system dependencies
