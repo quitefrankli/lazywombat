@@ -28,6 +28,10 @@ deploy_error() {
 
 install_runtime_requirements() {
     pip install -r requirements.txt --quiet
+    mapfile -t NABICAT_APP_REQUIREMENTS < <(grep '^nabicat-.* @ ' requirements.txt)
+    if [[ "${#NABICAT_APP_REQUIREMENTS[@]}" -gt 0 ]]; then
+        pip install --force-reinstall --no-deps --quiet "${NABICAT_APP_REQUIREMENTS[@]}"
+    fi
     if grep -q '^nabicat-jswipe @ ' requirements.txt; then
         python -m nabicat_jswipe.install_career_ops
     else
