@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SAVED_ARGS=("$@")
-set --
-source "$HOME/miniforge3/bin/activate"
-set -- "${SAVED_ARGS[@]}"
-
 PROJECT_DIR=$(pwd)
+export PATH="${PROJECT_DIR}/.venv/bin:${HOME}/.local/bin:${HOME}/.deno/bin:/usr/local/bin:/usr/bin:/bin"
+PYTHON_BIN="${PROJECT_DIR}/.venv/bin/python"
+GUNICORN_BIN="${PROJECT_DIR}/.venv/bin/gunicorn"
 LOG_FILE="${PROJECT_DIR}/logs/web_app.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
@@ -27,19 +25,13 @@ deploy_error() {
 }
 
 install_runtime_requirements() {
-    pip install -r requirements.txt --quiet
-    mapfile -t NABICAT_APP_REQUIREMENTS < <(grep '^nabicat-.* @ ' requirements.txt)
-    if [[ "${#NABICAT_APP_REQUIREMENTS[@]}" -gt 0 ]]; then
-        pip install --force-reinstall --no-deps --quiet "${NABICAT_APP_REQUIREMENTS[@]}"
-    fi
-    if grep -q '^nabicat-jswipe @ ' requirements.txt; then
-        python -m nabicat_jswipe.install_career_ops
-    else
-        pip uninstall --yes --quiet nabicat-jswipe || true
+    uv sync --locked --no-dev --managed-python || return $?
+    if "$PYTHON_BIN" -c 'import importlib.util; raise SystemExit(importlib.util.find_spec("nabicat_jswipe") is None)'; then
+        "$PYTHON_BIN" -m nabicat_jswipe.install_career_ops
     fi
 }
 
-LOCK_PATH=$(python -c 'from web_app.config import ConfigManager; print(ConfigManager().deployment_lock_path)')
+LOCK_PATH=$("$PYTHON_BIN" -c 'from web_app.config import ConfigManager; print(ConfigManager().deployment_lock_path)')
 mkdir -p "$(dirname "$LOCK_PATH")"
 exec 9>"$LOCK_PATH"
 flock 9
@@ -49,48 +41,33 @@ git fetch origin main
 git fetch --tags
 PREVIOUS_COMMIT=$(git rev-parse HEAD)
 
-cleanup_failed_patch() {
-    git am --abort >/dev/null 2>&1 || true
-}
-
-while getopts ":p" opt
-do
-    case "$opt" in
-        p)
-            trap cleanup_failed_patch EXIT
-            git reset --hard origin/main
-            deploy_log "applying API patch"
-            git am
-            trap - EXIT
-            git push
-            git fetch origin main
-            ;;
-        \?)
-            deploy_error "invalid option: -${OPTARG}"
-            exit 1
-            ;;
-    esac
-done
-
-mapfile -t RECOVERY_CONFIG < <(python - <<'PY'
+mapfile -t RECOVERY_CONFIG < <("$PYTHON_BIN" - <<'PY'
 from web_app.config import ConfigManager
 
 config = ConfigManager()
 print(config.deployment_health_attempts)
 print(config.deployment_health_interval_s)
+print(config.scheduled_job_service_unit_name)
+for timer_name, job_name, on_calendar in config.scheduled_job_timers:
+    print("\t".join((timer_name, job_name, on_calendar)))
 PY
 )
-if [[ "${#RECOVERY_CONFIG[@]}" -ne 2 ]]; then
+if [[ "${#RECOVERY_CONFIG[@]}" -lt 3 ]]; then
     deploy_error "could not load rollback health-check configuration"
     exit 1
 fi
 HEALTH_ATTEMPTS="${RECOVERY_CONFIG[0]}"
 HEALTH_INTERVAL="${RECOVERY_CONFIG[1]}"
-SCHEDULED_JOB_SERVICE_UNIT=""
+SCHEDULED_JOB_SERVICE_UNIT="${RECOVERY_CONFIG[2]}"
 SCHEDULED_JOB_TIMEOUT=""
-SCHEDULED_JOB_SPECS=()
+SCHEDULED_JOB_SPECS=("${RECOVERY_CONFIG[@]:3}")
 SCHEDULED_JOB_TIMER_NAMES=()
-PYTHON_BIN=$(which python)
+for timer_spec in "${SCHEDULED_JOB_SPECS[@]}"; do
+    IFS=$'\t' read -r timer_name _ _ <<< "$timer_spec"
+    SCHEDULED_JOB_TIMER_NAMES+=("$timer_name")
+done
+PREVIOUS_JOB_SPECS=("${SCHEDULED_JOB_SPECS[@]}")
+PREVIOUS_JOB_SERVICE_UNIT="$SCHEDULED_JOB_SERVICE_UNIT"
 FLOCK_BIN=$(which flock)
 
 CANDIDATE_COMMIT=$(git rev-parse origin/main)
@@ -110,6 +87,7 @@ cleanup() {
 backup_system_file() {
     local source="$1"
     local name="$2"
+    [[ ! -e "${BACKUP_DIR}/${name}" && ! -e "${BACKUP_DIR}/${name}.missing" ]] || return 0
     if sudo test -f "$source"; then
         sudo cp "$source" "${BACKUP_DIR}/${name}"
     else
@@ -124,6 +102,24 @@ restore_system_file() {
         sudo rm -f -- "$target"
     else
         sudo cp "${BACKUP_DIR}/${name}" "$target"
+    fi
+}
+
+stop_application() {
+    local timer_name job_name timer_spec
+    for timer_name in "${SCHEDULED_JOB_TIMER_NAMES[@]}"; do
+        if sudo test -f "/etc/systemd/system/${timer_name}"; then
+            sudo systemctl stop "$timer_name" || return $?
+        fi
+    done
+    for timer_spec in "${SCHEDULED_JOB_SPECS[@]}"; do
+        IFS=$'\t' read -r _ job_name _ <<< "$timer_spec"
+        if sudo test -f "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}"; then
+            sudo systemctl stop "${SCHEDULED_JOB_SERVICE_UNIT%@.service}@${job_name}.service" || return $?
+        fi
+    done
+    if sudo test -f /etc/systemd/system/nabicat.service; then
+        sudo systemctl stop nabicat.service || return $?
     fi
 }
 
@@ -144,6 +140,15 @@ restore_scheduled_job_units() {
             sudo systemctl disable --now "$timer_name" || true
         fi
         restore_system_file "/etc/systemd/system/${timer_name}" "$timer_name"
+    done
+    restore_system_file "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}" "$SCHEDULED_JOB_SERVICE_UNIT"
+    SCHEDULED_JOB_SERVICE_UNIT="$PREVIOUS_JOB_SERVICE_UNIT"
+    SCHEDULED_JOB_SPECS=("${PREVIOUS_JOB_SPECS[@]}")
+    SCHEDULED_JOB_TIMER_NAMES=()
+    for timer_spec in "${SCHEDULED_JOB_SPECS[@]}"; do
+        IFS=$'\t' read -r timer_name _ _ <<< "$timer_spec"
+        restore_system_file "/etc/systemd/system/${timer_name}" "$timer_name"
+        SCHEDULED_JOB_TIMER_NAMES+=("$timer_name")
     done
     restore_system_file "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}" "$SCHEDULED_JOB_SERVICE_UNIT"
 }
@@ -183,18 +188,23 @@ rollback() {
             wait "$CANARY_PID" 2>/dev/null
             CANARY_PID=""
         fi
+        stop_application
+        git am --abort >/dev/null 2>&1 || true
         git reset --hard "$PREVIOUS_COMMIT"
-        install_runtime_requirements
+        if ! install_runtime_requirements; then
+            deploy_error "rollback dependency installation failed; services remain stopped"
+            exit "$exit_code"
+        fi
         restore_system_file /etc/nginx/conf.d/nabicat.conf nginx.conf
         restore_system_file /etc/systemd/system/nabicat.service nabicat.service
         restore_system_file /etc/systemd/system/meridian.service meridian.service
         restore_scheduled_job_units
         sudo nginx -t
         sudo systemctl daemon-reload
-        enable_restored_scheduled_job_timers
         sudo systemctl reload nginx
-        sudo systemctl restart nabicat.service
+        sudo systemctl restart meridian.service nabicat.service
         if wait_for_commit "http://127.0.0.1:5000/api/health" "$PREVIOUS_COMMIT"; then
+            enable_restored_scheduled_job_timers
             deploy_log "rollback recovered ${PREVIOUS_COMMIT}"
         else
             deploy_error "rollback to ${PREVIOUS_COMMIT} did not pass its health check"
@@ -213,11 +223,35 @@ backup_system_file /etc/nginx/conf.d/nabicat.conf nginx.conf
 backup_system_file /etc/systemd/system/nabicat.service nabicat.service
 backup_system_file /etc/systemd/system/meridian.service meridian.service
 
+backup_system_file "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}" "$SCHEDULED_JOB_SERVICE_UNIT"
+for timer_name in "${SCHEDULED_JOB_TIMER_NAMES[@]}"; do
+    backup_system_file "/etc/systemd/system/${timer_name}" "$timer_name"
+done
+
 deploy_log "deploying ${CANDIDATE_COMMIT} over ${PREVIOUS_COMMIT}"
 ROLLBACK_ARMED=1
+stop_application
+while getopts ":p" opt
+do
+    case "$opt" in
+        p)
+            git reset --hard origin/main
+            deploy_log "applying API patch"
+            git am
+            git push
+            git fetch origin main
+            ;;
+        \?)
+            deploy_error "invalid option: -${OPTARG}"
+            false
+            ;;
+    esac
+done
+
+CANDIDATE_COMMIT=$(git rev-parse origin/main)
 git reset --hard "$CANDIDATE_COMMIT"
 
-mapfile -t DEPLOY_CONFIG < <(python - <<'PY'
+mapfile -t DEPLOY_CONFIG < <("$PYTHON_BIN" - <<'PY'
 from web_app.config import ConfigManager
 
 config = ConfigManager()
@@ -246,6 +280,7 @@ HEALTH_INTERVAL="${DEPLOY_CONFIG[5]}"
 SCHEDULED_JOB_SERVICE_UNIT="${DEPLOY_CONFIG[6]}"
 SCHEDULED_JOB_TIMEOUT="${DEPLOY_CONFIG[7]}"
 SCHEDULED_JOB_SPECS=("${DEPLOY_CONFIG[@]:8}")
+SCHEDULED_JOB_TIMER_NAMES=()
 for timer_spec in "${SCHEDULED_JOB_SPECS[@]}"; do
     IFS=$'\t' read -r timer_name _ _ <<< "$timer_spec"
     SCHEDULED_JOB_TIMER_NAMES+=("$timer_name")
@@ -258,11 +293,10 @@ done
 
 install_runtime_requirements
 sudo "$PYTHON_BIN" -m playwright install-deps chromium
-python -m playwright install chromium
+"$PYTHON_BIN" -m playwright install chromium
 sudo apt-get install -y redis-server
 sudo systemctl enable --now redis-server
 
-GUNICORN_BIN=$(which gunicorn)
 "$GUNICORN_BIN" -b "127.0.0.1:${CANARY_PORT}" \
     -w 1 \
     --timeout "$REQUEST_TIMEOUT" \
@@ -296,6 +330,7 @@ StartLimitIntervalSec=60
 Type=simple
 User=${USER_NAME}
 WorkingDirectory=${PROJECT_DIR}
+Environment="PATH=${PATH}"
 ExecStart=${GUNICORN_BIN} -b 127.0.0.1:5000 -w ${WORKERS} --timeout ${REQUEST_TIMEOUT} --graceful-timeout ${GRACEFUL_TIMEOUT} 'web_app.__main__:prod_entry()'
 ExecReload=/bin/kill -s HUP \$MAINPID
 Restart=always
@@ -316,7 +351,7 @@ StartLimitIntervalSec=60
 Type=simple
 User=${USER_NAME}
 WorkingDirectory=/home/${USER_NAME}
-Environment=PATH=/home/${USER_NAME}/.local/bin:/home/${USER_NAME}/miniforge3/bin:/usr/local/bin:/usr/bin:/bin
+Environment="PATH=${PATH}"
 ExecStart=${MERIDIAN_BIN}
 Restart=always
 RestartSec=3
@@ -336,6 +371,7 @@ Wants=network-online.target
 Type=oneshot
 User=${USER_NAME}
 WorkingDirectory=${PROJECT_DIR}
+Environment="PATH=${PATH}"
 TimeoutStartSec=${SCHEDULED_JOB_TIMEOUT}
 ExecStart=${FLOCK_BIN} "${LOCK_PATH}" "${PYTHON_BIN}" -m web_app.scheduled_jobs %i
 EOF
@@ -361,26 +397,6 @@ sudo cp nabicat.conf /etc/nginx/conf.d/
 sudo nginx -t
 sudo systemctl reload nginx
 
-NABICAT_UNIT_CHANGED=1
-MERIDIAN_UNIT_CHANGED=1
-SCHEDULED_JOB_UNITS_CHANGED=1
-if sudo test -f /etc/systemd/system/nabicat.service && sudo cmp -s "$NABICAT_UNIT" /etc/systemd/system/nabicat.service; then
-    NABICAT_UNIT_CHANGED=0
-fi
-if sudo test -f /etc/systemd/system/meridian.service && sudo cmp -s "$MERIDIAN_UNIT" /etc/systemd/system/meridian.service; then
-    MERIDIAN_UNIT_CHANGED=0
-fi
-if sudo test -f "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}" \
-    && sudo cmp -s "$SCHEDULED_JOB_SERVICE_FILE" "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}"; then
-    SCHEDULED_JOB_UNITS_CHANGED=0
-    for timer_name in "${SCHEDULED_JOB_TIMER_NAMES[@]}"; do
-        if ! sudo test -f "/etc/systemd/system/${timer_name}" \
-            || ! sudo cmp -s "${BACKUP_DIR}/${timer_name}.new" "/etc/systemd/system/${timer_name}"; then
-            SCHEDULED_JOB_UNITS_CHANGED=1
-            break
-        fi
-    done
-fi
 sudo cp "$NABICAT_UNIT" /etc/systemd/system/nabicat.service
 sudo cp "$MERIDIAN_UNIT" /etc/systemd/system/meridian.service
 sudo cp "$SCHEDULED_JOB_SERVICE_FILE" "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}"
@@ -389,24 +405,14 @@ for timer_name in "${SCHEDULED_JOB_TIMER_NAMES[@]}"; do
 done
 sudo systemctl daemon-reload
 sudo systemctl enable meridian.service nabicat.service
-sudo systemctl enable --now "${SCHEDULED_JOB_TIMER_NAMES[@]}"
 
-if [[ "$MERIDIAN_UNIT_CHANGED" -eq 1 ]] || ! sudo systemctl is-active --quiet meridian.service; then
-    sudo systemctl restart meridian.service
-fi
-
-if sudo systemctl is-active --quiet nabicat.service \
-    && [[ "$NABICAT_UNIT_CHANGED" -eq 0 ]] \
-    && [[ "$SCHEDULED_JOB_UNITS_CHANGED" -eq 0 ]]; then
-    sudo systemctl reload nabicat.service
-else
-    sudo systemctl restart nabicat.service
-fi
+sudo systemctl restart meridian.service nabicat.service
 
 if ! wait_for_commit "http://127.0.0.1:5000/api/health" "$CANDIDATE_COMMIT"; then
     deploy_error "production health check failed for ${CANDIDATE_COMMIT}"
     false
 fi
 
+sudo systemctl enable --now "${SCHEDULED_JOB_TIMER_NAMES[@]}"
 ROLLBACK_ARMED=0
-deploy_log "deployment ${CANDIDATE_COMMIT} is healthy; old workers are draining for up to ${GRACEFUL_TIMEOUT}s"
+deploy_log "deployment ${CANDIDATE_COMMIT} is healthy"

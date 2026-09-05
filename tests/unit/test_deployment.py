@@ -1,6 +1,7 @@
 import logging
 import re
 import subprocess
+import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -32,7 +33,8 @@ def test_synchronous_app_requests_have_aligned_proxy_and_worker_timeouts():
 
 
 def test_v2_app_dependencies_use_immutable_git_revisions():
-    requirements = Path("requirements.txt").read_text()
+    project = tomllib.loads(Path("pyproject.toml").read_text())
+    requirements = "\n".join(project["project"]["dependencies"])
 
     for distribution, repository in (
         ("nabicat-app-sdk", "nabicat-app-sdk"),
@@ -46,13 +48,14 @@ def test_v2_app_dependencies_use_immutable_git_revisions():
         assert re.search(pattern, requirements, re.MULTILINE)
 
 
-def test_deployment_provisions_jswipe_and_removes_it_during_pre_jswipe_rollback():
+def test_deployment_uses_isolated_locked_runtime():
     script = Path("update_server.sh").read_text()
-
-    assert "if grep -q '^nabicat-jswipe @ ' requirements.txt; then" in script
-    assert "python -m nabicat_jswipe.install_career_ops" in script
-    assert "pip uninstall --yes --quiet nabicat-jswipe" in script
-    assert script.count("install_runtime_requirements") == 3
+    assert 'uv sync --locked --no-dev --managed-python' in script
+    assert '"$PYTHON_BIN" -m nabicat_jswipe.install_career_ops' in script
+    assert 'miniforge' not in script
+    assert 'pip install' not in script
+    assert 'PYTHON_BIN="${PROJECT_DIR}/.venv/bin/python"' in script
+    assert 'GUNICORN_BIN="${PROJECT_DIR}/.venv/bin/gunicorn"' in script
 
 
 def test_ci_excludes_ffmpeg_tests_without_installing_ffmpeg():
@@ -334,7 +337,7 @@ def test_deployment_installs_templated_scheduled_job_service():
         'ExecStart=${FLOCK_BIN} "${LOCK_PATH}" "${PYTHON_BIN}" '
         "-m web_app.scheduled_jobs %i"
     ) in service.group(1)
-    assert "PYTHON_BIN=$(which python)" in script
+    assert 'PYTHON_BIN="${PROJECT_DIR}/.venv/bin/python"' in script
     assert "FLOCK_BIN=$(which flock)" in script
     assert 'exec 9>"$LOCK_PATH"\nflock 9' in script
     assert (
@@ -347,10 +350,10 @@ def test_deployment_loads_scheduled_config_from_candidate_before_reconciling():
     script = Path("update_server.sh").read_text()
     reset_index = script.index('git reset --hard "$CANDIDATE_COMMIT"')
     scheduled_config_index = script.index(
-        "print(config.scheduled_job_service_unit_name)"
+        "print(config.scheduled_job_service_unit_name)", reset_index
     )
     scheduled_backup_index = script.index(
-        'backup_system_file "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}"'
+        'backup_system_file "/etc/systemd/system/${SCHEDULED_JOB_SERVICE_UNIT}"', reset_index
     )
     dependency_install_index = script.index(
         "install_runtime_requirements",
@@ -383,23 +386,8 @@ def test_deployment_installs_persistent_scheduled_job_timers():
         'sudo cp "${BACKUP_DIR}/${timer_name}.new" '
         '"/etc/systemd/system/${timer_name}"'
     ) in script
-    assert (
-        "sudo systemctl daemon-reload\n"
-        "sudo systemctl enable meridian.service nabicat.service\n"
+    assert script.index('if ! wait_for_commit "http://127.0.0.1:5000') < script.index(
         'sudo systemctl enable --now "${SCHEDULED_JOB_TIMER_NAMES[@]}"'
-        in script
-    )
-    assert "SCHEDULED_JOB_UNITS_CHANGED=1" in script
-    assert (
-        '[[ "$SCHEDULED_JOB_UNITS_CHANGED" -eq 0 ]]'
-        in script
-    )
-    assert re.search(
-        r'if sudo systemctl is-active --quiet nabicat\.service.*?'
-        r'\[\[ "\$NABICAT_UNIT_CHANGED" -eq 0 \]\].*?'
-        r'\[\[ "\$SCHEDULED_JOB_UNITS_CHANGED" -eq 0 \]\]; then',
-        script,
-        re.DOTALL,
     )
 
 
@@ -468,12 +456,10 @@ def test_scheduled_job_units_are_rollback_safe_on_first_migration():
         'sudo systemctl enable --now "$timer_name"'
         in enable_restored.group(1)
     )
-    assert (
-        "restore_scheduled_job_units\n"
-        "        sudo nginx -t\n"
-        "        sudo systemctl daemon-reload\n"
-        "        enable_restored_scheduled_job_timers"
-    ) in rollback.group(1)
+    assert rollback.group(1).index('if wait_for_commit') < rollback.group(1).index(
+        'enable_restored_scheduled_job_timers'
+    )
+
 
 
 @patch("web_app.api.update_server")
@@ -525,8 +511,10 @@ def test_prod_data_sync_excludes_server_backups_and_logs(tmp_path):
     assert "--exclude=data/logs/" in command
 
 
-def test_prod_entry_logs_gunicorn_worker_start(caplog):
+def test_prod_entry_logs_gunicorn_worker_start(caplog, monkeypatch):
     import web_app.__main__ as web_main
+
+    monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret-key")
 
     with (
         patch.object(web_main, "configure_logging"),

@@ -57,7 +57,7 @@ def ensure_local_redis() -> None:
     if not redis_bin:
         raise RuntimeError(
             "redis-server not found on PATH. Install redis (e.g. "
-            "`conda install -c conda-forge redis-server`) or start one manually."
+            "`brew install redis`) or start one manually."
         )
 
     log_event("redis", "redis.local_starting", port=port)

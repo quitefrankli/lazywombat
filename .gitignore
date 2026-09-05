@@ -14,3 +14,4 @@ desktop_app/
 cookies.txt
 .git-worktree/
 .env
+.venv/

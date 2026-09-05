@@ -12,33 +12,39 @@ create a `.env` file in the root of the project with the following content:
 
 * `FLASK_SECRET_KEY` - can be any random 24 char str
 
-### Conda + Other Misc Reqs
+### Python and system dependencies
 
-* setup conda env - see `setup_server.sh:setup_conda`
+* install [uv](https://docs.astral.sh/uv/getting-started/installation/); it manages the pinned Python version and project environment
+* install Redis and Deno (server setup provisions these)
 * install `ffmpeg`
 * install `terraform`
 
 ## Running
 
 ```bash
-pip install -r requirements.txt
-python -m web_app [--debug] [--port PORT]
+uv sync --locked
+uv run --locked python -m web_app [--debug] [--port PORT]
 ```
+
+Production installs use `uv sync --locked --no-dev`; development and production
+checkouts each have their own `.venv`. Do not synchronize a running production
+environment manually: `update_server.sh` stops services before replacing dependencies
+and restores the previous locked environment if deployment fails.
 
 ## Testing
 
-`python -m pytest`
+`uv run --locked pytest -q -m "not ffmpeg"`
 
 ### Playwright UI Tests
 
 ```bash
-pip install playwright
-playwright install
-sudo $(which playwright) install-deps
-pytest tests/ui/ # run ui tests in headless mode
+uv sync --locked
+uv run --locked playwright install
+sudo .venv/bin/playwright install-deps
+uv run --locked pytest tests/ui/ # run ui tests in headless mode
 
 # to see whats actually being tested
-# pytest tests/ui/ --headed --slowmo 500
+# uv run --locked pytest tests/ui/ --headed --slowmo 500
 ```
 
 
@@ -118,12 +124,12 @@ to bring down the server
 ## Updating Server
 
 a. simply push from main branch, force push also works too
-b. on main branch run - `python scripts/api_helper.py update`
+b. on main branch run - `uv run --locked python scripts/api_helper.py update`
 c. run on server - `bash update_server.sh`
 
 The scheduled `Update yt-dlp` GitHub Actions workflow checks PyPI daily and can
 also be run manually. It validates the updater before committing a newer stable
-yt-dlp requirement to `main`; the normal main-branch update path then deploys it.
+yt-dlp requirement and lockfile to `main`; the normal main-branch update path then deploys it.
 
 ## Renewing Cert
 

@@ -9,6 +9,15 @@ import pytest
 from web_app.config import ConfigManager
 
 
+def _project(requirements):
+    dependencies = [line for line in requirements.splitlines() if not line.startswith("example-url=")]
+    return (
+        '# Keep this comment.\n[project]\nname = "example"\ndependencies = [\n'
+        + "".join(f"    {json.dumps(line)},\n" for line in dependencies)
+        + ']\n[tool.example]\nurl = "https://example.test/yt-dlp[default]>=2000.1.1"\n'
+    )
+
+
 class _Response(io.BytesIO):
     def __enter__(self):
         return self
@@ -26,12 +35,12 @@ def _opener_for(payload, calls):
 
 
 def test_updates_only_the_ytdlp_floor_to_latest_stable_release(tmp_path):
-    requirements_path = tmp_path / "requirements.txt"
-    requirements_path.write_text(
+    requirements_path = tmp_path / "pyproject.toml"
+    requirements_path.write_text(_project(
         "other-package==1.0\n"
         "yt-dlp[default]>=2026.3.17\n"
         "example-url=https://example.test/yt-dlp[default]>=2000.1.1\n"
-    )
+    ))
     calls = []
     payload = {
         "info": {"version": "2026.3.26"},
@@ -54,7 +63,7 @@ def test_updates_only_the_ytdlp_floor_to_latest_stable_release(tmp_path):
     assert result.current_version == "2026.3.17"
     assert result.latest_version == "2026.3.25"
     assert result.changed is True
-    assert requirements_path.read_text() == (
+    assert requirements_path.read_text() == _project(
         "other-package==1.0\n"
         "yt-dlp[default]>=2026.3.25\n"
         "example-url=https://example.test/yt-dlp[default]>=2000.1.1\n"
@@ -64,9 +73,9 @@ def test_updates_only_the_ytdlp_floor_to_latest_stable_release(tmp_path):
 
 
 def test_does_not_rewrite_requirement_when_floor_is_current_or_newer(tmp_path):
-    requirements_path = tmp_path / "requirements.txt"
+    requirements_path = tmp_path / "pyproject.toml"
     original = "yt-dlp[default]>=2026.3.25\n"
-    requirements_path.write_text(original)
+    requirements_path.write_text(_project(original))
     payload = {
         "info": {"version": "2026.3.25"},
         "releases": {"2026.3.25": [{"yanked": False}]},
@@ -80,7 +89,7 @@ def test_does_not_rewrite_requirement_when_floor_is_current_or_newer(tmp_path):
     )
 
     assert result.changed is False
-    assert requirements_path.read_text() == original
+    assert requirements_path.read_text() == _project(original)
 
 
 @pytest.mark.parametrize(
@@ -96,8 +105,8 @@ def test_fails_before_network_access_for_missing_or_malformed_floor(
     tmp_path,
     requirements,
 ):
-    requirements_path = tmp_path / "requirements.txt"
-    requirements_path.write_text(requirements)
+    requirements_path = tmp_path / "pyproject.toml"
+    requirements_path.write_text(_project(requirements))
 
     def unexpected_network_call(*args, **kwargs):
         raise AssertionError("network must not be called")
@@ -111,13 +120,13 @@ def test_fails_before_network_access_for_missing_or_malformed_floor(
             opener=unexpected_network_call,
         )
 
-    assert requirements_path.read_text() == requirements
+    assert requirements_path.read_text() == _project(requirements)
 
 
 def test_fails_without_rewriting_when_pypi_has_no_stable_release(tmp_path):
-    requirements_path = tmp_path / "requirements.txt"
+    requirements_path = tmp_path / "pyproject.toml"
     original = "yt-dlp[default]>=2026.3.17\n"
-    requirements_path.write_text(original)
+    requirements_path.write_text(_project(original))
     payload = {
         "info": {"version": "2026.3.18rc1"},
         "releases": {
@@ -135,7 +144,7 @@ def test_fails_without_rewriting_when_pypi_has_no_stable_release(tmp_path):
             opener=_opener_for(payload, []),
         )
 
-    assert requirements_path.read_text() == original
+    assert requirements_path.read_text() == _project(original)
 
 
 def test_script_can_be_invoked_directly_from_the_repository():
@@ -160,7 +169,9 @@ def test_workflow_validates_updated_requirements_before_push():
 
     assert 'cron: "30 16 * * *"' in workflow
     assert "contents: write" in workflow
-    assert "FLASK_SECRET_KEY: github-actions-test-secret-key" in workflow
+    assert "FLASK_SECRET_KEY" not in workflow
+    assert "uv lock --upgrade-package yt-dlp" in workflow
+    assert "git add -- pyproject.toml uv.lock" in workflow
     update_index = workflow.index("python -m scripts.update_ytdlp_requirement")
     test_index = workflow.index('pytest -q -m "not ffmpeg"')
     push_index = workflow.index("git push origin HEAD:main")

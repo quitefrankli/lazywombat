@@ -423,6 +423,7 @@ class ConfigManager:
 
         self._initialized = True
         self.use_offline_syncer = True
+        self.deno_version = "v2.3.3"
         self.debug_mode = False
         self.production_data_root = Path.home() / ".nabicat" / "data"
         self.debug_data_root = Path.home() / ".nabicat_debug" / "data"
@@ -556,10 +557,6 @@ class ConfigManager:
         })
         self.git_command_timeout_s = 2
         self.ytdlp_pypi_url = "https://pypi.org/pypi/yt-dlp/json"
-        self.ytdlp_requirement_pattern = (
-            r"^yt-dlp\[default\]>=(?P<version>[^ \t;#\r\n]+)"
-            r"[ \t]*(?:#.*)?\r?$"
-        )
         self.ytdlp_update_timeout_s = 10.0
         self.access_denied_redirect_endpoint = "home"
         self.elevated_access_denied_message = "You need elevated access to use this app."

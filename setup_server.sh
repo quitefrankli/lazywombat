@@ -1,6 +1,6 @@
 function run_client_side()
 (
-	set -ex
+	set -exo pipefail
 
 	# $1 - cloud provider (aws, oci)
 	if [ -z "$1" ]
@@ -32,25 +32,15 @@ function run_client_side()
 
 function run_server_side()
 (
-	set -ex
+	set -exo pipefail
 
-	function setup_conda()
+	function setup_python()
 	{
-		miniforge_url=https://github.com/conda-forge/miniforge/releases/latest/download/
-		arch=$(uname -m)
-		if [ "$arch" = "aarch64" ]
-		then
-			installer=Miniforge3-Linux-aarch64.sh
-		else
-			installer=Miniforge3-Linux-x86_64.sh
-		fi
-
-		wget ${miniforge_url}${installer}
-
-		bash $installer -b
-		rm $installer
-
-		echo "source $HOME/miniforge3/bin/activate" >> ~/.bashrc
+		curl --fail --silent --show-error --location https://astral.sh/uv/install.sh | UV_NO_MODIFY_PATH=1 sh
+		export PATH="$HOME/.local/bin:$HOME/.deno/bin:/usr/local/bin:/usr/bin:/bin"
+		uv sync --locked --no-dev --managed-python
+		deno_version=$(.venv/bin/python -c 'from web_app.config import ConfigManager; print(ConfigManager().deno_version)')
+		curl --fail --silent --show-error --location https://deno.land/install.sh | sh -s -- "$deno_version" --no-modify-path
 	}
 
 	function setup_certs()
@@ -76,16 +66,13 @@ function run_server_side()
 	}
 
 	sudo apt update
-	sudo apt install -y nginx gunicorn ffmpeg nodejs npm redis-server
+	sudo apt install -y nginx ffmpeg nodejs npm redis-server curl unzip
 	sudo npm install -g @rynfar/meridian @anthropic-ai/claude-code
-	setup_conda
-	source "$HOME/miniforge3/bin/activate"
-	mamba install -y deno
+	setup_python
 	setup_certs
 	sudo systemctl start nginx
 	sudo systemctl enable nginx
 	# sudo systemctl status nginx
-	mamba clean -a -y # frees up some space
 
 	bash update_server.sh
 )

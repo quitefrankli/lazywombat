@@ -1,8 +1,8 @@
-"""Update the yt-dlp minimum version in requirements.txt from PyPI."""
+"""Update the yt-dlp minimum version in pyproject.toml from PyPI."""
 
 import argparse
 import json
-import re
+import tomlkit
 import sys
 
 from dataclasses import dataclass
@@ -14,6 +14,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from packaging.version import InvalidVersion, Version
+from packaging.requirements import InvalidRequirement, Requirement
 
 from web_app.config import ConfigManager
 
@@ -75,27 +76,27 @@ def _latest_stable_version(payload: Any) -> Version:
     return max(candidates)
 
 
-def _current_requirement(requirements: str, pattern: str) -> tuple[re.Match, Version]:
-    matches = list(re.finditer(pattern, requirements, flags=re.MULTILINE))
+def _current_requirement(document) -> tuple[int, Version]:
+    dependencies = document.get("project", {}).get("dependencies", [])
+    matches = []
+    for index, value in enumerate(dependencies):
+        try:
+            requirement = Requirement(value)
+        except InvalidRequirement as error:
+            raise RequirementError("invalid project dependency") from error
+        if requirement.name.lower().replace("_", "-") == "yt-dlp":
+            matches.append((index, requirement))
     if len(matches) != 1:
-        raise RequirementError(
-            "requirements.txt must contain exactly one "
-            "yt-dlp[default]>=<version> requirement"
-        )
-
-    match = matches[0]
-    raw_version = match.group("version")
-    try:
-        version = Version(raw_version)
-    except InvalidVersion as error:
-        raise RequirementError(
-            f"invalid yt-dlp requirement version: {raw_version!r}"
-        ) from error
+        raise RequirementError("project.dependencies must contain exactly one yt-dlp requirement")
+    index, requirement = matches[0]
+    specifiers = list(requirement.specifier)
+    if (requirement.extras != {"default"} or requirement.marker or requirement.url
+            or len(specifiers) != 1 or specifiers[0].operator != ">="):
+        raise RequirementError("expected yt-dlp[default]>=<version>")
+    version = Version(specifiers[0].version)
     if version.is_prerelease or version.is_devrelease:
-        raise RequirementError(
-            f"yt-dlp requirement floor must be stable: {raw_version!r}"
-        )
-    return match, version
+        raise RequirementError("yt-dlp requirement floor must be stable")
+    return index, version
 
 
 def _fetch_latest_stable_version(
@@ -121,23 +122,15 @@ def update_ytdlp_requirement(
 ) -> UpdateResult:
     """Raise on invalid input; otherwise update only a newer stable floor."""
     config = ConfigManager()
-    requirements = requirements_path.read_text(encoding="utf-8")
-    match, current = _current_requirement(
-        requirements,
-        config.ytdlp_requirement_pattern,
-    )
+    document = tomlkit.parse(requirements_path.read_text(encoding="utf-8"))
+    index, current = _current_requirement(document)
     latest = _fetch_latest_stable_version(opener, config)
 
     if latest <= current:
         return UpdateResult(str(current), str(latest), changed=False)
 
-    version_start, version_end = match.span("version")
-    updated_requirements = (
-        requirements[:version_start]
-        + str(latest)
-        + requirements[version_end:]
-    )
-    requirements_path.write_text(updated_requirements, encoding="utf-8")
+    document["project"]["dependencies"][index] = f"yt-dlp[default]>={latest}"
+    requirements_path.write_text(tomlkit.dumps(document), encoding="utf-8")
     return UpdateResult(str(current), str(latest), changed=True)
 
 
@@ -149,7 +142,7 @@ def main() -> int:
         "requirements",
         nargs="?",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "requirements.txt",
+        default=Path(__file__).resolve().parents[1] / "pyproject.toml",
     )
     args = parser.parse_args()
 

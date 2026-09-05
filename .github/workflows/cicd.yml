@@ -11,18 +11,16 @@ jobs:
   pytest:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      FLASK_SECRET_KEY: github-actions-test-secret-key
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9
         with:
-          python-version: "3.13"
-          cache: pip
+          version: "0.12.10"
+          enable-cache: true
 
       - name: Configure private dependency access
         env:
@@ -32,7 +30,7 @@ jobs:
       - name: Install dependencies
         env:
           GH_TOKEN: ${{ secrets.PRIVATE_DEPS_TOKEN }}
-        run: pip install -r requirements.txt
+        run: uv sync --locked
 
       - name: Install system dependencies
         run: |
@@ -40,7 +38,7 @@ jobs:
           sudo apt-get install --yes redis-server
 
       - name: Run tests
-        run: pytest -q -m "not ffmpeg"
+        run: uv run --locked pytest -q -m "not ffmpeg"
 
   deploy:
     needs: pytest
