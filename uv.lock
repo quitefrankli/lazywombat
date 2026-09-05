@@ -411,17 +411,6 @@ wheels = [
 ]
 
 [[package]]
-name = "flask-bootstrap"
-version = "3.3.7.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dominate" },
-    { name = "flask" },
-    { name = "visitor" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/88/53/958ce7c2aa26280b7fd7f3eecbf13053f1302ee2acb1db58ef32e1c23c2a/Flask-Bootstrap-3.3.7.1.tar.gz", hash = "sha256:cb08ed940183f6343a64e465e83b3a3f13c53e1baabb8d72b5da4545ef123ac8", size = 456359, upload-time = "2017-01-11T23:28:23.944Z" }
-
-[[package]]
 name = "flask-limiter"
 version = "3.12"
 source = { registry = "https://pypi.org/simple" }
@@ -784,7 +773,6 @@ dependencies = [
     { name = "deprecated" },
     { name = "dominate" },
     { name = "flask" },
-    { name = "flask-bootstrap" },
     { name = "flask-limiter" },
     { name = "flask-login" },
     { name = "flask-wtf" },
@@ -860,7 +848,6 @@ requires-dist = [
     { name = "deprecated", specifier = "==1.2.18" },
     { name = "dominate", specifier = "==2.9.1" },
     { name = "flask", specifier = "==3.1.3" },
-    { name = "flask-bootstrap", specifier = "==3.3.7.1" },
     { name = "flask-limiter", specifier = "==3.12" },
     { name = "flask-login", specifier = "==0.6.3" },
     { name = "flask-wtf", specifier = ">=1.2.0" },
