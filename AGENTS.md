@@ -14,9 +14,15 @@
 
 * Constants belong in `config.py`: any named constant (limits, counts, timeouts, feature flags, model names, etc.) must be defined as an attribute of `ConfigManager` in `web_app/config.py`, not hardcoded at call sites.
 
-* A debug server is usually available for debugging at 127.0.0.1:12345 its data can be found under ~/.nabicat_debug/...
+* Python environments and dependencies:
+    - Use uv with the pinned Python in `.python-version`. `pyproject.toml` and `uv.lock` are the dependency sources of truth; keep them in sync when changing dependencies.
+    - Use `uv sync --locked` and `uv run --locked ...` in the development checkout. Add test/development tools to the `dev` dependency group. Do not use a global Python environment, pip installs, or Conda/Miniforge for this project.
+    - Production (`~/nabicat`) and development (`~/dev/nabicat`) have separate `.venv` directories. Never synchronize or modify the running production environment manually. `update_server.sh` installs with `uv sync --locked --no-dev`, stops services before replacing dependencies, and handles rollback.
+    - For unit tests, use `uv run --locked pytest tests/unit -q -m "not ffmpeg"`. Tests must provide their own configuration and use isolated temporary data and fake Redis; no externally set `FLASK_SECRET_KEY` should be required.
 
-* Production resource safety: when working on the production server, do not start a separate debug/test web app. Reuse existing diagnostics, keep tests and investigative commands narrowly scoped, and avoid full test suites, large generated media/transcodes, load tests, or other resource-intensive work unless explicitly requested.
+* A debug server may run on the production host using a separate port, normally 12345. Check for an existing server first. Use the development checkout and environment, debug data under `~/.nabicat_debug/...`, and a separate `REDIS_URL`; `--debug` does not isolate Redis automatically.
+
+* Production resource safety: a separate debug/test web app is permitted as described above. Keep its resource use modest, reuse existing diagnostics, and keep tests and investigative commands narrowly scoped. Avoid full test suites, large generated media/transcodes, load tests, or other resource-intensive work unless explicitly requested.
 
 * Logging and auditability:
     - Emit application logs through `web_app.logging_utils.log_event`; do not call `logging.debug/info/warning/error/exception/critical/log` directly.
@@ -40,7 +46,7 @@
 
 ## Concurrency & multi-worker (Redis)
 
-The app runs under gunicorn with multiple sync worker **processes** (`-w`, set via `WORKERS` in `update_server.sh`, default 4). Each worker is a separate OS process, so anything that must be shared across requests lives in **Redis**, not module-level globals. Redis is a hard runtime dependency (`redis_url` in `ConfigManager`, default `redis://127.0.0.1:6379/0`); `update_server.sh` installs/enables `redis-server`, and `ensure_local_redis()` auto-starts one for local `python -m web_app` runs.
+The app runs under gunicorn with multiple sync worker **processes** (`-w`, set via `WORKERS` in `update_server.sh`, default 4). Each worker is a separate OS process, so anything that must be shared across requests lives in **Redis**, not module-level globals. Redis is a hard runtime dependency (`redis_url` in `ConfigManager`, default `redis://127.0.0.1:6379/0`); `update_server.sh` installs/enables `redis-server`, and `ensure_local_redis()` auto-starts one for local `uv run --locked python -m web_app` runs.
 
 - **`web_app/redis_client.py`** is the hub: `get_redis()` (process-cached client) and `rmw_lock(name)` (the distributed mutex).
 - **Rate limiter** (`helpers.py`) and **ephemeral RSA handshake keys** are Redis-backed so limits and the handshake work across workers. Sessions are signed cookies (stateless — fine). Subapp state that must cross worker boundaries must also use Redis.

@@ -33,7 +33,15 @@ and restores the previous locked environment if deployment fails.
 
 ## Testing
 
-`uv run --locked pytest -q -m "not ffmpeg"`
+Run unit tests from the development checkout:
+
+```bash
+uv run --locked pytest tests/unit -q -m "not ffmpeg"
+```
+
+Tests supply their own secret key; no `FLASK_SECRET_KEY` environment variable is
+needed. CI also runs the integration tests. Keep tests narrowly scoped on the
+production host.
 
 ### Playwright UI Tests
 
@@ -123,13 +131,18 @@ to bring down the server
 
 ## Updating Server
 
-a. simply push from main branch, force push also works too
-b. on main branch run - `uv run --locked python scripts/api_helper.py update`
-c. run on server - `bash update_server.sh`
+Push changes to `main` and wait for CI. To deploy, either:
+
+* Push a release tag pointing to the current `main` commit; CI validates and deploys it.
+* Run `uv run --locked python scripts/api_helper.py update` from the development checkout.
+* Run `bash update_server.sh` from the production checkout on the server.
+
+Pushing `main` alone runs tests; it does not automatically deploy.
 
 The scheduled `Update yt-dlp` GitHub Actions workflow checks PyPI daily and can
 also be run manually. It validates the updater before committing a newer stable
-yt-dlp requirement and lockfile to `main`; the normal main-branch update path then deploys it.
+yt-dlp requirement and lockfile to `main`. Deploy the update through one of the
+paths above.
 
 ## Renewing Cert
 
